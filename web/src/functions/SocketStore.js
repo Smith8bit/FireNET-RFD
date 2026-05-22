@@ -7,4 +7,9 @@ export const useSocketStore = create((set) => ({
   setLastMessage: (data) => set({ lastMessage: data }),
   setSend: (fn) => set({ send: fn }),
   setReady: (ready) => set({ isReady: ready }),
+
+  isAuthenticated: false,
+  user: null,
+  login: (userData) => set({ isAuthenticated: true, user: userData }),
+  logout: () => set({ isAuthenticated: false, user: null }),
 }))

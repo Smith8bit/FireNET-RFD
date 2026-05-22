@@ -4,6 +4,7 @@ import useWebSocket, { ReadyState } from 'react-use-websocket'
 import { useSocketStore } from './functions/SocketStore'
 import './App.css'
 import NavBar from './components/navbar'
+import { BrowserRouter } from 'react-router-dom'
 
 function App() {
 
@@ -42,11 +43,7 @@ function App() {
   }, [sendMessage, readyState, setSend, setReady])
 
   return (
-    <>
-    <div className="App">
-      <NavBar />
-    </div>
-    </>
+    <BrowserRouter />
   )
 }
 
