@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.0",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1",
     "react-use-websocket": "^4.13.0",
+    "tailwindcss": "^4.3.0",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

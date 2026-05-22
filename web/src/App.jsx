@@ -1,10 +1,9 @@
 // App.jsx — root, owns the connection, renders the pages
 import { useEffect } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
+import { BrowserRouter } from 'react-router-dom'
 import { useSocketStore } from './functions/SocketStore'
 import './App.css'
-import NavBar from './components/navbar'
-import { BrowserRouter } from 'react-router-dom'
 
 function App() {
 
@@ -43,7 +42,9 @@ function App() {
   }, [sendMessage, readyState, setSend, setReady])
 
   return (
-    <BrowserRouter />
+    <BrowserRouter>
+      
+    </BrowserRouter>
   )
 }
 
