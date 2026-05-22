@@ -9,11 +9,17 @@ export default function Navbar() {
   ]
 
   return(
-    <nav className="h-16 bg-gray-800 text-white flex items-center px-4">
-      <ul className="flex space-x-4">
+    <nav className="flex text-sm font-medium text-center text-body border-b border-default m-2">
+      <img
+        className="h-12  ml-4"  
+        src="https://www.forest.go.th/wp-content/uploads/2023/02/color-png.png"/>
+      <p className="flex p-4 border-b-2 border-transparent rounded-t-base text-fg-brand">
+        Thai Fire Management System
+      </p>
+      <ul className="flex flex-wrap -mb-px ml-auto">
         {links.map((link) => (
-          <li key={link.path}>
-            <Link to={link.path} className="hover:text-blue-300">
+          <li className="me-2" key={link.path}>
+            <Link to={link.path} className="inline-block p-4 border-b border-transparent rounded-t-base hover:text-fg-brand hover:border-brand">
               {link.name}
             </Link>
           </li>
