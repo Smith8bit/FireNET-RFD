@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "react-dom": "^19.2.6",
-    "react-use-websocket": "^4.13.0"
+    "react-use-websocket": "^4.13.0",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
