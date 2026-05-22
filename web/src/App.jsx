@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 import { useSocketStore } from './functions/SocketStore'
 import './App.css'
+import NavBar from './components/navbar'
 
 function App() {
 
@@ -42,7 +43,9 @@ function App() {
 
   return (
     <>
-      <Page1 />
+    <div className="App">
+      <NavBar />
+    </div>
     </>
   )
 }
