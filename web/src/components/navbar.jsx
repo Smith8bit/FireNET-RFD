@@ -9,11 +9,13 @@ export default function Navbar() {
   ]
 
   return(
-    <nav>
-      <ul>
+    <nav className="h-16 bg-gray-800 text-white flex items-center px-4">
+      <ul className="flex space-x-4">
         {links.map((link) => (
           <li key={link.path}>
-            <Link to={link.path}>{link.name}</Link>
+            <Link to={link.path} className="hover:text-blue-300">
+              {link.name}
+            </Link>
           </li>
         ))}
       </ul>
