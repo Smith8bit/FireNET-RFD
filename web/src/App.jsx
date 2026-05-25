@@ -14,10 +14,10 @@ import './App.css'
 
 function NavbarLayout() {
   return (
-    <>
+    <div className="flex flex-col h-screen">
       <Navbar />
       <Outlet />
-    </>
+    </div>
   )
 }
 

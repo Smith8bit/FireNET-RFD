@@ -9,7 +9,7 @@ export default function Navbar() {
   ]
 
   return(
-    <nav className="flex text-sm font-medium text-center text-body border-b border-default m-2">
+    <nav className="flex text-sm font-medium text-center text-body border-b border-default m-2 mb-0">
       <img
         className="h-12  ml-4"  
         src="https://www.forest.go.th/wp-content/uploads/2023/02/color-png.png"/>
