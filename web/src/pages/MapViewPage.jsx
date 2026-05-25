@@ -5,7 +5,6 @@ import Map from '../components/map'
 import satelliteStyle from '../components/layers/satellite.json'
 import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
-import aqicnMarker from '../components/markers/aqicn.json'
 
 export default function MapViewPage() {
 
@@ -19,19 +18,11 @@ export default function MapViewPage() {
     Topo: topoStyle,
   }
   const Markers = {
-    'PM2.5': aqicnMarker,
+
   }
 
   const [selectedLayer, setSelectedLayer] = useState(Layers.Base)
   const [selectedMarkers, setSelectedMarkers] = useState([])
-
-  const toggleMarker = (config) => {
-    setSelectedMarkers(prev =>
-      prev.some(m => m.id === config.id)
-        ? prev.filter(m => m.id !== config.id)
-        : [...prev, config]
-    )
-  }
 
   return (
     <div className="flex flex-1 w-full overflow-hidden">
@@ -53,17 +44,6 @@ export default function MapViewPage() {
               onClick={() => setSelectedLayer(Layers[key])}
             >
               {key.charAt(0).toUpperCase() + key.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div id="markers" className="mt-4">
-          {Object.entries(Markers).map(([key, config]) => (
-            <button
-              key={key}
-              className={`px-4 py-2 rounded text-white ${selectedMarkers.some(m => m.id === config.id) ? 'bg-green-600' : 'bg-gray-400'}`}
-              onClick={() => toggleMarker(config)}
-            >
-              {key}
             </button>
           ))}
         </div>

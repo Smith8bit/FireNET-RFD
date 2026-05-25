@@ -1,5 +1,0 @@
-{
-  "id": "aqicn-pm25",
-  "tiles": ["https://tiles.aqicn.org/tiles/usepa-pm25/{z}/{x}/{y}.png"],
-  "tileSize": 256
-}
