@@ -13,3 +13,4 @@ export const useHoverStore = create((set) => ({
   hoveredMarker: null,
   setHoveredMarker: (marker) => set({ hoveredMarker: marker }),
 }))
+

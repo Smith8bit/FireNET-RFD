@@ -58,6 +58,7 @@ export default function MapViewPage() {
             firedata.map((marker, i) => (
                 <Card
                   key={i}
+                  id={i}
                   Title={marker.TUMBOON}
                   Type={marker.NAME}
                   Date={marker.DATE}
