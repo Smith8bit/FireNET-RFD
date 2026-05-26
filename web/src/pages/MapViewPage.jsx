@@ -1,6 +1,8 @@
 import { useState ,useEffect } from 'react'
 import { useSocketStore } from '../functions/SocketStore'
 import Map from '../components/map'
+import Card from '../components/card'
+import firedata from '../components/markers/dataTest01.json'
 
 import satelliteStyle from '../components/layers/satellite.json'
 import baseStyle from '../components/layers/base.json'
@@ -18,11 +20,11 @@ export default function MapViewPage() {
     Topo: topoStyle,
   }
   const Markers = {
-
+    Fire: firedata
   }
 
   const [selectedLayer, setSelectedLayer] = useState(Layers.Base)
-  const [selectedMarkers, setSelectedMarkers] = useState([])
+  const [selectedMarkers, setSelectedMarkers] = useState([Markers.Fire])
 
   return (
     <div className="flex flex-1 w-full overflow-hidden">
@@ -34,7 +36,7 @@ export default function MapViewPage() {
         />
       </div>
       <div
-        className="w-1/5 h-full bg-gray-100 p-4"
+        className="w-1/5 h-full bg-gray-200 p-2 overflow-hidden flex flex-col"
         id="map-controller">
         <div id="layers">
           {Object.keys(Layers).map((key) => (
@@ -47,7 +49,23 @@ export default function MapViewPage() {
             </button>
           ))}
         </div>
-        <div id="controller"></div>
+        <div
+          className="p-2 h-fit overflow-y-scroll no-scrollbar" 
+          id="controller">
+          {
+            firedata.map((marker) => (
+                <Card
+                  title={marker.TUMBOON}
+                  content={`
+                    ตำบล: ${marker.TUMBOON}
+                    อำเภอ: ${marker.AUMPER}
+                    จังหวัด: ${marker.PROVINCE}
+                    Lat/Lan: ${marker.LATITUDE}/${marker.LONGITUDE}
+                  `}
+                />
+            ))
+          }
+        </div>
       </div>
     </div>
   )
