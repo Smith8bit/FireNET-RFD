@@ -1,5 +1,5 @@
 import { useState ,useEffect } from 'react'
-import { useSocketStore } from '../functions/SocketStore'
+import { useSocketStore } from '../functions/stateStore'
 import Map from '../components/map'
 import Card from '../components/card'
 import firedata from '../components/markers/dataTest01.json'

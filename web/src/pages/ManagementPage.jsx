@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { useSocketStore } from '../functions/SocketStore' 
+import { useSocketStore } from '../functions/stateStore' 
 
 export default function ManagementPage() {
 

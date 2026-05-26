@@ -8,3 +8,8 @@ export const useSocketStore = create((set) => ({
   setSend: (fn) => set({ send: fn }),
   setReady: (ready) => set({ isReady: ready }),
 }))
+
+export const useHoverStore = create((set) => ({
+  hoveredMarker: null,
+  setHoveredMarker: (marker) => set({ hoveredMarker: marker }),
+}))

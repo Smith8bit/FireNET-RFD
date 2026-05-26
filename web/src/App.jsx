@@ -8,7 +8,7 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ManagementPage from './pages/ManagementPage'
 import MapViewPage from './pages/MapViewPage'
-import { useSocketStore } from './functions/SocketStore'
+import { useSocketStore } from './functions/stateStore'
 
 import './App.css'
 
