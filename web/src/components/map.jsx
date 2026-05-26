@@ -10,7 +10,7 @@ export default function Map({ layer, startPoint, markers }) {
             container: "map",
             style: layer,
             center: [startPoint.lng, startPoint.lat],
-            zoom: 6,
+            zoom: 8,
             maxZoom: 20,
             preserveDrawingBuffer: true
         });

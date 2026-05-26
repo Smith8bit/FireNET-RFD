@@ -10,6 +10,8 @@ import topoStyle from '../components/layers/topo.json'
 
 export default function MapViewPage() {
 
+  const [isExpanded, setExpanded] = useState(false)
+
   const send = useSocketStore((s) => s.send)
   const ready = useSocketStore((s) => s.ready)
   const msg = useSocketStore((s) => s.lastMessage)
@@ -53,15 +55,13 @@ export default function MapViewPage() {
           className="p-2 h-fit overflow-y-scroll no-scrollbar" 
           id="controller">
           {
-            firedata.map((marker) => (
+            firedata.map((marker, i) => (
                 <Card
-                  title={marker.TUMBOON}
-                  content={`
-                    ตำบล: ${marker.TUMBOON}
-                    อำเภอ: ${marker.AUMPER}
-                    จังหวัด: ${marker.PROVINCE}
-                    Lat/Lan: ${marker.LATITUDE}/${marker.LONGITUDE}
-                  `}
+                  key={i}
+                  Title={marker.TUMBOON}
+                  Type={marker.NAME}
+                  Date={marker.DATE}
+                  Time={marker.TIME}
                 />
             ))
           }
