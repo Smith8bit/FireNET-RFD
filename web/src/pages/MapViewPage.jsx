@@ -1,5 +1,5 @@
 import { useState ,useEffect } from 'react'
-import { useSocketStore } from '../functions/stateStore'
+import { useSocketStore, useFocusedSpotStore } from '../functions/stateStore'
 import Map from '../components/map'
 import Card from '../components/card'
 import firedata from '../components/markers/dataTest01.json'
@@ -9,8 +9,6 @@ import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
 
 export default function MapViewPage() {
-
-  const [isExpanded, setExpanded] = useState(false)
 
   const send = useSocketStore((s) => s.send)
   const ready = useSocketStore((s) => s.ready)
@@ -30,7 +28,7 @@ export default function MapViewPage() {
 
   return (
     <div className="flex flex-1 w-full overflow-hidden">
-      <div className="w-4/5 h-full">
+      <div className="w-3/4 h-full">
         <Map
           layer={selectedLayer}
           markers={selectedMarkers}
@@ -38,7 +36,7 @@ export default function MapViewPage() {
         />
       </div>
       <div
-        className="w-1/5 h-full bg-gray-200 p-2 overflow-hidden flex flex-col"
+        className="w-1/4 h-full bg-gray-200 p-2 overflow-hidden flex flex-col"
         id="map-controller">
         <div id="layers">
           {Object.keys(Layers).map((key) => (
@@ -52,7 +50,7 @@ export default function MapViewPage() {
           ))}
         </div>
         <div
-          className="p-2 h-fit overflow-y-scroll no-scrollbar" 
+          className="p-2 h-fit overflow-y-scroll no-scrollbar cursor-pointer" 
           id="controller">
           {
             firedata.map((marker, i) => (

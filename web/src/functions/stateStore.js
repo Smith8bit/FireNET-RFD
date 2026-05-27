@@ -14,3 +14,8 @@ export const useHoverStore = create((set) => ({
   setHoveredMarker: (marker) => set({ hoveredMarker: marker }),
 }))
 
+export const useFocusedSpotStore = create((set) => ({
+  focusedSpot: null,
+  setSpot: (spot) => set({ focusedSpot: spot }),
+}))
+
