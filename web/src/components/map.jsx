@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useHoverStore } from '../functions/stateStore'
+import { useHoverStore, useFocusedSpotStore } from '../functions/stateStore'
 
 const DEFAULT_STYLE = {
     width: '16px',
@@ -30,7 +30,8 @@ export default function Map({ layer, startPoint, markers }) {
     const markerInstancesRef = useRef([]);
     const markerElementsRef = useRef(new window.Map());
 
-    const hoveredId = useHoverStore((s) => s.hoveredMarker?.id ?? null);
+    const focusedSpot = useFocusedSpotStore((s) => s.focusedSpot)
+    const hoveredId = useHoverStore((s) => s.hoveredMarker ?? null);
 
     useEffect(() => {
         const map = new maplibregl.Map({
@@ -70,6 +71,7 @@ export default function Map({ layer, startPoint, markers }) {
         markerInstancesRef.current = [];
         markerElementsRef.current = new window.Map();
 
+        let flatIndex = null
         markers.forEach((group) => {
             group.forEach((feature, i) => {
                 const wrapper = document.createElement('div');
@@ -91,15 +93,16 @@ export default function Map({ layer, startPoint, markers }) {
                     .addTo(mapRef.current);
 
                 markerInstancesRef.current.push(m);
-                markerElementsRef.current.set(i, el);
+                markerElementsRef.current.set(flatIndex, el);
+                flatIndex++
             });
         });
     }, [markers]);
 
     useEffect(() => {
         markerElementsRef.current.forEach((el) => applyStyle(el, DEFAULT_STYLE));
-        if (hoveredId != null) {
-            const el = markerElementsRef.current.get(hoveredId);
+        if (hoveredId != null || focusedSpot != null) {
+            const el = markerElementsRef.current.get(hoveredId || focusedSpot);
             if (el) applyStyle(el, HOVER_STYLE);
         }
     }, [hoveredId]);

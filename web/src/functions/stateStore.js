@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export const useSocketStore = create((set) => ({
   lastMessage: null,
-  isReady: false,
+  ready: false,
   send: () => console.warn('Socket not connected yet'),
   setLastMessage: (data) => set({ lastMessage: data }),
   setSend: (fn) => set({ send: fn }),
