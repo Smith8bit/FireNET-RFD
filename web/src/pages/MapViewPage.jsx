@@ -7,6 +7,7 @@ import firedata from '../components/markers/dataTest01.json'
 import satelliteStyle from '../components/layers/satellite.json'
 import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
+import ExpandedCard from '../components/expandedCard'
 
 export default function MapViewPage() {
 
@@ -27,7 +28,8 @@ export default function MapViewPage() {
   const [selectedMarkers, setSelectedMarkers] = useState([Markers.Fire])
 
 
-  const spot = useFocusedSpotStore((s) => s.focusedSpot === null ? true : false)
+  const focusedSpot = useFocusedSpotStore((s) => s.focusedSpot)
+  const spot = focusedSpot === null
   const setSpot = useFocusedSpotStore((s) => s.setSpot)
   const setHover = useHoverStore((s) => s.setHoveredMarker)
   return (
@@ -71,9 +73,10 @@ export default function MapViewPage() {
           </div>
         </div>
         : 
-        <div>
+        <div className="w-1/4 h-full bg-gray-200 p-2 overflow-hidden flex flex-col">
           <button className='px-4 py-2 bg-blue-500 text-white rounded'
           onClick={() => {setSpot(null); setHover(null);}}>Exist</button>
+          <ExpandedCard firespot={firedata[focusedSpot]}/>
         </div>
       }
     </div>

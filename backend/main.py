@@ -38,7 +38,7 @@ async def websocket_endpoint(ws: WebSocket):
         while True:
             data = await ws.receive_json()
             # await manager.broadcast(data.get("link"))
-            # print(data)
+            print(data)
     except WebSocketDisconnect:
         manager.disconnect(ws)
 
