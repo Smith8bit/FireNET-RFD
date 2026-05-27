@@ -71,7 +71,7 @@ export default function Map({ layer, startPoint, markers }) {
         markerInstancesRef.current = [];
         markerElementsRef.current = new window.Map();
 
-        let flatIndex = null
+        let flatIndex = 0
         markers.forEach((group) => {
             group.forEach((feature, i) => {
                 const wrapper = document.createElement('div');
@@ -102,10 +102,10 @@ export default function Map({ layer, startPoint, markers }) {
     useEffect(() => {
         markerElementsRef.current.forEach((el) => applyStyle(el, DEFAULT_STYLE));
         if (hoveredId != null || focusedSpot != null) {
-            const el = markerElementsRef.current.get(hoveredId || focusedSpot);
+            const el = markerElementsRef.current.get(hoveredId != null ? hoveredId : focusedSpot);
             if (el) applyStyle(el, HOVER_STYLE);
         }
-    }, [hoveredId]);
+    }, [hoveredId, focusedSpot]);
 
     return (
         <div style={{ width: '100%', height: '100%' }}>
