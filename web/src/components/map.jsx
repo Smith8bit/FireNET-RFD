@@ -29,10 +29,15 @@ export default function Map({ layer, startPoint, markers }) {
     const mapRef = useRef(null);
     const markerInstancesRef = useRef([]);
     const markerElementsRef = useRef(new window.Map());
-
+    
     const focusedSpot = useFocusedSpotStore((s) => s.focusedSpot)
+    const setSpot = useFocusedSpotStore((s) => s.setSpot)
     const hoveredId = useHoverStore((s) => s.hoveredMarker ?? null);
 
+    ///////////////////////// DEBUG /////////////////////////
+    useEffect(() => {console.log(focusedSpot)},[focusedSpot])
+    /////////////////////////////////////////////////////////
+    
     useEffect(() => {
         const map = new maplibregl.Map({
             container: "map",
@@ -75,6 +80,7 @@ export default function Map({ layer, startPoint, markers }) {
         markers.forEach((group) => {
             group.forEach((feature, i) => {
                 const wrapper = document.createElement('div');
+                wrapper.addEventListener('click', () => setSpot(i))
                 const el = document.createElement('div');
                 applyStyle(el, DEFAULT_STYLE);
                 wrapper.appendChild(el);
