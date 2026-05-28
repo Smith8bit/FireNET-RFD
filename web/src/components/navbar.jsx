@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import logo from '../assets/RFD_logo.svg'
 
 export default function Navbar() {
 
@@ -12,7 +13,7 @@ export default function Navbar() {
     <nav className="flex text-sm font-medium text-center text-body border-b border-default m-2 mb-0">
       <img
         className="h-12  ml-4"  
-        src="https://www.forest.go.th/wp-content/uploads/2023/02/color-png.png"/>
+        src={logo}/>
       <p className="flex p-4 border-b-2 border-transparent rounded-t-base text-fg-brand">
         Thai Fire Management System
       </p>
