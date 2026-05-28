@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import { useHoverStore, useFocusedSpotStore } from '../functions/stateStore'
+import maplibregl from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import { useMapSelection } from '../functions/stateStore'
 
 const DEFAULT_STYLE = {
     width: '16px',
@@ -13,109 +13,94 @@ const DEFAULT_STYLE = {
     cursor: 'pointer',
     transition: 'transform 120ms ease, background 120ms ease, box-shadow 120ms ease',
     transform: 'scale(1)',
-};
+}
 
 const HOVER_STYLE = {
     background: '#facc15',
     transform: 'scale(1.8)',
     boxShadow: '0 0 0 4px rgba(250, 204, 21, 0.4)',
-};
-
-function applyStyle(el, style) {
-    Object.assign(el.style, style);
 }
 
-export default function Map({ layer, startPoint, markers }) {
-    const mapRef = useRef(null);
-    const markerInstancesRef = useRef([]);
-    const markerElementsRef = useRef(new window.Map());
-    
-    const focusedSpot = useFocusedSpotStore((s) => s.focusedSpot)
-    const setSpot = useFocusedSpotStore((s) => s.setSpot)
-    const hoveredId = useHoverStore((s) => s.hoveredMarker ?? null);
+function applyStyle(el, style) {
+    Object.assign(el.style, style)
+}
 
-    ///////////////////////// DEBUG /////////////////////////
-    useEffect(() => {console.log(focusedSpot)},[focusedSpot])
-    /////////////////////////////////////////////////////////
-    
+export default function MapView({ layer, startPoint, points }) {
+    const mapRef = useRef(null)
+    const markerInstancesRef = useRef([])
+    const markerElementsRef = useRef(new globalThis.Map())
+
+    const focusedId = useMapSelection((s) => s.focusedId)
+    const hoveredId = useMapSelection((s) => s.hoveredId)
+    const setFocused = useMapSelection((s) => s.setFocused)
+
     useEffect(() => {
         const map = new maplibregl.Map({
-            container: "map",
+            container: 'map',
             style: layer,
             center: [startPoint.lng, startPoint.lat],
             zoom: 8,
             maxZoom: 20,
-            preserveDrawingBuffer: true
-        });
+            preserveDrawingBuffer: true,
+        })
 
-        map.setRenderWorldCopies(false);
-        map.dragRotate.disable();
-        map.doubleClickZoom.disable();
-        map.addControl(new maplibregl.NavigationControl(), 'top-right');
+        map.setRenderWorldCopies(false)
+        map.dragRotate.disable()
+        map.doubleClickZoom.disable()
+        map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
-        mapRef.current = map;
-        return () => map.remove();
-    }, []);
+        mapRef.current = map
+        return () => map.remove()
+    }, [])
 
     useEffect(() => {
-        const map = mapRef.current;
-        if (!map) return;
+        const map = mapRef.current
+        if (!map) return
         if (map.isStyleLoaded()) {
-            map.setStyle(layer);
+            map.setStyle(layer)
         } else {
-            const apply = () => map.setStyle(layer);
-            map.once('load', apply);
-            return () => map.off('load', apply);
+            const apply = () => map.setStyle(layer)
+            map.once('load', apply)
+            return () => map.off('load', apply)
         }
-    }, [layer]);
+    }, [layer])
 
     useEffect(() => {
-        if (!mapRef.current) return;
+        if (!mapRef.current) return
 
-        markerInstancesRef.current.forEach((m) => m.remove());
-        markerInstancesRef.current = [];
-        markerElementsRef.current = new window.Map();
+        markerInstancesRef.current.forEach((m) => m.remove())
+        markerInstancesRef.current = []
+        markerElementsRef.current = new globalThis.Map()
 
-        let flatIndex = 0
-        markers.forEach((group) => {
-            group.forEach((feature, i) => {
-                const wrapper = document.createElement('div');
-                wrapper.addEventListener('click', () => setSpot(i))
-                const el = document.createElement('div');
-                applyStyle(el, DEFAULT_STYLE);
-                wrapper.appendChild(el);
+        points.forEach((point) => {
+            const wrapper = document.createElement('div')
+            wrapper.addEventListener('click', () => setFocused(point.id))
+            const el = document.createElement('div')
+            applyStyle(el, DEFAULT_STYLE)
+            wrapper.appendChild(el)
 
-                const m = new maplibregl.Marker({ element: wrapper })
-                    .setLngLat([feature.LONGITUDE, feature.LATITUDE])
-                    .setPopup(new maplibregl.Popup().setHTML(`
-                        <div>
-                            <h3>${feature.DATE}</h3>
-                            <p>ตำบล: ${feature.TUMBOON}</p>
-                            <p>อำเภอ: ${feature.AUMPER}</p>
-                            <p>จังหวัด: ${feature.PROVINCE}</p>
-                            <p>Lat/Lan: ${feature.LATITUDE}/${feature.LONGITUDE}</p>
-                        </div>
-                    `))
-                    .addTo(mapRef.current);
+            const marker = new maplibregl.Marker({ element: wrapper })
+                .setLngLat([point.lng, point.lat])
+                .setPopup(new maplibregl.Popup().setHTML(point.popupHtml ?? ''))
+                .addTo(mapRef.current)
 
-                markerInstancesRef.current.push(m);
-                markerElementsRef.current.set(flatIndex, el);
-                flatIndex++
-            });
-        });
-    }, [markers]);
+            markerInstancesRef.current.push(marker)
+            markerElementsRef.current.set(point.id, el)
+        })
+    }, [points, setFocused])
 
     useEffect(() => {
-        markerElementsRef.current.forEach((el) => applyStyle(el, DEFAULT_STYLE));
-        if (hoveredId != null || focusedSpot != null) {
-            const el = markerElementsRef.current.get(hoveredId != null ? hoveredId : focusedSpot);
-            if (el) applyStyle(el, HOVER_STYLE);
+        markerElementsRef.current.forEach((el) => applyStyle(el, DEFAULT_STYLE))
+        const activeId = hoveredId ?? focusedId
+        if (activeId != null) {
+            const el = markerElementsRef.current.get(activeId)
+            if (el) applyStyle(el, HOVER_STYLE)
         }
-    }, [hoveredId, focusedSpot]);
+    }, [hoveredId, focusedId])
 
     return (
         <div style={{ width: '100%', height: '100%' }}>
             <div id="map" style={{ width: '100%', height: '100%' }}></div>
         </div>
-    );
+    )
 }

@@ -1,84 +1,78 @@
-import { useState ,useEffect } from 'react'
-import { useSocketStore, useFocusedSpotStore, useHoverStore } from '../functions/stateStore'
+import { useMemo, useState } from 'react'
+import { useMapSelection } from '../functions/stateStore'
+import { useFireData, firePopupHtml } from '../functions/useFireData'
 import Map from '../components/map'
 import Card from '../components/card'
-import firedata from '../components/markers/dataTest01.json'
+import ExpandedCard from '../components/expandedCard'
 
 import satelliteStyle from '../components/layers/satellite.json'
 import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
-import ExpandedCard from '../components/expandedCard'
+
+const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
+const START_POINT = { lat: 13.736717, lng: 100.523186 }
 
 export default function MapViewPage() {
+  const [selectedLayer, setSelectedLayer] = useState(LAYERS.Base)
 
-  const send = useSocketStore((s) => s.send)
-  const ready = useSocketStore((s) => s.ready)
-  const msg = useSocketStore((s) => s.lastMessage)
+  const fires = useFireData()
+  const points = useMemo(
+    () => fires.map((f) => ({ id: f.id, lat: f.lat, lng: f.lng, popupHtml: firePopupHtml(f) })),
+    [fires],
+  )
 
-  const Layers = {
-    Base: baseStyle,
-    Satellite: satelliteStyle,
-    Topo: topoStyle,
-  }
-  const Markers = {
-    Fire: firedata
-  }
+  const focusedId = useMapSelection((s) => s.focusedId)
+  const clearSelection = useMapSelection((s) => s.clear)
+  const focused = focusedId ? fires.find((f) => f.id === focusedId) : null
 
-  const [selectedLayer, setSelectedLayer] = useState(Layers.Base)
-  const [selectedMarkers, setSelectedMarkers] = useState([Markers.Fire])
-
-
-  const focusedSpot = useFocusedSpotStore((s) => s.focusedSpot)
-  const spot = focusedSpot === null
-  const setSpot = useFocusedSpotStore((s) => s.setSpot)
-  const setHover = useHoverStore((s) => s.setHoveredMarker)
   return (
     <div className="flex flex-1 w-full overflow-hidden">
       <div className="w-3/4 h-full">
-        <Map
-          layer={selectedLayer}
-          markers={selectedMarkers}
-          startPoint={{ lat: 13.736717, lng: 100.523186 }}
-        />
+        <Map layer={selectedLayer} points={points} startPoint={START_POINT} />
       </div>
-      { spot ? 
+      {!focused ? (
         <div
           className="w-1/4 h-full bg-gray-200 p-2 overflow-hidden flex flex-col"
-          id="map-controller">
+          id="map-controller"
+        >
           <div id="layers">
-            {Object.keys(Layers).map((key) => (
+            {Object.keys(LAYERS).map((key) => (
               <button
                 key={key}
                 className="px-4 py-2 bg-blue-500 text-white rounded"
-                onClick={() => setSelectedLayer(Layers[key])}
+                onClick={() => setSelectedLayer(LAYERS[key])}
               >
-                {key.charAt(0).toUpperCase() + key.slice(1)}
+                {key}
               </button>
             ))}
           </div>
-          <div id="controller"
-            className="p-2 h-fit overflow-y-scroll no-scrollbar cursor-pointer">
-            {
-              firedata.map((marker, i) => (
-                  <Card
-                    key={i}
-                    id={i}
-                    Title={marker.TUMBOON}
-                    Type={marker.NAME}
-                    Date={marker.DATE}
-                    Time={marker.TIME}
-                  />
-              ))
-            }
+          <div
+            id="controller"
+            className="p-2 h-fit overflow-y-scroll no-scrollbar cursor-pointer"
+          >
+            {fires.map((f) => (
+              <Card
+                key={f.id}
+                id={f.id}
+                Title={f.title}
+                Type={f.type}
+                Date={f.date}
+                Time={f.time}
+              />
+            ))}
           </div>
         </div>
-        : 
+      ) : (
         <div className="w-1/4 h-full bg-gray-200 p-2 overflow-hidden flex flex-col">
-          <button className='px-4 py-2 bg-blue-500 text-white rounded'
-          onClick={() => {setSpot(null); setHover(null);}}>Exist</button>
-          <ExpandedCard firespot={firedata[focusedSpot]}/>
+          <button
+            className="px-4 py-2 bg-blue-500 text-white rounded"
+            onClick={clearSelection}
+          >
+            Exit
+          </button>
+          <ExpandedCard fire={focused} />
         </div>
-      }
+      )}
     </div>
   )
 }

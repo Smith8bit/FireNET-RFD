@@ -30,7 +30,7 @@ function App() {
 
   // Establish WebSocket connection
   const { sendMessage, lastMessage, readyState } = useWebSocket(
-    'ws://127.0.0.1:8000/ws',
+    import.meta.env.VITE_WS_URL ?? 'ws://127.0.0.1:8000/ws',
     {
       onOpen: () => console.log('WebSocket Connected'),
       shouldReconnect: () => true,

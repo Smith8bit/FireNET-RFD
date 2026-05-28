@@ -3,9 +3,6 @@ import { useSocketStore } from '../functions/stateStore'
 
 export default function DashboardPage() {
   const send = useSocketStore((s) => s.send)
-  const ready = useSocketStore((s) => s.ready)
-  const msg = useSocketStore((s) => s.lastMessage)
-
   const location = useLocation()
   const url = location.pathname + location.search
 
@@ -15,7 +12,6 @@ export default function DashboardPage() {
       <button onClick={() => send({ link: url })}>
         Send Message
       </button>
-      {/* Add your dashboard content here */}
     </div>
   )
 }

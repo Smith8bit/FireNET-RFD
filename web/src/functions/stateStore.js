@@ -9,13 +9,10 @@ export const useSocketStore = create((set) => ({
   setReady: (ready) => set({ isReady: ready }),
 }))
 
-export const useHoverStore = create((set) => ({
-  hoveredMarker: null,
-  setHoveredMarker: (marker) => set({ hoveredMarker: marker }),
+export const useMapSelection = create((set) => ({
+  hoveredId: null,
+  focusedId: null,
+  setHovered: (id) => set({ hoveredId: id }),
+  setFocused: (id) => set({ focusedId: id, hoveredId: null }),
+  clear:      ()   => set({ hoveredId: null, focusedId: null }),
 }))
-
-export const useFocusedSpotStore = create((set) => ({
-  focusedSpot: null,
-  setSpot: (spot) => set({ focusedSpot: spot }),
-}))
-
