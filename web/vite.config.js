@@ -10,7 +10,17 @@ export default defineConfig({
     tailwindcss()
   ],
   
+  server: {
+    proxy: {
+      '/auth': 'http://localhost:8000',
+      '/users': 'http://localhost:8000',
+      '/regions': 'http://localhost:8000',
+      '/fires': 'http://localhost:8000',
+      '/ws': { target: 'ws://localhost:8000', ws: true },
+    },
+  },
+
   legacy: {
-    inconsistentCjsInterop: true 
+    inconsistentCjsInterop: true
   }
 })

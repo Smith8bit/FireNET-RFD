@@ -1,0 +1,64 @@
+{
+    "national": {
+        "code": "TH",
+        "name_th": "ประเทศไทย",
+        "name_en": "Thailand",
+        "slug": "th"
+    },
+    "regional": [
+        {
+            "code": "FRO-1",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 1 (เชียงใหม่)",
+            "name_en": "Forest Regional Office 1 (Chiang Mai)",
+            "slug": "r1"
+        },
+        {
+            "code": "FRO-2",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 2 (เชียงราย)",
+            "name_en": "Forest Regional Office 2 (Chiang Rai)",
+            "slug": "r2"
+        },
+        {
+            "code": "FRO-3",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 3 (ลำปาง)",
+            "name_en": "Forest Regional Office 3 (Lampang)",
+            "slug": "r3"
+        },
+        {
+            "code": "FRO-4",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 4 (ตาก)",
+            "name_en": "Forest Regional Office 4 (Tak)",
+            "slug": "r4"
+        },
+        {
+            "code": "FRO-5",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 5 (สระบุรี)",
+            "name_en": "Forest Regional Office 5 (Saraburi)",
+            "slug": "r5"
+        },
+        {
+            "code": "FRO-6",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 6 (อุดรธานี)",
+            "name_en": "Forest Regional Office 6 (Udon Thani)",
+            "slug": "r6"
+        },
+        {
+            "code": "FRO-7",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 7 (ขอนแก่น)",
+            "name_en": "Forest Regional Office 7 (Khon Kaen)",
+            "slug": "r7"
+        },
+        {
+            "code": "FRO-8",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 8 (นครราชสีมา)",
+            "name_en": "Forest Regional Office 8 (Nakhon Ratchasima)",
+            "slug": "r8"
+        },
+        {
+            "code": "FRO-9",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 9 (ชลบุรี)",
+            "name_en": "Forest Regional Office 9 (Chonburi)",
+            "slug": "r9"
+        }
+    ]
+}
