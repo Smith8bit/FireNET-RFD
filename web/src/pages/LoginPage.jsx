@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useAuthStore } from '../functions/useAuthStore'
 import Toast from '../components/toast'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
 
 export default function LoginPage() {
+
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState({ message: '', type: 'success' })
 
+  const login = useAuthStore((s) => s.login)
   const navigate = useNavigate()
   const location = useLocation()
   const from = location.state?.from?.pathname || '/map'
@@ -24,16 +27,7 @@ export default function LoginPage() {
     const body = new URLSearchParams({ username: identifier, password })
 
     try {
-      const res = await fetch(`${API_URL}/auth/cookie/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-        credentials: 'include',
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data?.detail || 'login failed')
-      }
+      await login(identifier,password)
       showToast('เข้าสู่ระบบสำเร็จ')
       setTimeout(() => navigate(from, { replace: true }), 800)
     } catch (err) {
@@ -73,7 +67,7 @@ export default function LoginPage() {
               onChange={(e) => setIdentifier(e.target.value)}
               required
               autoFocus
-              autocomplete="off"
+              autoComplete="off"
               placeholder="username หรือ email@example.com"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-forest-500 outline-none"
             />
@@ -100,7 +94,7 @@ export default function LoginPage() {
             type="submit"
             disabled={loading}
             aria-busy={loading || undefined}
-            className="w-full bg-forest-500 hover:bg-forest-600 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 min-h-[44px]"
+            className="w-full bg-forest-500 hover:bg-forest-600 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50 min-h-11"
           >
             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>
