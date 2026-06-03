@@ -8,7 +8,7 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
 from ..config import get_settings
 from .db import async_session_maker
-from .models import Region, User
+from .models import Region, User, UserRegion
 from .schemas import UserCreate
 from ..db_control.users import UserManager
 
@@ -47,6 +47,36 @@ async def seed_regions(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def seed_provinces(session: AsyncSession) -> None:
+    existing = (
+        await session.execute(select(Region).where(Region.level == "province").limit(1))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    nat = data["national"]
+
+    regional_rows = (
+        await session.execute(select(Region).where(Region.level == "regional"))
+    ).scalars().all()
+    regional_slug_to_id = {ro.path.split(".")[-1]: ro.id for ro in regional_rows}
+
+    for pv in data["province"]:
+        parent_id = regional_slug_to_id.get(pv["parent_slug"])
+        session.add(
+            Region(
+                code=pv["code"],
+                name_th=pv["name_th"],
+                name_en=pv["name_en"],
+                level="province",
+                path=f"{nat['slug']}.{pv['parent_slug']}.{pv['slug']}",
+                parent_id=parent_id,
+            )
+        )
+    await session.commit()
+
+
 async def seed_superuser() -> None:
     settings = get_settings()
     async with async_session_maker() as session:
@@ -67,7 +97,54 @@ async def seed_superuser() -> None:
             pass
 
 
+_REGIONAL_TEST_USERS = [
+    {"email": "regional1@forest.com", "password": "1234", "region_code": "FRO-1"},
+    {"email": "regional2@forest.com", "password": "1234", "region_code": "FRO-2"},
+]
+
+
+async def seed_regional_users() -> None:
+    async with async_session_maker() as session:
+        user_db = SQLAlchemyUserDatabase(session, User)
+        manager = UserManager(user_db)
+        for spec in _REGIONAL_TEST_USERS:
+            try:
+                user = await manager.create(
+                    UserCreate(
+                        email=spec["email"],
+                        password=spec["password"],
+                        is_superuser=False,
+                        is_verified=True,
+                    ),
+                    safe=False,
+                )
+                print(f"[seed] created regional user {spec['email']}")
+            except UserAlreadyExists:
+                result = await session.execute(select(User).where(User.email == spec["email"]))
+                user = result.scalar_one()
+
+            region = (
+                await session.execute(select(Region).where(Region.code == spec["region_code"]))
+            ).scalar_one_or_none()
+            if region is None:
+                print(f"[seed] region {spec['region_code']} not found, skipping assignment")
+                continue
+
+            existing = await session.get(UserRegion, (user.id, region.id))
+            if not existing:
+                session.add(UserRegion(user_id=user.id, region_id=region.id, role="viewer"))
+                await session.commit()
+                print(f"[seed] assigned {spec['email']} → {spec['region_code']}")
+
+
 async def run_all() -> None:
     async with async_session_maker() as session:
         await seed_regions(session)
+        await seed_provinces(session)
     await seed_superuser()
+    await seed_regional_users()
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(run_all())

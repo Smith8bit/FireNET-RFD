@@ -7,58 +7,683 @@
     },
     "regional": [
         {
-            "code": "FRO-1",
+            "code": "FRMO-1",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 1 (เชียงใหม่)",
-            "name_en": "Forest Regional Office 1 (Chiang Mai)",
+            "name_en": "Forest Resource Management Office No.1 (Chiang Mai)",
             "slug": "r1"
         },
         {
-            "code": "FRO-2",
+            "code": "FRMO-1B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 1 สาขาแม่ฮ่องสอน",
+            "name_en": "Forest Resource Management Office No.1 Mae Hong Son Branch",
+            "slug": "r1b"
+        },
+        {
+            "code": "FRMO-2",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 2 (เชียงราย)",
-            "name_en": "Forest Regional Office 2 (Chiang Rai)",
+            "name_en": "Forest Resource Management Office No.2 (Chiang Rai)",
             "slug": "r2"
         },
         {
-            "code": "FRO-3",
+            "code": "FRMO-3",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 3 (ลำปาง)",
-            "name_en": "Forest Regional Office 3 (Lampang)",
+            "name_en": "Forest Resource Management Office No.3 (Lampang)",
             "slug": "r3"
         },
         {
-            "code": "FRO-4",
+            "code": "FRMO-3B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 3 สาขาแพร่",
+            "name_en": "Forest Resource Management Office No.3 Phrae Branch",
+            "slug": "r3b"
+        },
+        {
+            "code": "FRMO-4",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 4 (ตาก)",
-            "name_en": "Forest Regional Office 4 (Tak)",
+            "name_en": "Forest Resource Management Office No.4 (Tak)",
             "slug": "r4"
         },
         {
-            "code": "FRO-5",
+            "code": "FRMO-4B1",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 4 สาขานครสวรรค์",
+            "name_en": "Forest Resource Management Office No.4 Nakhon Sawan Branch",
+            "slug": "r4b1"
+        },
+        {
+            "code": "FRMO-4B2",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 4 สาขาพิษณุโลก",
+            "name_en": "Forest Resource Management Office No.4 Phitsanulok Branch",
+            "slug": "r4b2"
+        },
+        {
+            "code": "FRMO-5",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 5 (สระบุรี)",
-            "name_en": "Forest Regional Office 5 (Saraburi)",
+            "name_en": "Forest Resource Management Office No.5 (Saraburi)",
             "slug": "r5"
         },
         {
-            "code": "FRO-6",
+            "code": "FRMO-6",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 6 (อุดรธานี)",
-            "name_en": "Forest Regional Office 6 (Udon Thani)",
+            "name_en": "Forest Resource Management Office No.6 (Udon Thani)",
             "slug": "r6"
         },
         {
-            "code": "FRO-7",
+            "code": "FRMO-6B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 6 สาขานครพนม",
+            "name_en": "Forest Resource Management Office No.6 Nakhon Phanom Branch",
+            "slug": "r6b"
+        },
+        {
+            "code": "FRMO-7",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 7 (ขอนแก่น)",
-            "name_en": "Forest Regional Office 7 (Khon Kaen)",
+            "name_en": "Forest Resource Management Office No.7 (Khon Kaen)",
             "slug": "r7"
         },
         {
-            "code": "FRO-8",
+            "code": "FRMO-7B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 7 สาขาอุบลราชธานี",
+            "name_en": "Forest Resource Management Office No.7 Ubon Ratchathani Branch",
+            "slug": "r7b"
+        },
+        {
+            "code": "FRMO-8",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 8 (นครราชสีมา)",
-            "name_en": "Forest Regional Office 8 (Nakhon Ratchasima)",
+            "name_en": "Forest Resource Management Office No.8 (Nakhon Ratchasima)",
             "slug": "r8"
         },
         {
-            "code": "FRO-9",
+            "code": "FRMO-9",
             "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 9 (ชลบุรี)",
-            "name_en": "Forest Regional Office 9 (Chonburi)",
+            "name_en": "Forest Resource Management Office No.9 (Chon Buri)",
             "slug": "r9"
+        },
+        {
+            "code": "FRMO-9B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 9 สาขาปราจีนบุรี",
+            "name_en": "Forest Resource Management Office No.9 Prachin Buri Branch",
+            "slug": "r9b"
+        },
+        {
+            "code": "FRMO-10",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 10 (ราชบุรี)",
+            "name_en": "Forest Resource Management Office No.10 (Ratchaburi)",
+            "slug": "r10"
+        },
+        {
+            "code": "FRMO-10B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 10 สาขาเพชรบุรี",
+            "name_en": "Forest Resource Management Office No.10 Phetchaburi Branch",
+            "slug": "r10b"
+        },
+        {
+            "code": "FRMO-11",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 11 (สุราษฎร์ธานี)",
+            "name_en": "Forest Resource Management Office No.11 (Surat Thani)",
+            "slug": "r11"
+        },
+        {
+            "code": "FRMO-12",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 12 (นครศรีธรรมราช)",
+            "name_en": "Forest Resource Management Office No.12 (Nakhon Si Thammarat)",
+            "slug": "r12"
+        },
+        {
+            "code": "FRMO-12B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 12 สาขากระบี่",
+            "name_en": "Forest Resource Management Office No.12 Krabi Branch",
+            "slug": "r12b"
+        },
+        {
+            "code": "FRMO-13",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 13 (สงขลา)",
+            "name_en": "Forest Resource Management Office No.13 (Songkhla)",
+            "slug": "r13"
+        },
+        {
+            "code": "FRMO-13B",
+            "name_th": "สำนักจัดการทรัพยากรป่าไม้ที่ 13 สาขานราธิวาส",
+            "name_en": "Forest Resource Management Office No.13 Narathiwat Branch",
+            "slug": "r13b"
+        }
+    ],
+    "province": [
+        {
+            "code": "p10",
+            "name_th": "กรุงเทพมหานคร",
+            "name_en": "Bangkok",
+            "slug": "p10",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p11",
+            "name_th": "สมุทรปราการ",
+            "name_en": "Samut Prakan",
+            "slug": "p11",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p12",
+            "name_th": "นนทบุรี",
+            "name_en": "Nonthaburi",
+            "slug": "p12",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p13",
+            "name_th": "ปทุมธานี",
+            "name_en": "Pathum Thani",
+            "slug": "p13",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p14",
+            "name_th": "พระนครศรีอยุธยา",
+            "name_en": "Phra Nakhon Si Ayutthaya",
+            "slug": "p14",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p15",
+            "name_th": "อ่างทอง",
+            "name_en": "Ang Thong",
+            "slug": "p15",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p16",
+            "name_th": "ลพบุรี",
+            "name_en": "Lopburi",
+            "slug": "p16",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p17",
+            "name_th": "สิงห์บุรี",
+            "name_en": "Sing Buri",
+            "slug": "p17",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p18",
+            "name_th": "ชัยนาท",
+            "name_en": "Chai Nat",
+            "slug": "p18",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p19",
+            "name_th": "สระบุรี",
+            "name_en": "Saraburi",
+            "slug": "p19",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p20",
+            "name_th": "ชลบุรี",
+            "name_en": "Chon Buri",
+            "slug": "p20",
+            "parent_slug": "r9"
+        },
+        {
+            "code": "p21",
+            "name_th": "ระยอง",
+            "name_en": "Rayong",
+            "slug": "p21",
+            "parent_slug": "r9"
+        },
+        {
+            "code": "p22",
+            "name_th": "จันทบุรี",
+            "name_en": "Chanthaburi",
+            "slug": "p22",
+            "parent_slug": "r9"
+        },
+        {
+            "code": "p23",
+            "name_th": "ตราด",
+            "name_en": "Trat",
+            "slug": "p23",
+            "parent_slug": "r9"
+        },
+        {
+            "code": "p24",
+            "name_th": "ฉะเชิงเทรา",
+            "name_en": "Chachoengsao",
+            "slug": "p24",
+            "parent_slug": "r9"
+        },
+        {
+            "code": "p25",
+            "name_th": "ปราจีนบุรี",
+            "name_en": "Prachin Buri",
+            "slug": "p25",
+            "parent_slug": "r9b"
+        },
+        {
+            "code": "p26",
+            "name_th": "นครนายก",
+            "name_en": "Nakhon Nayok",
+            "slug": "p26",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p27",
+            "name_th": "สระแก้ว",
+            "name_en": "Sa Kaeo",
+            "slug": "p27",
+            "parent_slug": "r9b"
+        },
+        {
+            "code": "p30",
+            "name_th": "นครราชสีมา",
+            "name_en": "Nakhon Ratchasima",
+            "slug": "p30",
+            "parent_slug": "r8"
+        },
+        {
+            "code": "p31",
+            "name_th": "บุรีรัมย์",
+            "name_en": "Buriram",
+            "slug": "p31",
+            "parent_slug": "r8"
+        },
+        {
+            "code": "p32",
+            "name_th": "สุรินทร์",
+            "name_en": "Surin",
+            "slug": "p32",
+            "parent_slug": "r8"
+        },
+        {
+            "code": "p33",
+            "name_th": "ศรีสะเกษ",
+            "name_en": "Sisaket",
+            "slug": "p33",
+            "parent_slug": "r8"
+        },
+        {
+            "code": "p34",
+            "name_th": "อุบลราชธานี",
+            "name_en": "Ubon Ratchathani",
+            "slug": "p34",
+            "parent_slug": "r7b"
+        },
+        {
+            "code": "p35",
+            "name_th": "ยโสธร",
+            "name_en": "Yasothon",
+            "slug": "p35",
+            "parent_slug": "r7b"
+        },
+        {
+            "code": "p36",
+            "name_th": "ชัยภูมิ",
+            "name_en": "Chaiyaphum",
+            "slug": "p36",
+            "parent_slug": "r8"
+        },
+        {
+            "code": "p37",
+            "name_th": "อำนาจเจริญ",
+            "name_en": "Amnat Charoen",
+            "slug": "p37",
+            "parent_slug": "r7b"
+        },
+        {
+            "code": "p38",
+            "name_th": "บึงกาฬ",
+            "name_en": "Bueng Kan",
+            "slug": "p38",
+            "parent_slug": "r6"
+        },
+        {
+            "code": "p39",
+            "name_th": "หนองบัวลำภู",
+            "name_en": "Nong Bua Lam Phu",
+            "slug": "p39",
+            "parent_slug": "r6"
+        },
+        {
+            "code": "p40",
+            "name_th": "ขอนแก่น",
+            "name_en": "Khon Kaen",
+            "slug": "p40",
+            "parent_slug": "r7"
+        },
+        {
+            "code": "p41",
+            "name_th": "อุดรธานี",
+            "name_en": "Udon Thani",
+            "slug": "p41",
+            "parent_slug": "r6"
+        },
+        {
+            "code": "p42",
+            "name_th": "เลย",
+            "name_en": "Loei",
+            "slug": "p42",
+            "parent_slug": "r6"
+        },
+        {
+            "code": "p43",
+            "name_th": "หนองคาย",
+            "name_en": "Nong Khai",
+            "slug": "p43",
+            "parent_slug": "r6"
+        },
+        {
+            "code": "p44",
+            "name_th": "มหาสารคาม",
+            "name_en": "Maha Sarakham",
+            "slug": "p44",
+            "parent_slug": "r7"
+        },
+        {
+            "code": "p45",
+            "name_th": "ร้อยเอ็ด",
+            "name_en": "Roi Et",
+            "slug": "p45",
+            "parent_slug": "r7"
+        },
+        {
+            "code": "p46",
+            "name_th": "กาฬสินธุ์",
+            "name_en": "Kalasin",
+            "slug": "p46",
+            "parent_slug": "r7"
+        },
+        {
+            "code": "p47",
+            "name_th": "สกลนคร",
+            "name_en": "Sakon Nakhon",
+            "slug": "p47",
+            "parent_slug": "r6b"
+        },
+        {
+            "code": "p48",
+            "name_th": "นครพนม",
+            "name_en": "Nakhon Phanom",
+            "slug": "p48",
+            "parent_slug": "r6b"
+        },
+        {
+            "code": "p49",
+            "name_th": "มุกดาหาร",
+            "name_en": "Mukdahan",
+            "slug": "p49",
+            "parent_slug": "r6b"
+        },
+        {
+            "code": "p50",
+            "name_th": "เชียงใหม่",
+            "name_en": "Chiang Mai",
+            "slug": "p50",
+            "parent_slug": "r1"
+        },
+        {
+            "code": "p51",
+            "name_th": "ลำพูน",
+            "name_en": "Lamphun",
+            "slug": "p51",
+            "parent_slug": "r1"
+        },
+        {
+            "code": "p52",
+            "name_th": "ลำปาง",
+            "name_en": "Lampang",
+            "slug": "p52",
+            "parent_slug": "r3"
+        },
+        {
+            "code": "p53",
+            "name_th": "อุตรดิตถ์",
+            "name_en": "Uttaradit",
+            "slug": "p53",
+            "parent_slug": "r3"
+        },
+        {
+            "code": "p54",
+            "name_th": "แพร่",
+            "name_en": "Phrae",
+            "slug": "p54",
+            "parent_slug": "r3b"
+        },
+        {
+            "code": "p55",
+            "name_th": "น่าน",
+            "name_en": "Nan",
+            "slug": "p55",
+            "parent_slug": "r2"
+        },
+        {
+            "code": "p56",
+            "name_th": "พะเยา",
+            "name_en": "Phayao",
+            "slug": "p56",
+            "parent_slug": "r2"
+        },
+        {
+            "code": "p57",
+            "name_th": "เชียงราย",
+            "name_en": "Chiang Rai",
+            "slug": "p57",
+            "parent_slug": "r2"
+        },
+        {
+            "code": "p58",
+            "name_th": "แม่ฮ่องสอน",
+            "name_en": "Mae Hong Son",
+            "slug": "p58",
+            "parent_slug": "r1b"
+        },
+        {
+            "code": "p60",
+            "name_th": "นครสวรรค์",
+            "name_en": "Nakhon Sawan",
+            "slug": "p60",
+            "parent_slug": "r4b1"
+        },
+        {
+            "code": "p61",
+            "name_th": "อุทัยธานี",
+            "name_en": "Uthai Thani",
+            "slug": "p61",
+            "parent_slug": "r4"
+        },
+        {
+            "code": "p62",
+            "name_th": "กำแพงเพชร",
+            "name_en": "Kamphaeng Phet",
+            "slug": "p62",
+            "parent_slug": "r4"
+        },
+        {
+            "code": "p63",
+            "name_th": "ตาก",
+            "name_en": "Tak",
+            "slug": "p63",
+            "parent_slug": "r4"
+        },
+        {
+            "code": "p64",
+            "name_th": "สุโขทัย",
+            "name_en": "Sukhothai",
+            "slug": "p64",
+            "parent_slug": "r4"
+        },
+        {
+            "code": "p65",
+            "name_th": "พิษณุโลก",
+            "name_en": "Phitsanulok",
+            "slug": "p65",
+            "parent_slug": "r4b2"
+        },
+        {
+            "code": "p66",
+            "name_th": "พิจิตร",
+            "name_en": "Phichit",
+            "slug": "p66",
+            "parent_slug": "r4b2"
+        },
+        {
+            "code": "p67",
+            "name_th": "เพชรบูรณ์",
+            "name_en": "Phetchabun",
+            "slug": "p67",
+            "parent_slug": "r4"
+        },
+        {
+            "code": "p70",
+            "name_th": "ราชบุรี",
+            "name_en": "Ratchaburi",
+            "slug": "p70",
+            "parent_slug": "r10"
+        },
+        {
+            "code": "p71",
+            "name_th": "กาญจนบุรี",
+            "name_en": "Kanchanaburi",
+            "slug": "p71",
+            "parent_slug": "r10"
+        },
+        {
+            "code": "p72",
+            "name_th": "สุพรรณบุรี",
+            "name_en": "Suphan Buri",
+            "slug": "p72",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p73",
+            "name_th": "นครปฐม",
+            "name_en": "Nakhon Pathom",
+            "slug": "p73",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p74",
+            "name_th": "สมุทรสาคร",
+            "name_en": "Samut Sakhon",
+            "slug": "p74",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p75",
+            "name_th": "สมุทรสงคราม",
+            "name_en": "Samut Songkhram",
+            "slug": "p75",
+            "parent_slug": "r5"
+        },
+        {
+            "code": "p76",
+            "name_th": "เพชรบุรี",
+            "name_en": "Phetchaburi",
+            "slug": "p76",
+            "parent_slug": "r10b"
+        },
+        {
+            "code": "p77",
+            "name_th": "ประจวบคีรีขันธ์",
+            "name_en": "Prachuap Khiri Khan",
+            "slug": "p77",
+            "parent_slug": "r10b"
+        },
+        {
+            "code": "p80",
+            "name_th": "นครศรีธรรมราช",
+            "name_en": "Nakhon Si Thammarat",
+            "slug": "p80",
+            "parent_slug": "r12"
+        },
+        {
+            "code": "p81",
+            "name_th": "กระบี่",
+            "name_en": "Krabi",
+            "slug": "p81",
+            "parent_slug": "r12b"
+        },
+        {
+            "code": "p82",
+            "name_th": "พังงา",
+            "name_en": "Phang Nga",
+            "slug": "p82",
+            "parent_slug": "r11"
+        },
+        {
+            "code": "p83",
+            "name_th": "ภูเก็ต",
+            "name_en": "Phuket",
+            "slug": "p83",
+            "parent_slug": "r11"
+        },
+        {
+            "code": "p84",
+            "name_th": "สุราษฎร์ธานี",
+            "name_en": "Surat Thani",
+            "slug": "p84",
+            "parent_slug": "r11"
+        },
+        {
+            "code": "p85",
+            "name_th": "ระนอง",
+            "name_en": "Ranong",
+            "slug": "p85",
+            "parent_slug": "r11"
+        },
+        {
+            "code": "p86",
+            "name_th": "ชุมพร",
+            "name_en": "Chumphon",
+            "slug": "p86",
+            "parent_slug": "r11"
+        },
+        {
+            "code": "p90",
+            "name_th": "สงขลา",
+            "name_en": "Songkhla",
+            "slug": "p90",
+            "parent_slug": "r13"
+        },
+        {
+            "code": "p91",
+            "name_th": "สตูล",
+            "name_en": "Satun",
+            "slug": "p91",
+            "parent_slug": "r12b"
+        },
+        {
+            "code": "p92",
+            "name_th": "ตรัง",
+            "name_en": "Trang",
+            "slug": "p92",
+            "parent_slug": "r12"
+        },
+        {
+            "code": "p93",
+            "name_th": "พัทลุง",
+            "name_en": "Phatthalung",
+            "slug": "p93",
+            "parent_slug": "r12"
+        },
+        {
+            "code": "p94",
+            "name_th": "ปัตตานี",
+            "name_en": "Pattani",
+            "slug": "p94",
+            "parent_slug": "r13"
+        },
+        {
+            "code": "p95",
+            "name_th": "ยะลา",
+            "name_en": "Yala",
+            "slug": "p95",
+            "parent_slug": "r13"
+        },
+        {
+            "code": "p96",
+            "name_th": "นราธิวาส",
+            "name_en": "Narathiwat",
+            "slug": "p96",
+            "parent_slug": "r13b"
         }
     ]
 }

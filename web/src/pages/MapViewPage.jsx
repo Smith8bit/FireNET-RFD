@@ -35,11 +35,11 @@ export default function MapViewPage() {
           className="w-1/4 h-full bg-gray-200 p-2 overflow-hidden flex flex-col"
           id="map-controller"
         >
-          <div id="layers">
+          <div id="layers" className="flex justify-center gap-2 m-1">
             {Object.keys(LAYERS).map((key) => (
               <button
                 key={key}
-                className="px-4 py-2 bg-blue-500 text-white rounded"
+                className="flex-1 px-4 py-2 bg-blue-500 text-white rounded"
                 onClick={() => setSelectedLayer(LAYERS[key])}
               >
                 {key}

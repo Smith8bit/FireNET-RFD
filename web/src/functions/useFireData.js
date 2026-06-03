@@ -1,7 +1,5 @@
 import { useMemo } from 'react'
 import { useSocketStore } from './stateStore'
-import staticData from '../components/markers/mockupData.json'
-// import staticData from '../components/markers/blank.json'
 
 function normalize(raw) {
   return raw.map((f, i) => ({
@@ -18,7 +16,7 @@ function normalize(raw) {
 
 export function useFireData() {
   const live = useSocketStore((s) => s.lastMessage)
-  const source = Array.isArray(live?.fires) ? live.fires : staticData
+  const source = Array.isArray(live?.fires) ? live.fires : []
   return useMemo(() => normalize(source), [source])
 }
 
