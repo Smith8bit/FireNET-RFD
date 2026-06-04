@@ -98,8 +98,8 @@ async def seed_superuser() -> None:
 
 
 _REGIONAL_TEST_USERS = [
-    {"email": "regional1@forest.com", "password": "1234", "region_code": "FRO-1"},
-    {"email": "regional2@forest.com", "password": "1234", "region_code": "FRO-2"},
+    {"email": "FRMO1@forest.com", "password": "1234", "region_code": "FRMO-1"},
+    {"email": "FRMO2@forest.com", "password": "1234", "region_code": "FRMO-2"},
 ]
 
 
@@ -137,12 +137,49 @@ async def seed_regional_users() -> None:
                 print(f"[seed] assigned {spec['email']} → {spec['region_code']}")
 
 
+async def seed_province_users() -> None:
+    async with async_session_maker() as session:
+        user_db = SQLAlchemyUserDatabase(session, User)
+        manager = UserManager(user_db)
+
+        province_regions = (
+            await session.execute(select(Region).where(Region.level == "province"))
+        ).scalars().all()
+
+        for region in province_regions:
+            username = region.name_en.lower().replace(" ", "_")
+            email = f"{username}@province.com"
+            password = region.name_en
+
+            try:
+                user = await manager.create(
+                    UserCreate(
+                        email=email,
+                        password=password,
+                        is_superuser=False,
+                        is_verified=True,
+                    ),
+                    safe=False,
+                )
+                print(f"[seed] created province user {email}")
+            except UserAlreadyExists:
+                result = await session.execute(select(User).where(User.email == email))
+                user = result.scalar_one()
+
+            existing = await session.get(UserRegion, (user.id, region.id))
+            if not existing:
+                session.add(UserRegion(user_id=user.id, region_id=region.id, role="viewer"))
+                await session.commit()
+                print(f"[seed] assigned {email} → {region.code}")
+
+
 async def run_all() -> None:
     async with async_session_maker() as session:
         await seed_regions(session)
         await seed_provinces(session)
     await seed_superuser()
     await seed_regional_users()
+    await seed_province_users()
 
 
 if __name__ == "__main__":

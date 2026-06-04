@@ -2,15 +2,15 @@ import { useMemo } from 'react'
 import { useSocketStore } from './stateStore'
 
 function normalize(raw) {
-  return raw.map((f, i) => ({
-    id: `${f.DATE ?? ''}-${f.TIME ?? ''}-${f.LATITUDE}-${f.LONGITUDE}-${i}`,
-    lat: f.LATITUDE,
-    lng: f.LONGITUDE,
-    title: f.TUMBOON,
-    type: f.NAME,
-    date: f.DATE,
-    time: f.TIME,
-    raw: f,
+  return raw.map((f) => ({
+    id: f.id,
+    lat: f.lat,
+    lng: f.lng,
+    title: f.tumbon,
+    type: f.name,
+    date: f.date,
+    time: f.time,
+    raw: f.raw,
   }))
 }
 
@@ -24,9 +24,9 @@ export function firePopupHtml(f) {
   return `
     <div>
       <h3>${f.date ?? ''}</h3>
-      <p>ตำบล: ${f.raw.TUMBOON ?? ''}</p>
-      <p>อำเภอ: ${f.raw.AUMPER ?? ''}</p>
-      <p>จังหวัด: ${f.raw.PROVINCE ?? ''}</p>
+      <p>ตำบล: ${f.raw?.TUMBON ?? ''}</p>
+      <p>อำเภอ: ${f.raw?.AUMPER ?? ''}</p>
+      <p>จังหวัด: ${f.raw?.PROVINCE ?? ''}</p>
       <p>Lat/Lan: ${f.lat}/${f.lng}</p>
     </div>
   `

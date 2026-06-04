@@ -9,6 +9,7 @@ from .auth.authen import auth_backend, fastapi_users
 from .config import get_settings
 from .database import Base, async_session_maker, engine
 from .database.models import User
+from .db_control.fires import list_fires_for
 from .db_control.permission import fire_visible
 from .router.firemap import router as fires_router
 from .router.regions import router as regions_router
@@ -59,6 +60,9 @@ class ConnectionManager:
     async def connect(self, ws: WebSocket, user: User) -> None:
         await ws.accept()
         self.active.append((ws, user))
+        async with async_session_maker() as session:
+            fires = await list_fires_for(user, session)
+            await ws.send_json({"fires": fires})
 
     def disconnect(self, ws: WebSocket) -> None:
         self.active = [(s, u) for (s, u) in self.active if s is not ws]
