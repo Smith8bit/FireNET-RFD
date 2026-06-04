@@ -1,25 +1,18 @@
 import asyncio
 import json
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
-from sqlalchemy import insert, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 
 from ..database import async_session_maker
-from ..database.models import User
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
 from .firefetch import fetch_live_fires
-from .permission import filter_fires, user_region_paths
 
-
-_CACHE_TTL = 3600  # 1 hour
-_cache: list[dict] = []
-_cache_ts: float = 0.0
 
 _REGIONS_PATH = Path(__file__).resolve().parents[1] / "database" / "seedbag" / "regions_info.json"
 
@@ -85,9 +78,14 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
 
             date_str = str(fire.get("date", ""))
             time_str = str(fire.get("time", "0000")).zfill(4)
-            try:
-                detected_at = datetime.strptime(date_str + time_str, "%y%m%d%H%M").replace(tzinfo=timezone.utc)
-            except ValueError:
+            detected_at = None
+            for fmt in ("%Y-%m-%d%H%M", "%y%m%d%H%M"):
+                try:
+                    detected_at = datetime.strptime(date_str + time_str, fmt).replace(tzinfo=timezone.utc)
+                    break
+                except ValueError:
+                    continue
+            if detected_at is None:
                 continue
 
             rows.append(
@@ -107,19 +105,7 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             await session.commit()
 
 
-async def get_fire_db(
-    user: User | None = None,
-    session: AsyncSession | None = None,
-) -> list[dict]:
-    global _cache, _cache_ts
-    now = time.monotonic()
-    if not (_cache and now - _cache_ts < _CACHE_TTL):
-        raw = await asyncio.to_thread(fetch_live_fires)
-        fires = _parse_fires(raw)
-        _cache = fires
-        _cache_ts = now
-        await _store_fires_to_db(fires)
-    if user is None or session is None:
-        return _cache
-    paths = await user_region_paths(user, session)
-    return filter_fires(paths, _cache, user.is_superuser)
+async def fetch_and_store() -> None:
+    raw = await asyncio.to_thread(fetch_live_fires)
+    fires = _parse_fires(raw)
+    await _store_fires_to_db(fires)

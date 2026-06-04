@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:17-alpine
+    image: postgis/postgis:17-3.4-alpine
     container_name: tfms-postgres
     environment:
       POSTGRES_USER: tfms
