@@ -97,17 +97,21 @@ async def seed_superuser() -> None:
             pass
 
 
-_REGIONAL_TEST_USERS = [
-    {"email": "FRMO1@forest.com", "password": "1234", "region_code": "FRMO-1"},
-    {"email": "FRMO2@forest.com", "password": "1234", "region_code": "FRMO-2"},
-]
-
-
 async def seed_regional_users() -> None:
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    regional_specs = [
+        {
+            "email": f"{ro['code'].replace('-', '')}@forest.com",
+            "password": "1234",
+            "region_code": ro["code"],
+        }
+        for ro in data["regional"]
+    ]
+
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
-        for spec in _REGIONAL_TEST_USERS:
+        for spec in regional_specs:
             try:
                 user = await manager.create(
                     UserCreate(
