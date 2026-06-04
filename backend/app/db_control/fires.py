@@ -1,11 +1,18 @@
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..database import async_session_maker
 from ..database.models import User
+from ..database.models.firespot import Firespot
+from ..database.models.region import Region
 from .firefetch import fetch_live_fires
 from .permission import filter_fires, user_region_paths
 
@@ -14,7 +21,6 @@ _CACHE_TTL = 3600  # 1 hour
 _cache: list[dict] = []
 _cache_ts: float = 0.0
 
-_FALLBACK_PATH = Path(__file__).resolve().parent / "firedata.json"
 _REGIONS_PATH = Path(__file__).resolve().parents[1] / "database" / "seedbag" / "regions_info.json"
 
 
@@ -36,8 +42,6 @@ _PROVINCE_PATH: dict[str, str] = _build_province_path_map()
 
 
 def _path_for(feature: dict) -> str:
-    """Return the DB-compatible ltree path for a fire record.
-    Looks up the province Thai name to get the same path used in the regions table."""
     province_th = (feature.get("PROVINCE") or "").strip()
     return _PROVINCE_PATH.get(province_th, "th")
 
@@ -64,33 +68,58 @@ def _parse_fires(raw: list[dict]) -> list[dict]:
     return out
 
 
-def _load_fallback() -> list[dict]:
-    if not _FALLBACK_PATH.exists():
-        return []
-    data = json.loads(_FALLBACK_PATH.read_text(encoding="utf-8"))
-    raw = data.get("hotspot", []) if isinstance(data, dict) else data
-    return _parse_fires(raw)
+async def _store_fires_to_db(fires: list[dict]) -> None:
+    async with async_session_maker() as session:
+        result = await session.execute(select(Region.path, Region.id))
+        path_to_id = {row.path: row.id for row in result}
+
+        rows: list[dict] = []
+        for fire in fires:
+            region_id = path_to_id.get(fire["path"])
+            if region_id is None:
+                continue
+
+            lat, lng = fire.get("lat"), fire.get("lng")
+            if lat is None or lng is None:
+                continue
+
+            date_str = str(fire.get("date", ""))
+            time_str = str(fire.get("time", "0000")).zfill(4)
+            try:
+                detected_at = datetime.strptime(date_str + time_str, "%y%m%d%H%M").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+
+            rows.append(
+                {
+                    "external_id": fire["id"],
+                    "region_id": region_id,
+                    "detected_at": detected_at,
+                    "location": from_shape(Point(float(lng), float(lat)), srid=4326),
+                    "status": False,
+                    "resolve_time": None,
+                }
+            )
+
+        if rows:
+            stmt = insert(Firespot).values(rows).on_conflict_do_nothing(index_elements=["external_id"])
+            await session.execute(stmt)
+            await session.commit()
 
 
-async def get_fires() -> list[dict]:
+async def get_fire_db(
+    user: User | None = None,
+    session: AsyncSession | None = None,
+) -> list[dict]:
     global _cache, _cache_ts
     now = time.monotonic()
-    if _cache and now - _cache_ts < _CACHE_TTL:
-        return _cache
-    try:
+    if not (_cache and now - _cache_ts < _CACHE_TTL):
         raw = await asyncio.to_thread(fetch_live_fires)
         fires = _parse_fires(raw)
         _cache = fires
         _cache_ts = now
-        return fires
-    except Exception as exc:
-        print(f"[fires] live fetch failed: {exc}; falling back to firedata.json")
-        if not _cache:
-            _cache = _load_fallback()
+        await _store_fires_to_db(fires)
+    if user is None or session is None:
         return _cache
-
-
-async def list_fires_for(user: User, session: AsyncSession) -> list[dict]:
     paths = await user_region_paths(user, session)
-    fires = await get_fires()
-    return filter_fires(paths, fires, user.is_superuser)
+    return filter_fires(paths, _cache, user.is_superuser)

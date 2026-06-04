@@ -3,7 +3,7 @@ from datetime import datetime
 
 from geoalchemy2 import Geography
 from geoalchemy2.elements import WKBElement
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +14,7 @@ class Firespot(Base):
     __tablename__ = "firespots"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     region_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("regions.id", ondelete="RESTRICT"), nullable=False)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     location: Mapped[WKBElement] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=False)
@@ -26,6 +27,7 @@ class Firespot(Base):
             "(status = TRUE  AND resolve_time IS NOT NULL)",
             name="firespots_status_resolve_consistent",
         ),
+        UniqueConstraint("external_id", name="uq_firespots_external_id"),
         Index("ix_firespots_region_id", "region_id"),
         Index("ix_firespots_detected_at", "detected_at"),
         Index("ix_firespots_location_gist", "location", postgresql_using="gist"),

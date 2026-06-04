@@ -6,5 +6,6 @@ fastapi-users[sqlalchemy]
 pydantic-settings
 # python-multipart   # required by OAuth2PasswordRequestForm
 geoalchemy2
+shapely
 psycopg2-binary
 requests
