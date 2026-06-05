@@ -9,9 +9,8 @@ from .auth.authen import auth_backend, fastapi_users
 from .config import get_settings
 from .database import Base, async_session_maker, engine
 from .database.models import User
-from .db_control.fires import get_fire_db
+from .db_control.fires import get_fires, update_fires
 from .db_control.permission import fire_visible
-from .router.firemap import router as fires_router
 from .router.regions import router as regions_router
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
@@ -26,7 +25,8 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS ltree"))
         await conn.run_sync(Base.metadata.create_all)
     await run_seed()
-    await get_fire_db()
+    await update_fires()
+    # await get_fire_db()
     yield
 
 
@@ -51,8 +51,6 @@ app.include_router(
     tags=["users"],
 )
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
-app.include_router(fires_router, prefix="/fires", tags=["fires"])
-
 
 class ConnectionManager:
     def __init__(self) -> None:
@@ -61,9 +59,8 @@ class ConnectionManager:
     async def connect(self, ws: WebSocket, user: User) -> None:
         await ws.accept()
         self.active.append((ws, user))
-        async with async_session_maker() as session:
-            fires = await get_fire_db(user, session)
-            await ws.send_json({"fires": fires})
+        fires = await get_fires(user=user)
+        await ws.send_json({"fires": fires})
 
     def disconnect(self, ws: WebSocket) -> None:
         self.active = [(s, u) for (s, u) in self.active if s is not ws]

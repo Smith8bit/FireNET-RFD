@@ -1,11 +1,8 @@
 fastapi[standard]
-uvicorn
 fastapi-users[sqlalchemy]
-# aiosqlite
-# sqlalchemy>=2.0
+asyncpg
 pydantic-settings
-# python-multipart   # required by OAuth2PasswordRequestForm
 geoalchemy2
 shapely
-psycopg2-binary
 requests
+apscheduler

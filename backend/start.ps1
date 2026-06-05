@@ -23,4 +23,4 @@ if (-not $running) {
 }
 
 .\venv\Scripts\Activate.ps1
-fastapi dev
+python -m fastapi dev
