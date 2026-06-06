@@ -1,9 +1,10 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def fetch_live_fires() -> list[dict]:
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now()- timedelta(days=2)
+    today = today.strftime("%Y-%m-%d")
     url = (
         "https://wildfire.forest.go.th/firemap/getdb.php"
         f"?snpp=on&nighttime=on&daytime=on"

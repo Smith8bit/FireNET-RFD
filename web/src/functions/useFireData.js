@@ -4,13 +4,15 @@ import { useSocketStore } from './stateStore'
 function normalize(raw) {
   return raw.map((f) => ({
     id: f.id,
+    name: f.name,
+    date: f.detected_at?.split('T')[0] ?? '',
+    time: f.detected_at?.split('T')[1]?.split('+')[0]?.slice(0, 5) ?? '',
+    type: f.type,
     lat: f.lat,
     lng: f.lng,
-    title: f.tumbon,
-    type: f.name,
-    date: f.date,
-    time: f.time,
-    raw: f.raw,
+    tumboon: f.tumboon,
+    aumper: f.aumper,
+    province: f.province
   }))
 }
 

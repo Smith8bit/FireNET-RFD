@@ -65,13 +65,13 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     continue
             if detected_at is None:
                 continue
-            tumboon = fire.get("TUMBOON", "")
+            tumboon = fire.get("TUMBON", "")
             tumboon_count[tumboon] += 1
-            name = f"{tumboon}#{tumboon_count[tumboon]}"
+            name = f"{tumboon} #{tumboon_count[tumboon]}"
             rows.append(
                 {
                     "name": name,
-                    "detail": {k: fire[k] for k in ("SATELLITE", "TUMBOON", "AUMPER", "PROVINCE", "TYPE", "NAME", "FOREST", "OWN") if k in fire},
+                    "detail": {k: fire[k] for k in ("SATELLITE", "TUMBON", "AUMPER", "PROVINCE", "TYPE", "NAME", "FOREST", "OWN") if k in fire},
                     "external_id": f"{fire.get('YYMMDD','')}-{fire.get('TIME','')}-{fire.get('LAT','')}-{fire.get('LONG','')}",
                     "region_id": region_id,
                     "detected_at": detected_at,
@@ -80,7 +80,6 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     "resolve_time": None,
                 }
             )
-
         if not rows:
             return
         stmt = (
@@ -115,6 +114,8 @@ async def get_fires(
         stmt = select(
             Firespot.id,
             Firespot.external_id,
+            Firespot.name,
+            Firespot.detail,
             Firespot.detected_at,
             Firespot.status,
             Firespot.resolve_time,
@@ -145,12 +146,15 @@ async def get_fires(
             pt = to_shape(row.location)
             result.append({
                 "id": str(row.id),
-                "external_id": row.external_id,
+                "name": row.name,
                 "detected_at": row.detected_at.isoformat(),
                 "status": row.status,
-                "resolve_time": row.resolve_time.isoformat() if row.resolve_time else None,
                 "lat": pt.y,
                 "lng": pt.x,
-                "path": row.region_path,
+                "tumboon": row.detail.get("TUMBON") if hasattr(row, "detail") else None,
+                "aumper": row.detail.get("AUMPER") if hasattr(row, "detail") else None,
+                "province": row.detail.get("PROVINCE") if hasattr(row, "detail") else None,
+                "type": row.detail.get("NAME") if hasattr(row, "detail") else None,
+
             })
         return result

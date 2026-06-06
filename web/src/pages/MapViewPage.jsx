@@ -35,7 +35,7 @@ export default function MapViewPage() {
           className="w-1/4 h-full bg-background pb-2 overflow-hidden flex flex-col"
           id="map-controller"
         >
-          <div id="layers" className="flex justify-center h-1/12 divide-x-2 divide-gray-300 ">
+          <div id="layers" className="flex justify-center min-h-1/12 divide-x-2 divide-gray-300 ">
             {Object.keys(LAYERS).map((key) => (
               <button
                 key={key}
@@ -48,14 +48,14 @@ export default function MapViewPage() {
           </div>
           <div
             id="controller"
-            className="p-2 h-fit overflow-y-scroll no-scrollbar cursor-pointer"
+            className=" overflow-y-scroll no-scrollbar cursor-pointer"
           >
             {fires.map((f) => (
               <Card
                 key={f.id}
                 id={f.id}
-                Title={f.title}
-                Type={f.type}
+                Title={f.name}
+                Area={f.type}
                 Date={f.date}
                 Time={f.time}
               />
@@ -63,7 +63,7 @@ export default function MapViewPage() {
           </div>
         </div>
       ) : (
-        <div className="w-1/4 h-full bg-secondary p-2 overflow-hidden flex flex-col">
+        <div className="w-1/4 h-full bg-background pb-2 overflow-hidden flex flex-col">
           <button
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-forest-700 transition-colors"
             onClick={clearSelection}
