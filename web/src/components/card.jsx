@@ -13,7 +13,7 @@ export default function Card({ Title, Area, Date, Time, id }) {
         >
             <p className="text-black text-xl font-bold mb-2">{Title}</p>
             <p className="text-gray-700 text-base mb-1">ชนิดพื้นที่: {Area}</p>
-            <p className="text-gray-700 text-base mb-1">{Date} - {Time}</p>
+            <p className="text-gray-700 text-base mb-1">เวลาที่ตรวจพบ: {Date} - {Time}</p>
         </div>
     )
 }
