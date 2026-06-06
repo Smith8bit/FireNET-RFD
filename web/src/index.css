@@ -75,11 +75,12 @@
   --color-default:  #e5e4e7;
 
   --font-sans: 'Sarabun', system-ui, sans-serif;
+  --font-title: 'Kanit', system-ui, sans-serif;
 }
 
-* {
+/* * {
   border-color: hsl(var(--border));
-}
+} */
 
 body {
   margin: 0;

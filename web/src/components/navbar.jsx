@@ -8,7 +8,7 @@ export default function Navbar() {
   const logout = useAuthStore((s) => s.logout)
 
   const links = [
-    { name: 'Map', path: '/map' },
+    { name: 'Map View', path: '/map' },
     { name: 'Dashboard', path: '/dashboard' },
     { name: 'Management', path: '/management' },
   ]
@@ -19,38 +19,38 @@ export default function Navbar() {
   }
 
 return (
-    <nav className="flex items-center text-sm font-medium text-center text-body border-b border-default m-2 mb-0">
-      <img
-        className="h-12 ml-4"
-        src={logo}
-        alt="Royal Forest Department logo"
-      />
-      <p className="flex p-4 border-b-2 border-transparent rounded-t-base text-fg-brand">
-        Thai Fire Management System
-      </p>
-      <ul className="flex flex-wrap -mb-px ml-auto items-center">
+    <nav className="flex justify-between items-center p-2 bg-white font-medium text-md">
+      <div className="flex items-center ml-4 gap-4">
+        <img
+          className="h-12 "
+          src={logo}
+          alt="Royal Forest Department logo"
+        />
+        <p className="text-lg font-semibold text-forest-600 font-title">
+          ระบบรายงานและจัดการไฟป่า
+        </p>
+      </div>
+      <span className="font-light italic bg-primary-foreground border-2 border-gray-300 rounded-full px-4 py-1">
+        {user.email}
+      </span>
+      <ul className="flex gap-2 h-full">
         {links.map((link) => (
-          <li className="me-2" key={link.path}>
+          <li className="h-full " key={link.path}>
             <Link
               to={link.path}
-              className="inline-block p-4 border-b border-transparent rounded-t-base hover:text-fg-brand hover:border-brand"
+              className="h-full flex items-center hover:bg-forest-100 hover:text-forest-700 rounded-full px-3"
             >
               {link.name}
             </Link>
           </li>
         ))}
-        {user && (
-          <li className="me-4 flex items-center gap-3">
-            <span className="text-gray-600 text-xs">{user.email}</span>
-            <button
+        <button
               type="button"
               onClick={handleLogout}
-              className="px-3 py-1.5 bg-forest-500 hover:bg-forest-600 text-white rounded-lg text-sm"
+              className="mx-2 bg-forest-500 text-white border border-forest-500 rounded-full px-4 py-2 hover:bg-forest-600"
             >
-              ออกจากระบบ
-            </button>
-          </li>
-        )}
+            ออกจากระบบ
+        </button>
       </ul>
     </nav>
   )

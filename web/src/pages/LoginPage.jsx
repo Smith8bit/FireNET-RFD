@@ -57,7 +57,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
             <label htmlFor="login-identifier" className="block text-sm font-medium text-gray-700 mb-1">
-              ชื่อผู้ใช้ หรือ อีเมล
+              อีเมล
             </label>
             <input
               id="login-identifier"
@@ -68,7 +68,7 @@ export default function LoginPage() {
               required
               autoFocus
               autoComplete="off"
-              placeholder="username หรือ email@example.com"
+              placeholder="email@example.com"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-forest-500 outline-none"
             />
           </div>

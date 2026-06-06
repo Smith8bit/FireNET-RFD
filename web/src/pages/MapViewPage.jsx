@@ -32,14 +32,14 @@ export default function MapViewPage() {
       </div>
       {!focused ? (
         <div
-          className="w-1/4 h-full bg-secondary p-2 overflow-hidden flex flex-col"
+          className="w-1/4 h-full bg-background pb-2 overflow-hidden flex flex-col"
           id="map-controller"
         >
-          <div id="layers" className="flex justify-center gap-2 m-1">
+          <div id="layers" className="flex justify-center h-1/12 divide-x-2 divide-gray-300 ">
             {Object.keys(LAYERS).map((key) => (
               <button
                 key={key}
-                className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-forest-700 transition-colors"
+                className="flex-1 bg-default"
                 onClick={() => setSelectedLayer(LAYERS[key])}
               >
                 {key}
