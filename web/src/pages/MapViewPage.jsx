@@ -39,7 +39,7 @@ export default function MapViewPage() {
             {Object.keys(LAYERS).map((key) => (
               <button
                 key={key}
-                className="flex-1 bg-default"
+                className={`flex-1 hover:bg-forest-500 hover:text-primary-foreground ${selectedLayer === LAYERS[key] ? 'bg-forest-500 text-primary-foreground' : 'bg-default'}`}
                 onClick={() => setSelectedLayer(LAYERS[key])}
               >
                 {key}
