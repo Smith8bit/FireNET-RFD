@@ -1,3 +1,5 @@
+param([switch]$Fresh)
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
@@ -20,6 +22,14 @@ if (-not $running) {
     }
     if (-not $ready) { Write-Error "Postgres did not become ready in time"; exit 1 }
     Write-Host "Postgres is ready."
+}
+
+# Drop & recreate the database for a clean run: .\start.ps1 -Fresh
+if ($Fresh) {
+    Write-Host "Resetting database (dropping and recreating 'tfms')..."
+    docker exec tfms-postgres psql -U tfms -d postgres -c "DROP DATABASE IF EXISTS tfms WITH (FORCE);"
+    docker exec tfms-postgres psql -U tfms -d postgres -c "CREATE DATABASE tfms OWNER tfms;"
+    Write-Host "Database reset complete. Tables and seed data will be rebuilt on startup."
 }
 
 .\venv\Scripts\Activate.ps1

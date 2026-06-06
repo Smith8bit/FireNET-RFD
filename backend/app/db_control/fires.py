@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections import Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -44,6 +45,7 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
         path_to_id = {row.path: row.id for row in result}
 
         rows: list[dict] = []
+        tumboon_count: Counter[str] = Counter()
         for fire in fires:
             region_id = path_to_id.get(fire["path"])
             if region_id is None:
@@ -63,8 +65,13 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     continue
             if detected_at is None:
                 continue
+            tumboon = fire.get("TUMBOON", "")
+            tumboon_count[tumboon] += 1
+            name = f"{tumboon}#{tumboon_count[tumboon]}"
             rows.append(
                 {
+                    "name": name,
+                    "detail": {k: fire[k] for k in ("SATELLITE", "TUMBOON", "AUMPER", "PROVINCE", "TYPE", "NAME", "FOREST", "OWN") if k in fire},
                     "external_id": f"{fire.get('YYMMDD','')}-{fire.get('TIME','')}-{fire.get('LAT','')}-{fire.get('LONG','')}",
                     "region_id": region_id,
                     "detected_at": detected_at,

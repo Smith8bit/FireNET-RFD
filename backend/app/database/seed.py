@@ -31,6 +31,7 @@ async def seed_regions(session: AsyncSession) -> None:
         parent_id=None,
     )
     session.add(national)
+    print(f"[seed] added national region {nat['name_en']}")
     await session.flush()
 
     for ro in data["regional"]:
@@ -44,6 +45,7 @@ async def seed_regions(session: AsyncSession) -> None:
                 parent_id=national.id,
             )
         )
+        print(f"[seed] added regional region {ro['name_en']}")
     await session.commit()
 
 
@@ -83,7 +85,7 @@ async def seed_superuser() -> None:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
         try:
-            await manager.create(
+            user = await manager.create(
                 UserCreate(
                     email=settings.INITIAL_SUPERUSER_EMAIL,
                     password=settings.INITIAL_SUPERUSER_PASSWORD,
@@ -94,7 +96,21 @@ async def seed_superuser() -> None:
             )
             print(f"[seed] created superuser {settings.INITIAL_SUPERUSER_EMAIL}")
         except UserAlreadyExists:
-            pass
+            result = await session.execute(select(User).where(User.email == settings.INITIAL_SUPERUSER_EMAIL))
+            user = result.scalar_one()
+
+        national = (
+            await session.execute(select(Region).where(Region.level == "national"))
+        ).scalar_one_or_none()
+        if national is None:
+            print("[seed] national region not found, skipping superuser region assignment")
+            return
+
+        existing = await session.get(UserRegion, (user.id, national.id))
+        if not existing:
+            session.add(UserRegion(user_id=user.id, region_id=national.id, role="admin"))
+            await session.commit()
+            print(f"[seed] assigned superuser → national region ({national.name_en})")
 
 
 async def seed_regional_users() -> None:
@@ -107,6 +123,8 @@ async def seed_regional_users() -> None:
         }
         for ro in data["regional"]
     ]
+
+    
 
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
@@ -153,7 +171,7 @@ async def seed_province_users() -> None:
         for region in province_regions:
             username = region.name_en.lower().replace(" ", "_")
             email = f"{username}@province.com"
-            password = region.name_en
+            password = f"{username.replace('_', ''  )}1234"
 
             try:
                 user = await manager.create(
