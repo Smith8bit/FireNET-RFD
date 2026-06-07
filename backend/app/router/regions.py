@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import current_active_user, current_superuser
 from ..database import get_async_session
 from ..database.models import Region, User, UserRegion
-from ..database.schemas import RegionRead, UserRegionAssign
+from ..database.schemas import RegionRead, UserRegionAssign, ProvinceRead
 from ..db_control.permission import user_region_paths
 
 router = APIRouter()
@@ -75,3 +75,10 @@ async def revoke_user_region(
         return
     await session.delete(existing)
     await session.commit()
+
+@router.get("/provinces", response_model=list[ProvinceRead])
+async def list_provinces(session: AsyncSession = Depends(get_async_session)):
+    result = await session.execute(
+        select(Region).where(Region.level == "province").order_by(Region.name_th)
+    )
+    return result.scalars().all()

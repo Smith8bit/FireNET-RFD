@@ -15,7 +15,7 @@ from .router.regions import router as regions_router
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
 from .auth.ws_auth import get_user_from_ws
-
+from .router.officers import router as officers_router
 settings = get_settings()
 
 
@@ -56,6 +56,7 @@ app.include_router(
     tags=["users"],
 )
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
+app.include_router(officers_router, prefix="/officers", tags=["officers"])
 
 class ConnectionManager:
     def __init__(self) -> None:
@@ -99,3 +100,4 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 @app.get("/")
 def read_root():
     return {"service": "tfms", "status": "ok"}
+

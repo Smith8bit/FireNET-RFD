@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from fastapi_users import schemas
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -79,3 +79,23 @@ class FieldOfficerRead(BaseModel):
 class FieldOfficerUpdate(BaseModel):
     last_location: PointSchema | None = None
     note: str | None = None
+
+class ProvinceRead(BaseModel):
+    id: uuid.UUID
+    code: str
+    name_th: str
+    name_en: str | None
+    path: str
+    class Config:
+        from_attributes = True
+
+class OfficerRegister(BaseModel):
+    email: EmailStr
+    password: str
+    province_id: uuid.UUID
+
+class PendingOfficerRead(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    province_name_th: str
+    province_path: str

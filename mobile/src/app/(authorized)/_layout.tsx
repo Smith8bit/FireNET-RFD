@@ -13,6 +13,7 @@ export default function AuthorizedLayout() {
     )
   }
   if (!user) return <Redirect href="/Login" />
+  if (!user.is_verified) return <Redirect href="/Pending" />
 
   return <Stack screenOptions={{ headerShown: false }} />
 }
