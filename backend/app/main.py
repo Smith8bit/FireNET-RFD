@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from .auth.authen import auth_backend, fastapi_users
 from .config import get_settings
 from .database import Base, async_session_maker, engine
-from .database.models import Region, User, UserRegion
+from .database.models import FieldOfficer, Region, User, UserRegion
 from .db_control.fires import get_fires, update_fires
 from .db_control.permission import fire_visible, user_region_paths
 from .router.regions import router as regions_router
@@ -93,6 +93,19 @@ _PENDING_SQL = """
 """
 
 
+_OFFICERS_SQL = """
+    SELECT fo.id AS field_officer_id, fo.user_id, u.email,
+           fo.active, fo.fire_id::text AS fire_id,
+           fo.last_updated::text AS last_updated,
+           r.name_th AS province_name_th, r.path::text AS province_path
+    FROM field_officers fo
+    JOIN "user" u ON u.id = fo.user_id
+    JOIN user_regions ur ON ur.user_id = fo.user_id AND ur.role = 'field_officer'
+    JOIN regions r ON r.id = ur.region_id
+    WHERE u.is_verified = true
+"""
+
+
 async def _is_admin(user: User, session) -> bool:
     if user.is_superuser:
         return True
@@ -128,6 +141,56 @@ async def _handle_list_pending(ws: WebSocket, user: User) -> None:
             for m in rows.mappings().all()
         ]
     await ws.send_json({"type": "pending_officers", "officers": officers})
+
+
+async def _fetch_officers(session, user: User) -> list[dict]:
+    if user.is_superuser:
+        rows = await session.execute(text(_OFFICERS_SQL + " ORDER BY u.email"))
+    else:
+        paths = await user_region_paths(user, session)
+        if not paths:
+            return []
+        rows = await session.execute(
+            text(_OFFICERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[])) ORDER BY u.email")
+            .bindparams(paths=paths)
+        )
+    return [
+        {
+            "field_officer_id": str(m["field_officer_id"]),
+            "user_id": str(m["user_id"]),
+            "email": m["email"],
+            "active": m["active"],
+            "fire_id": m["fire_id"],
+            "last_updated": m["last_updated"],
+            "province_name_th": m["province_name_th"],
+            "province_path": m["province_path"],
+        }
+        for m in rows.mappings().all()
+    ]
+
+
+async def _handle_list_officers(ws: WebSocket, user: User) -> None:
+    async with async_session_maker() as session:
+        if not await _is_admin(user, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+        officers = await _fetch_officers(session, user)
+    print(f"[officers] list_officers requested by {user.email}: {len(officers)} officers found")
+    await ws.send_json({"type": "officers_in_region", "officers": officers})
+
+
+async def _broadcast_officers_update() -> None:
+    """Push updated officer lists to all connected admins after a verification."""
+    async with async_session_maker() as session:
+        for ws, user in list(manager.active):
+            try:
+                if not await _is_admin(user, session):
+                    continue
+                officers = await _fetch_officers(session, user)
+                print(f"[broadcast] officers_in_region → {user.email}: {len(officers)} officers")
+                await ws.send_json({"type": "officers_in_region", "officers": officers})
+            except Exception as exc:
+                print(f"[broadcast] failed to send to {user.email}: {exc}")
 
 
 async def _handle_verify_officer(ws: WebSocket, admin: User, data: dict) -> None:
@@ -166,9 +229,21 @@ async def _handle_verify_officer(ws: WebSocket, admin: User, data: dict) -> None
 
         target = await session.get(User, user_id)
         target.is_verified = True
+
+        existing_fo = (
+            await session.execute(select(FieldOfficer).where(FieldOfficer.user_id == user_id))
+        ).scalar_one_or_none()
+        if existing_fo is None:
+            session.add(FieldOfficer(user_id=user_id))
+            print(f"[verify] created FieldOfficer for user {user_id}")
+        else:
+            print(f"[verify] FieldOfficer already exists for user {user_id}")
+
         await session.commit()
 
+    print(f"[verify] officer {user_id} verified by {admin.email}")
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
+    await _broadcast_officers_update()
 
 
 @app.websocket("/ws")
@@ -186,8 +261,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 await _handle_list_pending(ws, user)
             elif msg_type == "verify_officer":
                 await _handle_verify_officer(ws, user, data)
+            elif msg_type == "list_officers":
+                await _handle_list_officers(ws, user)
             else:
-                print(f"[ws/{user.email}] {data}")
+                print(f"[ws/{user.email}] unknown message: {data}")
     except WebSocketDisconnect:
         manager.disconnect(ws)
 
