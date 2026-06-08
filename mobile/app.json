@@ -19,7 +19,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.smith8bit.tfmsmobile",
-      "config": { "googleMaps": {"apiKey": "AIzaSyD0AA7tS2jHIwSG4sFQRaH_8DdXxmbqvHE"}}
+      "config": { "googleMaps": {"apiKey": ""}}
     },
     "web": {
       "output": "static",
