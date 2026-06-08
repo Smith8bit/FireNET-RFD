@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 
 export const useSocketStore = create((set) => ({
-  lastMessage: null,
+  byType: {},
   ready: false,
   send: () => console.warn('Socket not connected yet'),
-  setLastMessage: (data) => set({ lastMessage: data }),
+  handleMessage: (data) => set((state) => ({
+    byType: { ...state.byType, [data.type ?? 'fires']: data },
+  })),
   setSend: (fn) => set({ send: fn }),
-  setReady: (ready) => set({ isReady: ready }),
+  setReady: (ready) => set({ ready }),
 }))
 
 export const useMapSelection = create((set) => ({

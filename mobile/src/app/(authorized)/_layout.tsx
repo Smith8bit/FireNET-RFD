@@ -1,4 +1,5 @@
-import { Redirect, Stack } from 'expo-router'
+import { Redirect, Tabs } from 'expo-router'
+// import { Ionicons } from '@expo/vector-icons'
 import { ActivityIndicator, View } from 'react-native'
 import { useAuthSession } from '@/providers/AuthProvider'
 
@@ -15,5 +16,13 @@ export default function AuthorizedLayout() {
   if (!user) return <Redirect href="/Login" />
   if (!user.is_verified) return <Redirect href="/Pending" />
 
-  return <Stack screenOptions={{ headerShown: false }} />
+  return (
+    <Tabs screenOptions={{ headerShown: false }}>
+      <Tabs.Screen name="MapView" options={{ title: 'แผนที่' }} />
+      <Tabs.Screen 
+        name="index"
+        options={{ title: 'หน้าหลัก' }}
+      />
+    </Tabs>
+  )
 }
