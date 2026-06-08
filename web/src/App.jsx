@@ -40,7 +40,7 @@ function RequireAuth() {
 
 function App() {
   // Zustand store setters
-  const setLastMessage = useSocketStore((s) => s.setLastMessage)
+  const handleMessage = useSocketStore((s) => s.handleMessage)
   const setSend = useSocketStore((s) => s.setSend)
   const setReady = useSocketStore((s) => s.setReady)
 
@@ -68,12 +68,12 @@ function App() {
   useEffect(() => {
     if (lastMessage !== null) {
       try {
-        setLastMessage(JSON.parse(lastMessage.data))
+        handleMessage(JSON.parse(lastMessage.data))
       } catch {
-        setLastMessage(lastMessage.data)
+        handleMessage(lastMessage.data)
       }
     }
-  }, [lastMessage, setLastMessage])
+  }, [lastMessage, handleMessage])
 
   // Sync send function and socket readiness to Zustand
   useEffect(() => {

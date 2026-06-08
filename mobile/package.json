@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~56.0.16",
+    "@expo/vector-icons": "^15.1.1",
+    "@maplibre/maplibre-react-native": "^11.3.3",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@turf/distance": "^7.3.5",
     "expo": "~56.0.9",
     "expo-constants": "~56.0.17",
     "expo-device": "~56.0.4",
@@ -12,6 +15,7 @@
     "expo-glass-effect": "~56.0.4",
     "expo-image": "~56.0.10",
     "expo-linking": "~56.0.13",
+    "expo-maps": "~56.0.6",
     "expo-router": "~56.2.9",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
@@ -35,8 +39,8 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint"
   },

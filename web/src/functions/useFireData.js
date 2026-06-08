@@ -17,7 +17,7 @@ function normalize(raw) {
 }
 
 export function useFireData() {
-  const live = useSocketStore((s) => s.lastMessage)
+  const live = useSocketStore((s) => s.byType['fires'])
   const source = Array.isArray(live?.fires) ? live.fires : []
   return useMemo(() => normalize(source), [source])
 }

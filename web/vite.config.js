@@ -16,6 +16,7 @@ export default defineConfig({
       '/users': 'http://localhost:8000',
       '/regions': 'http://localhost:8000',
       '/fires': 'http://localhost:8000',
+      '/officers': 'http://localhost:8000',
       '/ws': { target: 'ws://localhost:8000', ws: true },
     },
   },
