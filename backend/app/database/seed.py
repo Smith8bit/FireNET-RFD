@@ -108,7 +108,7 @@ async def seed_superuser() -> None:
 
         existing = await session.get(UserRegion, (user.id, national.id))
         if not existing:
-            session.add(UserRegion(user_id=user.id, region_id=national.id, role="admin"))
+            session.add(UserRegion(user_id=user.id, region_id=national.id, role="admin", name="Admin"))
             await session.commit()
             print(f"[seed] assigned superuser → national region ({national.name_en})")
 
@@ -120,6 +120,7 @@ async def seed_regional_users() -> None:
             "email": f"{ro['code'].replace('-', '')}@forest.com",
             "password": "1234",
             "region_code": ro["code"],
+            "name": ro["name_en"],
         }
         for ro in data["regional"]
     ]
@@ -154,7 +155,7 @@ async def seed_regional_users() -> None:
 
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
-                session.add(UserRegion(user_id=user.id, region_id=region.id, role="viewer"))
+                session.add(UserRegion(user_id=user.id, region_id=region.id, role="viewer", name=spec["name"]))
                 await session.commit()
                 print(f"[seed] assigned {spec['email']} → {spec['region_code']}")
 
@@ -190,7 +191,7 @@ async def seed_province_users() -> None:
 
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
-                session.add(UserRegion(user_id=user.id, region_id=region.id, role="viewer"))
+                session.add(UserRegion(user_id=user.id, region_id=region.id, role="viewer", name=region.name_en))
                 await session.commit()
                 print(f"[seed] assigned {email} → {region.code}")
 

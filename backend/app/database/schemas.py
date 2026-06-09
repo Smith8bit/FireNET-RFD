@@ -93,6 +93,7 @@ class OfficerRegister(BaseModel):
     email: EmailStr
     password: str
     province_id: uuid.UUID
+    name: str
 
 class PendingOfficerRead(BaseModel):
     user_id: uuid.UUID

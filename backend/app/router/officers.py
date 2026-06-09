@@ -29,6 +29,6 @@ async def register_officer(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "REGISTER_USER_ALREADY_EXISTS")
     except InvalidPasswordException as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"INVALID_PASSWORD: {e.reason}")
-    session.add(UserRegion(user_id=user.id, region_id=province.id, role="field_officer"))
+    session.add(UserRegion(user_id=user.id, region_id=province.id, role="field_officer", name=body.name))
     await session.commit()
     return user

@@ -6,6 +6,7 @@ import { fetchProvinces, Province, useAuthSession } from '@/providers/AuthProvid
 
 export default function Register() {
   const { signUp, signIn } = useAuthSession()
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -30,13 +31,14 @@ export default function Register() {
   const onSubmit = async () => {
     if (submitting) return
     setError(null)
+    if (!name.trim()) return setError('กรุณากรอกชื่อ-นามสกุล')
     if (!email || !password) return setError('กรุณากรอกอีเมลและรหัสผ่าน')
     if (password.length < 8) return setError('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
     if (password !== confirm) return setError('รหัสผ่านไม่ตรงกัน')
     if (!province) return setError('กรุณาเลือกจังหวัด')
     setSubmitting(true)
     try {
-      await signUp(email.trim(), password, province.id)
+      await signUp(email.trim(), password, province.id, name.trim())
       await signIn(email.trim(), password) // -> gate routes to /Pending until admin verifies
     } catch (e) {
       setError(e instanceof Error ? e.message : 'สมัครสมาชิกไม่สำเร็จ')
@@ -51,6 +53,10 @@ export default function Register() {
     <SafeAreaView style={{ flex: 1 }}>
       <View style={{ flex: 1, padding: 24, gap: 12 }}>
         <Text style={{ fontSize: 22, fontWeight: '600' }}>สมัครสมาชิก (เจ้าหน้าที่ภาคสนาม)</Text>
+
+        <Text>ชื่อ-นามสกุล</Text>
+        <TextInput value={name} onChangeText={setName} placeholder="ชื่อ นามสกุล"
+          autoCapitalize="words" autoCorrect={false} style={input} />
 
         <Text>อีเมล</Text>
         <TextInput value={email} onChangeText={setEmail} placeholder="email@example.com"

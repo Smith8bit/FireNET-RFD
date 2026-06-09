@@ -17,6 +17,7 @@ class FieldOfficer(Base):
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("user.id", ondelete="SET NULL"), nullable=False)
     fire_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("firespots.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     active: Mapped[bool] = mapped_column(default=False)
     last_location: Mapped[WKBElement | None] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

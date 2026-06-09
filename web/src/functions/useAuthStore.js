@@ -13,7 +13,7 @@ export const useAuthStore = create((set, get) => ({
   async hydrate() {
     if (get().status !== 'unknown') return
     try {
-      const res = await api('/users/me')
+      const res = await api('/users/me/profile')
       if (res.ok) {
         const user = await res.json()
         set({ user, status: 'authed' })
@@ -37,8 +37,8 @@ export const useAuthStore = create((set, get) => ({
       const data = await res.json().catch(() => ({}))
       throw new Error(data?.detail || 'เข้าสู่ระบบไม่สำเร็จ')
     }
-    const me = await api('/users/me')
-    console.debug('[auth] /users/me status', me.status)
+    const me = await api('/users/me/profile')
+    console.debug('[auth] /users/me/profile status', me.status)
     const user = me.ok ? await me.json() : null
     console.debug('[auth] user', user, 'status →', user ? 'authed' : 'guest')
     set({ user, status: user ? 'authed' : 'guest' })

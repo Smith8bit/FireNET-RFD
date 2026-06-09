@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,3 +17,4 @@ class UserRegion(Base):
         PGUUID(as_uuid=True), ForeignKey("regions.id", ondelete="CASCADE"), primary_key=True
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer")
+    name: Mapped[str | None] = mapped_column(Text, nullable=True)
