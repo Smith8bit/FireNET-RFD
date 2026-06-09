@@ -8,6 +8,7 @@ export default function ManagementPage() {
   const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
+  const [selectedTab, setSelectedTab] = useState("Pending")
   const [officers, setOfficers] = useState(null) // null = loading
   const [regionOfficers, setRegionOfficers] = useState([])
   const [error, setError] = useState(null)
@@ -55,58 +56,94 @@ export default function ManagementPage() {
 
   const loading = officers === null
 
+  const tabs = ['Pending', 'Officers', 'Audit']
+
   return (
-    <div className="p-6 overflow-auto space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-forest-700 mb-1">จัดการเจ้าหน้าที่ภาคสนาม</h1>
-        <p className="text-gray-600 mb-4">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>
-
-        {loading && <p className="text-gray-500">กำลังโหลด…</p>}
-        {error && <p className="text-red-600">{error}</p>}
-        {!loading && officers.length === 0 && <p className="text-gray-500">ไม่มีบัญชีที่รอการยืนยัน</p>}
-
-        <ul className="space-y-2 max-w-2xl">
-          {(officers ?? []).map((o) => (
-            <li key={o.user_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
-              <div>
-                <p className="font-medium">{o.email}</p>
-                <p className="text-sm text-gray-500">{o.province_name_th} · {o.province_path}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => verify(o.user_id)}
-                disabled={busyId === o.user_id}
-                className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
-              >
-                {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
-              </button>
-            </li>
+    <div className="py-6 h-screen flex flex-col gap-6 w-1/2 self-center overflow-y-hidden">
+      <div className='bg-white border-0 rounded-2xl p-6'>
+        <h2 className="text-lg font-semibold text-forest-700 mb-3">จัดการเจ้าหน้าที่ภาคสนาม</h2>
+        <div className="flex gap-2 border-b border-gray-200">
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setSelectedTab(tab)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                selectedTab === tab
+                  ? 'border-forest-500 text-forest-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab === 'Pending' ? `รอยืนยัน${officers ? ` (${officers.length})` : ''}` : tab === 'Officers' ? 'เจ้าหน้าที่' : 'ประวัติ'}
+            </button>
           ))}
-        </ul>
-      </div>
+        </div>
+      </div >
+      <div className='flex-1 bg-white border-0 rounded-2xl p-6'>
+        {selectedTab === 'Pending' && (
+          <div>
+            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>
 
-      <div>
-        <h2 className="text-xl font-bold text-forest-700 mb-1">เจ้าหน้าที่ในพื้นที่</h2>
-        <p className="text-gray-600 mb-4">เจ้าหน้าที่ที่ได้รับการยืนยันแล้วในเขตของคุณ</p>
+            {loading && <p className="text-gray-500">กำลังโหลด…</p>}
+            {error && <p className="text-red-600">{error}</p>}
+            {!loading && officers.length === 0 && <p className="text-gray-500">ไม่มีบัญชีที่รอการยืนยัน</p>}
 
-        {regionOfficers.length === 0
-          ? <p className="text-gray-500">ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</p>
-          : (
-            <ul className="space-y-2 max-w-2xl">
-              {regionOfficers.map((o) => (
-                <li key={o.field_officer_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
-                  <div>
-                    <p className="font-medium">{o.email}</p>
-                    <p className="text-sm text-gray-500">{o.province_name_th} · {o.province_path}</p>
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {o.active ? 'ปฏิบัติงาน' : 'ว่าง'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )
-        }
+            <div className='overflow-y-auto max-h-96 no-scrollbar'>
+              <ul className="space-y-2">
+                {(officers ?? []).map((o) => (
+                  <li key={o.user_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
+                    <div>
+                      <p className="font-medium">{o.name ?? o.email}</p>
+                      <p className="text-sm text-gray-500">{o.email}</p>
+                      <p className="text-sm text-gray-500">{o.province_name_th} · {o.province_path}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => verify(o.user_id)}
+                      disabled={busyId === o.user_id}
+                      className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
+                    >
+                      {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {selectedTab === 'Officers' && (
+          <div>
+            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300">เจ้าหน้าที่ที่ได้รับการยืนยันแล้วในเขตของคุณ</p>
+
+            {regionOfficers.length === 0
+              ? <p className="text-gray-500">ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</p>
+              : (
+                <div className='overflow-y-auto max-h-96 no-scrollbar'>
+                  <ul className="space-y-2">
+                    {regionOfficers.map((o) => (
+                      <li key={o.field_officer_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
+                        <div>
+                          <p className="font-medium">{o.name ?? o.email}</p>
+                          <p className="text-sm text-gray-500">{o.email}</p>
+                          <p className="text-sm text-gray-500">{o.province_name_th} · {o.province_path}</p>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {o.active ? 'ปฏิบัติงาน' : 'ว่าง'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            }
+          </div>
+        )}
+
+        {selectedTab === 'Audit' && (
+          <div>
+            <p className="text-gray-500">ประวัติการยืนยันเจ้าหน้าที่ (ยังไม่พร้อมใช้งาน)</p>
+          </div>
+        )}
       </div>
     </div>
   )

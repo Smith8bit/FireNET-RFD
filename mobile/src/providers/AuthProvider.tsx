@@ -16,7 +16,7 @@ type AuthContextType = {
   user: AuthUser | null
   isLoading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, provinceId: string) => Promise<void>
+  signUp: (email: string, password: string, provinceId: string, name: string) => Promise<void>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -25,7 +25,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
   signIn: async () => {},
-  signUp: async () => {},
+  signUp: async () => { },
   signOut: async () => {},
   refresh: async () => {},
 })
@@ -78,11 +78,11 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     router.replace('/') // guard sends unverified users to /Pending
   }, [])
 
-  const signUp = useCallback(async (email: string, password: string, provinceId: string) => {
+  const signUp = useCallback(async (email: string, password: string, provinceId: string, name: string) => {
     const res = await fetch(`${API_URL}/officers/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, province_id: provinceId }),
+      body: JSON.stringify({ email, password, province_id: provinceId, name }),
     })
     if (!res.ok) {
       let detail = 'สมัครสมาชิกไม่สำเร็จ'

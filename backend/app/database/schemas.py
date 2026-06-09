@@ -93,9 +93,11 @@ class OfficerRegister(BaseModel):
     email: EmailStr
     password: str
     province_id: uuid.UUID
+    name: str | None = None
 
 class PendingOfficerRead(BaseModel):
     user_id: uuid.UUID
     email: str
+    name: str | None
     province_name_th: str
     province_path: str

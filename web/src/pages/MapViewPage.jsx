@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useMapSelection } from '../functions/stateStore'
+import { useMemo, useState, useEffect } from 'react'
+import { useMapSelection, useSocketStore } from '../functions/stateStore'
 import { useFireData, firePopupHtml } from '../functions/useFireData'
 import Map from '../components/map'
 import Card from '../components/card'
@@ -15,6 +15,23 @@ const START_POINT = { lat: 13.736717, lng: 100.523186 }
 export default function MapViewPage() {
   const [selectedLayer, setSelectedLayer] = useState(LAYERS.Base)
 
+  const [officers, setOfficers] = useState([])
+  const send = useSocketStore((s) => s.send)
+  const ready = useSocketStore((s) => s.ready)
+  const officersMsg = useSocketStore((s) => s.byType?.officers_map)
+
+  useEffect(() => {
+    if (!ready) return
+    send({ type: 'list_officers_MAP' })
+    console.log('SENT!')
+  }, [ready])
+    
+  useEffect(() => {
+    if (!officersMsg) return
+    setOfficers(officersMsg.officers ?? [])
+    console.log(officersMsg)
+  }, [officersMsg])
+
   const fires = useFireData()
   const points = useMemo(
     () => fires.map((f) => ({ id: f.id, lat: f.lat, lng: f.lng, popupHtml: firePopupHtml(f) })),
@@ -28,7 +45,7 @@ export default function MapViewPage() {
   return (
     <div className="flex flex-1 w-full overflow-hidden">
       <div className="w-3/4 h-full">
-        <Map layer={selectedLayer} points={points} startPoint={START_POINT} />
+        <Map layer={selectedLayer} points={points} startPoint={START_POINT} officers={officers} />
       </div>
       {!focused ? (
         <div
@@ -68,12 +85,12 @@ export default function MapViewPage() {
             className="bg-white p-1 w-fit"
             onClick={clearSelection}
           >
-            <svg class="w-8 h-8" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
-              <path fill-rule="evenodd"
+            <svg className="w-8 h-8" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
+              <path fillRule="evenodd"
                   d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z" />
             </svg>
           </button>
-          <ExpandedCard fire={focused} />
+          <ExpandedCard fire={focused} officers={officers} />
         </div>
       )}
     </div>

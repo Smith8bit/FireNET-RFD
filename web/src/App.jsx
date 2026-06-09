@@ -75,14 +75,17 @@ function App() {
     }
   }, [lastMessage, handleMessage])
 
-  // Sync send function and socket readiness to Zustand
+  // Sync send function to Zustand — only when sendMessage changes
   useEffect(() => {
     setSend((payload) => {
-      // Auto-stringify objects before sending through WebSocket
       sendMessage(typeof payload === 'string' ? payload : JSON.stringify(payload))
     })
+  }, [sendMessage, setSend])
+
+  // Sync ready state separately so readyState changes don't recreate send
+  useEffect(() => {
     setReady(readyState === ReadyState.OPEN)
-  }, [sendMessage, readyState, setSend, setReady])
+  }, [readyState, setReady])
 
   return (
     <BrowserRouter>
