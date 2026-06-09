@@ -8,7 +8,7 @@ from ..database.models import FieldOfficer, Region, User, UserRegion
 from ..db_control.permission import user_region_paths
 
 _PENDING_SQL = """
-    SELECT u.id AS user_id, u.email AS email,
+    SELECT u.id AS user_id, u.email AS email, ur.name AS name,
            r.name_th AS province_name_th, r.path::text AS province_path
     FROM "user" u
     JOIN user_regions ur ON ur.user_id = u.id AND ur.role = 'field_officer'
@@ -88,6 +88,7 @@ async def handle_list_pending(ws: WebSocket, user: User) -> None:
             {
                 "user_id": str(m["user_id"]),
                 "email": m["email"],
+                "name": m["name"],
                 "province_name_th": m["province_name_th"],
                 "province_path": m["province_path"],
             }
