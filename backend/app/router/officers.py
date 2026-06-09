@@ -54,6 +54,6 @@ async def update_my_location(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
     fo.last_location = from_shape(Point(body.longitude, body.latitude), srid=4326)
     fo.last_updated = datetime.now(timezone.utc)
-    fo.active = True
+    fo.active = False
     await session.commit()
     return {"last_updated": fo.last_updated.isoformat()}

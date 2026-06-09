@@ -17,15 +17,19 @@ export default function MapViewPage() {
 
   const [officers, setOfficers] = useState([])
   const send = useSocketStore((s) => s.send)
-  const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
-    
+  const ready = useSocketStore((s) => s.ready)
+  const officersMsg = useSocketStore((s) => s.byType?.officers_map)
+
   useEffect(() => {
+    if (!ready) return
     send({ type: 'list_officers_MAP' })
-  }, [send])
+    console.log('SENT!')
+  }, [ready])
     
   useEffect(() => {
     if (!officersMsg) return
     setOfficers(officersMsg.officers ?? [])
+    console.log(officersMsg)
   }, [officersMsg])
 
   const fires = useFireData()
@@ -41,7 +45,7 @@ export default function MapViewPage() {
   return (
     <div className="flex flex-1 w-full overflow-hidden">
       <div className="w-3/4 h-full">
-        <Map layer={selectedLayer} points={points} startPoint={START_POINT} />
+        <Map layer={selectedLayer} points={points} startPoint={START_POINT} officers={officers} />
       </div>
       {!focused ? (
         <div
