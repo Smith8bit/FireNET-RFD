@@ -2,7 +2,7 @@ import axios from 'axios'
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
 
-const API_URL = 'http://10.0.2.2:8000' // Android emulator -> host loopback
+const API_URL = 'http://192.168.0.107:8000'
 
 export type AuthUser = {
   id: string
@@ -46,7 +46,7 @@ export async function fetchProvinces(): Promise<Province[]> {
 
 async function fetchMe(): Promise<AuthUser | null> {
   try {
-    const res = await axios.get<AuthUser>(`${API_URL}/users/me`, { withCredentials: true })
+    const res = await axios.get<AuthUser>(`${API_URL}/users/me`, { withCredentials: true, timeout: 8000 })
     return res.data
   } catch {
     return null
