@@ -1,115 +1,70 @@
+import axios from 'axios'
 import { useEffect, useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native'
-import * as Location from 'expo-location'
+import { Map, Camera, GeoJSONSource, Layer, type StyleSpecification } from '@maplibre/maplibre-react-native'
+// import { Marker } from '@maplibre/maplibre-react-native'
+// import { AntDesign } from '@expo/vector-icons'
+// import { View } from 'react-native'
+import base from '@/assets/layers/base.json'
 
-const API_URL = 'http://10.0.2.2:8000'
+const API_URL = process.env.EXPO_PUBLIC_API_URL! // fallback for emulator: 'http://10.0.2.2:8000'
+const MAP_STYLE = base as unknown as StyleSpecification
+const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
-type SendStatus = 'idle' | 'sending' | 'sent' | 'error'
+type Fire = { id: string; lat: number; lng: number }
 
-export default function MapView() {
-  const [location, setLocation] = useState<Location.LocationObject | null>(null)
-  const [locationError, setLocationError] = useState<string | null>(null)
-  const [sendStatus, setSendStatus] = useState<SendStatus>('idle')
-  const [lastSentAt, setLastSentAt] = useState<string | null>(null)
-  const [sendError, setSendError] = useState<string | null>(null)
-
-  async function getAndSendLocation() {
-    setLocationError(null)
-    setSendError(null)
-    setSendStatus('idle')
-
-    const { status } = await Location.requestForegroundPermissionsAsync()
-    if (status !== 'granted') {
-      setLocationError('Location permission denied')
-      return
-    }
-
-    let loc: Location.LocationObject
-    try {
-      loc = await Location.getCurrentPositionAsync({})
-      setLocation(loc)
-    } catch {
-      setLocationError('Location unavailable. Enable location services and try again.')
-      return
-    }
-
-    setSendStatus('sending')
-    try {
-      const res = await fetch(`${API_URL}/officers/me/location`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body?.detail ?? `HTTP ${res.status}`)
-      }
-      const data = await res.json()
-      setLastSentAt(data.last_updated)
-      setSendStatus('sent')
-    } catch (e: any) {
-      setSendError(e?.message ?? 'Failed to send location')
-      setSendStatus('error')
-    }
+function toGeoJSON(fires: Fire[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: fires.map((f) => ({
+      type: 'Feature',
+      id: f.id,
+      geometry: { type: 'Point', coordinates: [f.lng, f.lat] },
+      properties: { id: f.id },
+    })),
   }
-
-  useEffect(() => {
-    getAndSendLocation()
-  }, [])
-
-  const sentAt = lastSentAt
-    ? new Date(lastSentAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'medium' })
-    : null
-
-  return (
-    <View style={styles.container}>
-      {location ? (
-        <View style={styles.coordBox}>
-          <Text style={styles.label}>Latitude</Text>
-          <Text style={styles.value}>{location.coords.latitude.toFixed(6)}</Text>
-          <Text style={styles.label}>Longitude</Text>
-          <Text style={styles.value}>{location.coords.longitude.toFixed(6)}</Text>
-        </View>
-      ) : locationError ? (
-        <Text style={styles.error}>{locationError}</Text>
-      ) : (
-        <Text style={styles.loading}>Getting location...</Text>
-      )}
-
-      {sendStatus === 'sending' && (
-        <View style={styles.statusRow}>
-          <ActivityIndicator size="small" color="#007AFF" />
-          <Text style={styles.statusText}>Sending location...</Text>
-        </View>
-      )}
-      {sendStatus === 'sent' && sentAt && (
-        <Text style={styles.sent}>Stored at {sentAt}</Text>
-      )}
-      {sendStatus === 'error' && sendError && (
-        <Text style={styles.error}>{sendError}</Text>
-      )}
-
-      <TouchableOpacity style={styles.button} onPress={getAndSendLocation}>
-        <Text style={styles.buttonText}>Refresh & Send Location</Text>
-      </TouchableOpacity>
-    </View>
-  )
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  coordBox: { alignItems: 'center', gap: 4 },
-  label: { fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1 },
-  value: { fontSize: 24, fontWeight: '600', color: '#111' },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statusText: { color: '#007AFF' },
-  sent: { fontSize: 13, color: '#34C759' },
-  error: { color: 'red', textAlign: 'center', paddingHorizontal: 24 },
-  loading: { color: '#888' },
-  button: { marginTop: 8, paddingVertical: 10, paddingHorizontal: 24, backgroundColor: '#007AFF', borderRadius: 8 },
-  buttonText: { color: '#fff', fontWeight: '600' },
-})
+export default function MapView() {
+  const [fires, setFires] = useState<Fire[]>([])
+
+  useEffect(() => {
+    axios
+      .get<Fire[]>(`${API_URL}/fires`, { withCredentials: true })
+      .then((res) => setFires(res.data))
+      .catch(() => {})
+  }, [])
+
+  return (
+    <Map style={{ flex: 1 }} mapStyle={MAP_STYLE}>
+      <Camera initialViewState={{ center: THAILAND_CENTER, zoom: 6 }} />
+      <GeoJSONSource
+        id="fires"
+        data={toGeoJSON(fires)}
+        onPress={(e) => {
+          const feature = e.nativeEvent.features[0]
+          if (feature) console.log('tapped fire id:', feature.properties?.id)
+        }}
+      >
+        <Layer
+          type="circle"
+          id="fire-circles"
+          paint={{
+            'circle-color': '#ef4444',
+            'circle-radius': 6,
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 1.5,
+          }}
+        />
+      </GeoJSONSource>
+      {/* Marker version (kept for reference — worse performance at scale)
+      {fires.map((f) => (
+        <Marker key={f.id} id={f.id} lngLat={[f.lng, f.lat]}>
+          <View>
+            <AntDesign name="fire" size={24} color="#ef4444" />
+          </View>
+        </Marker>
+      ))}
+      */}
+    </Map>
+  )
+}

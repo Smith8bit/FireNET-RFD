@@ -10,6 +10,7 @@ from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
 from .db_control.fires import update_fires
+from .router.fires import router as fires_router
 from .router.regions import router as regions_router
 from .router.officers import router as officers_router
 from .router.users import router as users_router
@@ -53,6 +54,7 @@ app.include_router(
     prefix="/users",
     tags=["users"],
 )
+app.include_router(fires_router, prefix="/fires", tags=["fires"])
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
 app.include_router(officers_router, prefix="/officers", tags=["officers"])
 app.include_router(users_router, prefix="/users", tags=["users"])
