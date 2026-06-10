@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native'
+import { useState } from 'react'
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Link } from 'expo-router'
-import { fetchProvinces, Province, useAuthSession } from '@/providers/AuthProvider'
+import { Dropdown } from 'react-native-element-dropdown'
+import { Province, useAuthSession } from '@/providers/AuthProvider'
+import PROVINCES from '@/data/provinces.json'
 
 export default function Register() {
   const { signUp, signIn } = useAuthSession()
@@ -10,23 +12,10 @@ export default function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [provinces, setProvinces] = useState<Province[]>([])
   const [province, setProvince] = useState<Province | null>(null)
-  const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    fetchProvinces().then(setProvinces)
-  }, [])
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return provinces
-    return provinces.filter(
-      (p) => p.name_th.toLowerCase().includes(q) || (p.name_en ?? '').toLowerCase().includes(q),
-    )
-  }, [provinces, query])
 
   const onSubmit = async () => {
     if (submitting) return
@@ -38,7 +27,7 @@ export default function Register() {
     if (!province) return setError('กรุณาเลือกจังหวัด')
     setSubmitting(true)
     try {
-      await signUp(email.trim(), password, province.id, name.trim())
+      await signUp(email.trim(), password, province.code, name.trim())
       await signIn(email.trim(), password) // -> gate routes to /Pending until admin verifies
     } catch (e) {
       setError(e instanceof Error ? e.message : 'สมัครสมาชิกไม่สำเร็จ')
@@ -51,7 +40,7 @@ export default function Register() {
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <View style={{ flex: 1, padding: 24, gap: 12 }}>
+      <ScrollView contentContainerStyle={{ padding: 24, gap: 12 }} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 22, fontWeight: '600' }}>สมัครสมาชิก (เจ้าหน้าที่ภาคสนาม)</Text>
 
         <Text>ชื่อ-นามสกุล</Text>
@@ -70,27 +59,22 @@ export default function Register() {
         <TextInput value={confirm} onChangeText={setConfirm} secureTextEntry placeholder="••••••••"
           autoCapitalize="none" style={input} />
 
-        <Text>จังหวัด {province ? `· เลือก: ${province.name_th}` : ''}</Text>
-        <TextInput value={query} onChangeText={setQuery} placeholder="ค้นหาจังหวัด..." style={input} />
-        <View style={{ height: 160, borderWidth: 1, borderColor: '#eee', borderRadius: 8 }}>
-          <FlatList
-            data={filtered}
-            keyExtractor={(p) => p.id}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => setProvince(item)}
-                style={{
-                  padding: 12,
-                  backgroundColor: province?.id === item.id ? '#dbeafe' : 'white',
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#f0f0f0',
-                }}
-              >
-                <Text>{item.name_th}</Text>
-              </Pressable>
-            )}
-          />
+        <View style={{ zIndex: 999 }}>
+        <Text>จังหวัด</Text>
+        <Dropdown
+          data={PROVINCES}
+          labelField="name_th"
+          valueField="id"
+          placeholder="เลือกจังหวัด..."
+          search
+          searchPlaceholder="ค้นหาจังหวัด..."
+          value={province?.id ?? null}
+          onChange={(item) => setProvince(item)}
+          style={input}
+          selectedTextStyle={{ fontSize: 14 }}
+          placeholderStyle={{ fontSize: 14, color: '#9ca3af' }}
+          inputSearchStyle={{ fontSize: 14, borderRadius: 6 }}
+        />
         </View>
 
         {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
@@ -104,7 +88,7 @@ export default function Register() {
           <Text>มีบัญชีอยู่แล้ว?</Text>
           <Link href="/Login" style={{ color: '#2563eb', fontWeight: '600' }}>เข้าสู่ระบบ</Link>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   )
 }

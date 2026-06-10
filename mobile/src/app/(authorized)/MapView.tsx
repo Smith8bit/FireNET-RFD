@@ -10,7 +10,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL! // fallback for emulator: 'http
 const MAP_STYLE = base as unknown as StyleSpecification
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
-type Fire = { id: string; lat: number; lng: number }
+type Fire = { id: string; name: string; lat: number; lng: number }
 
 function toGeoJSON(fires: Fire[]): GeoJSON.FeatureCollection {
   return {
@@ -19,7 +19,7 @@ function toGeoJSON(fires: Fire[]): GeoJSON.FeatureCollection {
       type: 'Feature',
       id: f.id,
       geometry: { type: 'Point', coordinates: [f.lng, f.lat] },
-      properties: { id: f.id },
+      properties: { id: f.id, name: f.name },
     })),
   }
 }
@@ -42,7 +42,7 @@ export default function MapView() {
         data={toGeoJSON(fires)}
         onPress={(e) => {
           const feature = e.nativeEvent.features[0]
-          if (feature) console.log('tapped fire id:', feature.properties?.id)
+          if (feature) console.log('tapped fire:', feature.properties?.name)
         }}
       >
         <Layer

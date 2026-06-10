@@ -92,7 +92,7 @@ class ProvinceRead(BaseModel):
 class OfficerRegister(BaseModel):
     email: EmailStr
     password: str
-    province_id: uuid.UUID
+    province_code: str  # stable Region.code (e.g. "p50") so clients can ship a static list
     name: str | None = None
 
 class PendingOfficerRead(BaseModel):

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native'
 import * as Location from 'expo-location'
 
-const API_URL = 'http://192.168.0.107:8000'
+const API_URL = process.env.EXPO_PUBLIC_API_URL!
 
 type SendStatus = 'idle' | 'sending' | 'sent' | 'error'
 

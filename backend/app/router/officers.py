@@ -23,8 +23,12 @@ async def register_officer(
     manager: UserManager = Depends(get_user_manager),
     session: AsyncSession = Depends(get_async_session),
 ):
-    province = await session.get(Region, body.province_id)
-    if province is None or province.level != "province":
+    province = (
+        await session.execute(
+            select(Region).where(Region.code == body.province_code, Region.level == "province")
+        )
+    ).scalar_one_or_none()
+    if province is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid province")
     try:
         user = await manager.create(

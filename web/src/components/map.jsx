@@ -2,17 +2,33 @@ import { useEffect, useRef, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { FireIcon } from '@heroicons/react/24/solid'
 import { UserCircleIcon } from '@heroicons/react/20/solid'
 import { useMapSelection } from '../functions/stateStore'
 
-const ICON_DEFAULT = { color: '#ef4444', filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.4))', transition: 'color 120ms ease, transform 120ms ease', transform: 'scale(1)', width: '22px', height: '22px', cursor: 'pointer' }
-const ICON_HOVER   = { color: '#facc15', transform: 'scale(1.8)', filter: 'drop-shadow(0 0 4px rgba(250,204,21,0.5))' }
+// Fires are drawn as a WebGL circle layer (one source, not one DOM marker per
+// fire) so the map stays smooth with thousands of points.
+const FIRES_SOURCE = 'fires'
+const FIRES_LAYER = 'fire-circles'
 
-function renderFireIcon(container, style) {
-    const icon = createElement(FireIcon, { style: { ...ICON_DEFAULT, ...style } })
-    container._reactRoot ??= createRoot(container)
-    container._reactRoot.render(icon)
+function firesToGeoJSON(points) {
+    return {
+        type: 'FeatureCollection',
+        features: points.map((p) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+            properties: { id: p.id },
+        })),
+    }
+}
+
+function firePaint(activeId) {
+    const isActive = ['==', ['get', 'id'], activeId ?? '']
+    return {
+        'circle-color': ['case', isActive, '#facc15', '#ef4444'],
+        'circle-radius': ['case', isActive, 11, 6],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.5,
+    }
 }
 
 function makeOfficerEl(active, name) {
@@ -65,8 +81,8 @@ function makeOfficerEl(active, name) {
 
 export default function MapView({ layer, startPoint, points, officers = [] }) {
     const mapRef = useRef(null)
-    const markerInstancesRef = useRef([])
-    const markerElementsRef = useRef(new globalThis.Map())
+    const pointsRef = useRef(points)
+    const activeIdRef = useRef(null)
     const officerMarkerInstancesRef = useRef([])
 
     const focusedId = useMapSelection((s) => s.focusedId)
@@ -88,6 +104,19 @@ export default function MapView({ layer, startPoint, points, officers = [] }) {
         map.doubleClickZoom.disable()
         map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
+        // setStyle() wipes custom sources, so re-add fires after every style load
+        map.on('style.load', () => {
+            if (map.getSource(FIRES_SOURCE)) return
+            map.addSource(FIRES_SOURCE, { type: 'geojson', data: firesToGeoJSON(pointsRef.current) })
+            map.addLayer({ id: FIRES_LAYER, type: 'circle', source: FIRES_SOURCE, paint: firePaint(activeIdRef.current) })
+        })
+        map.on('click', FIRES_LAYER, (e) => {
+            const feature = e.features?.[0]
+            if (feature) setFocused(feature.properties.id)
+        })
+        map.on('mouseenter', FIRES_LAYER, () => { map.getCanvas().style.cursor = 'pointer' })
+        map.on('mouseleave', FIRES_LAYER, () => { map.getCanvas().style.cursor = '' })
+
         mapRef.current = map
         return () => map.remove()
     }, [])
@@ -105,35 +134,21 @@ export default function MapView({ layer, startPoint, points, officers = [] }) {
     }, [layer])
 
     useEffect(() => {
-        if (!mapRef.current) return
-
-        markerInstancesRef.current.forEach((m) => m.remove())
-        markerElementsRef.current.forEach((el) => el._reactRoot?.unmount())
-        markerInstancesRef.current = []
-        markerElementsRef.current = new globalThis.Map()
-
-        points.forEach((point) => {
-            const el = document.createElement('div')
-            el.style.cursor = 'pointer'
-            renderFireIcon(el, {})
-            el.addEventListener('click', () => setFocused(point.id))
-
-            const marker = new maplibregl.Marker({ element: el })
-                .setLngLat([point.lng, point.lat])
-                .addTo(mapRef.current)
-
-            markerInstancesRef.current.push(marker)
-            markerElementsRef.current.set(point.id, el)
-        })
-    }, [points, setFocused])
+        pointsRef.current = points
+        const source = mapRef.current?.getSource(FIRES_SOURCE)
+        if (source) source.setData(firesToGeoJSON(points))
+        // if the style is still loading, the style.load handler adds the
+        // source with the latest pointsRef
+    }, [points])
 
     useEffect(() => {
-        markerElementsRef.current.forEach((el) => renderFireIcon(el, {}))
-        const activeId = hoveredId ?? focusedId
-        if (activeId != null) {
-            const el = markerElementsRef.current.get(activeId)
-            if (el) renderFireIcon(el, ICON_HOVER)
-        }
+        const activeId = hoveredId ?? focusedId ?? null
+        activeIdRef.current = activeId
+        const map = mapRef.current
+        if (!map?.getLayer(FIRES_LAYER)) return
+        const paint = firePaint(activeId)
+        map.setPaintProperty(FIRES_LAYER, 'circle-color', paint['circle-color'])
+        map.setPaintProperty(FIRES_LAYER, 'circle-radius', paint['circle-radius'])
     }, [hoveredId, focusedId])
 
     useEffect(() => {

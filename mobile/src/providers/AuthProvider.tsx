@@ -2,7 +2,7 @@ import axios from 'axios'
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
 
-const API_URL = 'http://192.168.0.107:8000'
+const API_URL = process.env.EXPO_PUBLIC_API_URL!
 
 export type AuthUser = {
   id: string
@@ -35,14 +35,6 @@ export function useAuthSession() {
   return useContext(AuthContext)
 }
 
-export async function fetchProvinces(): Promise<Province[]> {
-  try {
-    const res = await axios.get<Province[]>(`${API_URL}/regions/provinces`)
-    return res.data
-  } catch {
-    return []
-  }
-}
 
 async function fetchMe(): Promise<AuthUser | null> {
   try {
@@ -78,9 +70,9 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     router.replace('/') // guard sends unverified users to /Pending
   }, [])
 
-  const signUp = useCallback(async (email: string, password: string, provinceId: string, name: string) => {
+  const signUp = useCallback(async (email: string, password: string, provinceCode: string, name: string) => {
     try {
-      await axios.post(`${API_URL}/officers/register`, { email, password, province_id: provinceId, name })
+      await axios.post(`${API_URL}/officers/register`, { email, password, province_code: provinceCode, name })
     } catch (e: any) {
       let detail = 'สมัครสมาชิกไม่สำเร็จ'
       const d = e?.response?.data

@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
+import { List } from 'react-window'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
-import { useFireData, firePopupHtml } from '../functions/useFireData'
+import { useFireData } from '../functions/useFireData'
 import Map from '../components/map'
 import Card from '../components/card'
 import ExpandedCard from '../components/expandedCard'
@@ -11,6 +12,16 @@ import topoStyle from '../components/layers/topo.json'
 
 const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
 const START_POINT = { lat: 13.736717, lng: 100.523186 }
+const CARD_HEIGHT = 125 // px — must match Card's rendered height (p-4 + 3 text lines + border)
+
+function FireRow({ index, style, fires }) {
+  const f = fires[index]
+  return (
+    <div style={style}>
+      <Card id={f.id} Title={f.name} Area={f.type} Date={f.date} Time={f.time} />
+    </div>
+  )
+}
 
 export default function MapViewPage() {
   const [selectedLayer, setSelectedLayer] = useState(LAYERS.Base)
@@ -34,7 +45,7 @@ export default function MapViewPage() {
 
   const fires = useFireData()
   const points = useMemo(
-    () => fires.map((f) => ({ id: f.id, lat: f.lat, lng: f.lng, popupHtml: firePopupHtml(f) })),
+    () => fires.map((f) => ({ id: f.id, lat: f.lat, lng: f.lng })),
     [fires],
   )
 
@@ -65,18 +76,15 @@ export default function MapViewPage() {
           </div>
           <div
             id="controller"
-            className=" overflow-y-scroll no-scrollbar cursor-pointer"
+            className="flex-1 min-h-0 cursor-pointer"
           >
-            {fires.map((f) => (
-              <Card
-                key={f.id}
-                id={f.id}
-                Title={f.name}
-                Area={f.type}
-                Date={f.date}
-                Time={f.time}
-              />
-            ))}
+            <List
+              className="no-scrollbar"
+              rowComponent={FireRow}
+              rowCount={fires.length}
+              rowHeight={CARD_HEIGHT}
+              rowProps={{ fires }}
+            />
           </div>
         </div>
       ) : (

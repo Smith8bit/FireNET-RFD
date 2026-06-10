@@ -103,7 +103,6 @@ async def get_fires(
     region_path: str | None = None,
     status: bool | None = None,
     on_date: date | None = None,
-    limit: int = 200,
     user=None,
 ) -> list[dict]:
     from geoalchemy2.shape import to_shape
@@ -136,7 +135,7 @@ async def get_fires(
                 return []
             stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
 
-        stmt = stmt.order_by(Firespot.detected_at.desc()).limit(limit)
+        stmt = stmt.order_by(Firespot.detected_at.desc())
         rows = await session.execute(stmt)
         rows = rows.all()
         print(f"[get_fires] on_date={on_date} rows={len(rows)}")
