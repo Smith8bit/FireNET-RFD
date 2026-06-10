@@ -1,5 +1,5 @@
 import { Redirect, Tabs } from 'expo-router'
-// import { Ionicons } from '@expo/vector-icons'
+import { Ionicons } from '@expo/vector-icons'
 import { ActivityIndicator, View } from 'react-native'
 import { useAuthSession } from '@/providers/AuthProvider'
 
@@ -18,10 +18,26 @@ export default function AuthorizedLayout() {
 
   return (
     <Tabs screenOptions={{ headerShown: false }}>
-      <Tabs.Screen name="MapView" options={{ title: 'แผนที่' }} />
-      <Tabs.Screen 
-        name="index"
-        options={{ title: 'หน้าหลัก' }}
+      <Tabs.Screen
+        name="MapView"
+        options={{
+          title: 'แผนที่',
+          tabBarIcon: ({ color, size }) => <Ionicons name="map-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="FireList"
+        options={{
+          title: 'รายการไฟ',
+          tabBarIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="Setting"
+        options={{
+          title: 'การตั้งค่า',
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+        }}
       />
     </Tabs>
   )
