@@ -106,13 +106,8 @@ async def handle_list_officers(ws: WebSocket, user: User) -> None:
     print(f"[officers] list_officers requested by {user.email}: {len(officers)} officers found")
     await ws.send_json({"type": "officers_in_region", "officers": officers})
 
-async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
-    async with async_session_maker() as session:
-        if not await _is_admin(user, session):
-            await ws.send_json({"type": "error", "code": "forbidden"})
-            return
-        officers = await _fetch_officers(session, user)
-    map_officers = [
+def _map_subset(officers: list[dict]) -> list[dict]:
+    return [
         {
             "field_officer_id": o["field_officer_id"],
             "name": o["name"],
@@ -123,6 +118,15 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
         }
         for o in officers
     ]
+
+
+async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
+    async with async_session_maker() as session:
+        if not await _is_admin(user, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+        officers = await _fetch_officers(session, user)
+    map_officers = _map_subset(officers)
     print(f"[officers] list_officers_MAP requested by {user.email}: {len(map_officers)} officers found")
     await ws.send_json({"type": "officers_map", "officers": map_officers})
 
@@ -138,6 +142,28 @@ async def broadcast_officers_update(active_connections) -> None:
                 await ws.send_json({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
                 print(f"[broadcast] failed to send to {user.email}: {exc}")
+
+
+async def broadcast_admin_refresh(active_connections, include_pending: bool = False) -> None:
+    """Push fresh officer lists (and optionally the pending list) to every admin."""
+    admins: list[tuple[WebSocket, User]] = []
+    async with async_session_maker() as session:
+        for ws, user in list(active_connections):
+            if await _is_admin(user, session):
+                admins.append((ws, user))
+        for ws, user in admins:
+            try:
+                officers = await _fetch_officers(session, user)
+                await ws.send_json({"type": "officers_in_region", "officers": officers})
+                await ws.send_json({"type": "officers_map", "officers": _map_subset(officers)})
+            except Exception as exc:
+                print(f"[broadcast] officer refresh failed for {user.email}: {exc}")
+    if include_pending:
+        for ws, user in admins:
+            try:
+                await handle_list_pending(ws, user)
+            except Exception as exc:
+                print(f"[broadcast] pending refresh failed for {user.email}: {exc}")
 
 
 async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:

@@ -15,6 +15,7 @@ from .router.regions import router as regions_router
 from .router.officers import router as officers_router
 from .router.users import router as users_router
 from .router.ws import router as ws_router
+from .ws.pg_listener import pg_listener
 
 settings = get_settings()
 
@@ -31,7 +32,9 @@ async def lifespan(app: FastAPI):
         )
     await run_seed()
     await update_fires()
+    await pg_listener.start()
     yield
+    await pg_listener.stop()
 
 
 app = FastAPI(title="TFMS API", lifespan=lifespan)

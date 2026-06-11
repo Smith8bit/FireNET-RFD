@@ -28,5 +28,14 @@ class ConnectionManager:
                 if await fire_visible(user, path, session):
                     await ws.send_json(fire)
 
+    async def broadcast_fires(self) -> None:
+        """Push a fresh, per-user-visible fire list to every client."""
+        for ws, user in list(self.active):
+            try:
+                fires = await get_fires(user=user)
+                await ws.send_json({"fires": fires})
+            except Exception as exc:
+                print(f"[ws] failed to push fires to {user.email}: {exc}")
+
 
 manager = ConnectionManager()
