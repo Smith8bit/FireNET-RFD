@@ -2,6 +2,11 @@ import axios from 'axios'
 import { create } from 'zustand'
 import { api } from '@/lib/api'
 
+export type ResolvePhoto = {
+  uri: string // local file uri (already compressed)
+  gps: { latitude: number; longitude: number } | null
+}
+
 export type Fire = {
   id: string
   name: string
@@ -26,7 +31,7 @@ type FireState = {
   loadFires: () => Promise<void>
   selectFire: (id: string | null) => void
   reserveFire: (fire: Fire) => Promise<void>
-  resolveFire: () => Promise<void>
+  resolveFire: (note: string, photos: ResolvePhoto[]) => Promise<void>
   loadReservedFire: () => Promise<void>
   loadStatus: () => Promise<void>
   setOnline: (online: boolean, coords?: { latitude: number; longitude: number }) => Promise<void>
@@ -76,10 +81,19 @@ export const useFireStore = create<FireState>((set, get) => ({
     }
   },
 
-  resolveFire: async () => {
+  resolveFire: async (note, photos) => {
+    const form = new FormData()
+    if (note.trim()) form.append('note', note.trim())
+    form.append('image_gps', JSON.stringify(photos.map((p) => p.gps)))
+    photos.forEach((p, i) => {
+      form.append('images', { uri: p.uri, name: `photo-${i}.jpg`, type: 'image/jpeg' } as any)
+    })
     let resolved: Fire | null = null
     try {
-      const res = await api.post<Fire>('/officers/me/fire/resolve', null)
+      const res = await api.post<Fire>('/officers/me/fire/resolve', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000, // photo upload on a field network
+      })
       resolved = res.data
     } catch (e) {
       if (

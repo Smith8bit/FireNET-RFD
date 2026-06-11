@@ -6,3 +6,4 @@ geoalchemy2
 shapely
 requests
 apscheduler
+minio

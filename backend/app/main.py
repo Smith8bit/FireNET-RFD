@@ -9,8 +9,9 @@ from .auth.authen import auth_backend, fastapi_users
 from .config import get_settings
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
+from . import storage
 from .database.seed import run_all as run_seed
-from .db_control.fires import expire_old_fires, update_fires
+from .db_control.fires import expire_old_fires, sweep_orphan_images, update_fires
 from .router.fires import router as fires_router
 from .router.regions import router as regions_router
 from .router.officers import router as officers_router
@@ -50,6 +51,13 @@ async def _ingest_tick() -> None:
         print(f"[ingest] expiry failed (will retry on schedule): {exc}")
 
 
+async def _safe_sweep_orphans() -> None:
+    try:
+        await sweep_orphan_images()
+    except Exception as exc:
+        print(f"[sweep] orphan sweep failed (will retry tomorrow): {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -61,9 +69,15 @@ async def lifespan(app: FastAPI):
             text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS expired boolean NOT NULL DEFAULT false")
         )
     await run_seed()
+    try:
+        await storage.ensure_bucket()
+    except Exception as exc:
+        # resolve-with-evidence will 502 until storage is back; don't block startup
+        print(f"[storage] bucket check failed ({exc}); is MinIO running?")
     if settings.INGEST_ENABLED:
         await _ingest_tick()
         scheduler.add_job(_ingest_tick, "interval", minutes=settings.INGEST_INTERVAL_MINUTES)
+        scheduler.add_job(_safe_sweep_orphans, "interval", hours=24)
         scheduler.start()
     await pg_listener.start()
     yield

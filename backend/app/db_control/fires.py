@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -10,8 +10,10 @@ from shapely.geometry import Point
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from .. import storage
 from ..config import get_settings
 from ..database import async_session_maker
+from ..database.models.fire_resolution import FireResolutionImage
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
@@ -126,6 +128,28 @@ async def expire_old_fires() -> None:
             )
             print(f"[expire_old_fires] expired={len(expired_ids)}")
         await session.commit()
+
+async def sweep_orphan_images() -> None:
+    """Remove evidence objects whose resolve transaction never committed.
+
+    Keys are date-prefixed (resolutions/YYYYMMDD/...), so only yesterday's
+    prefix needs scanning: today's uploads may still be in flight, and older
+    days were already swept."""
+    day = f"{datetime.now(timezone.utc) - timedelta(days=1):%Y%m%d}"
+    keys = await storage.list_keys(f"resolutions/{day}/")
+    if not keys:
+        return
+    async with async_session_maker() as session:
+        known = (
+            await session.execute(
+                select(FireResolutionImage.object_key).where(FireResolutionImage.object_key.in_(keys))
+            )
+        ).scalars().all()
+    orphans = sorted(set(keys) - set(known))
+    if orphans:
+        await storage.remove_objects(orphans)
+        print(f"[sweep_orphan_images] removed={len(orphans)}")
+
 
 async def get_fires(
     region_path: str | None = None,

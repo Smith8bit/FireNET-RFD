@@ -51,6 +51,13 @@
       [
         "@maplibre/maplibre-react-native"
       ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to take photos as evidence of extinguished fires",
+          "photosPermission": "Allow $(PRODUCT_NAME) to attach photos as evidence of extinguished fires"
+        }
+      ],
       "expo-image"
     ],
     "experiments": {
