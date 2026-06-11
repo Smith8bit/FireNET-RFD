@@ -28,9 +28,16 @@ export default function Register() {
     setSubmitting(true)
     try {
       await signUp(email.trim(), password, province.code, name.trim())
-      await signIn(email.trim(), password) // -> gate routes to /Pending until admin verifies
     } catch (e) {
       setError(e instanceof Error ? e.message : 'สมัครสมาชิกไม่สำเร็จ')
+      setSubmitting(false)
+      return
+    }
+    try {
+      await signIn(email.trim(), password) // -> gate routes to /Pending until admin verifies
+    } catch {
+      // registered fine but auto-login failed (e.g. network blip)
+      setError('สมัครสมาชิกสำเร็จแล้ว แต่เข้าสู่ระบบอัตโนมัติไม่สำเร็จ กรุณาเข้าสู่ระบบด้วยตนเอง')
     } finally {
       setSubmitting(false)
     }

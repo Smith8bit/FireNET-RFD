@@ -12,6 +12,7 @@ from ..auth.authen import current_active_user
 from ..database import get_async_session
 from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
 from ..database.schemas import FireAssign, OfficerRegister, OfficerStatusUpdate, UserCreate, UserRead
+from ..db_control.permission import fire_visible
 from ..db_control.users import get_user_manager, UserManager
 
 router = APIRouter()
@@ -105,9 +106,16 @@ async def reserve_fire(
     fo = await _my_field_officer(user, session)
     fire = None
     if body.fire_id is not None:
+        if not fo.active:
+            raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
         fire = await session.get(Firespot, body.fire_id)
         if fire is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
+        region_path = (
+            await session.execute(select(Region.path).where(Region.id == fire.region_id))
+        ).scalar_one()
+        if not await fire_visible(user, str(region_path), session):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "fire outside your assigned region")
         if fire.status:
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already resolved")
         if fo.fire_id is not None and fo.fire_id != body.fire_id:
@@ -141,6 +149,8 @@ async def resolve_my_fire(
     session: AsyncSession = Depends(get_async_session),
 ):
     fo = await _my_field_officer(user, session)
+    if not fo.active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
     if fo.fire_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no reserved fire")
     fire = await session.get(Firespot, fo.fire_id)
@@ -152,6 +162,19 @@ async def resolve_my_fire(
     fire.resolve_time = datetime.now(timezone.utc)
     await session.commit()
     return _fire_detail(fire, booked=False)
+
+
+# ---- field officer: get own online status (mobile restores its state from this) ----
+@router.get("/me/status")
+async def my_status(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    fo = await _my_field_officer(user, session)
+    return {
+        "active": fo.active,
+        "last_updated": fo.last_updated.isoformat() if fo.last_updated else None,
+    }
 
 
 # ---- field officer: get own reserved fire ----

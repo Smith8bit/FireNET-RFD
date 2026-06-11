@@ -1,7 +1,6 @@
 import axios from 'axios'
 import { create } from 'zustand'
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL!
+import { api } from '@/lib/api'
 
 export type Fire = {
   id: string
@@ -28,6 +27,7 @@ type FireState = {
   reserveFire: (fire: Fire) => Promise<void>
   resolveFire: () => Promise<void>
   loadReservedFire: () => Promise<void>
+  loadStatus: () => Promise<void>
   setOnline: (online: boolean, coords?: { latitude: number; longitude: number }) => Promise<void>
 }
 
@@ -42,7 +42,7 @@ export const useFireStore = create<FireState>((set, get) => ({
     if (get().loading) return
     set({ loading: true })
     try {
-      const res = await axios.get<Fire[]>(`${API_URL}/fires`, { withCredentials: true })
+      const res = await api.get<Fire[]>('/fires')
       set({ fires: res.data })
     } catch {
     } finally {
@@ -54,18 +54,20 @@ export const useFireStore = create<FireState>((set, get) => ({
 
   reserveFire: async (fire) => {
     try {
-      const res = await axios.patch<Fire | null>(
-        `${API_URL}/officers/me/fire`,
-        { fire_id: fire.id },
-        { withCredentials: true },
-      )
+      const res = await api.patch<Fire | null>('/officers/me/fire', { fire_id: fire.id })
       set({ reservedFire: res.data ?? fire })
       get().loadFires() // refresh booked flags for the list
     } catch (e) {
+      if (axios.isAxiosError(e) && e.response?.status === 403) {
+        throw new Error('ไฟนี้อยู่นอกพื้นที่รับผิดชอบของคุณ')
+      }
       if (axios.isAxiosError(e) && e.response?.status === 409) {
         const detail = (e.response.data as { detail?: string } | undefined)?.detail
         if (detail === 'officer already holds an unresolved fire') {
           throw new Error('คุณมีไฟที่จองอยู่แล้ว ต้องดับไฟเดิมก่อนจึงจะจองจุดใหม่ได้')
+        }
+        if (detail === 'officer offline') {
+          throw new Error('คุณต้องออนไลน์ก่อนจึงจะจองได้')
         }
         throw new Error('ไฟนี้ถูกเจ้าหน้าที่ท่านอื่นจองแล้ว')
       }
@@ -76,11 +78,16 @@ export const useFireStore = create<FireState>((set, get) => ({
   resolveFire: async () => {
     let resolved: Fire | null = null
     try {
-      const res = await axios.post<Fire>(`${API_URL}/officers/me/fire/resolve`, null, {
-        withCredentials: true,
-      })
+      const res = await api.post<Fire>('/officers/me/fire/resolve', null)
       resolved = res.data
-    } catch {
+    } catch (e) {
+      if (
+        axios.isAxiosError(e) &&
+        e.response?.status === 409 &&
+        (e.response.data as { detail?: string } | undefined)?.detail === 'officer offline'
+      ) {
+        throw new Error('คุณต้องออนไลน์ก่อนจึงจะบันทึกการดับไฟได้')
+      }
       throw new Error('ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     }
     // keep showing the fire, now marked as resolved (status=true, booked=false)
@@ -90,11 +97,7 @@ export const useFireStore = create<FireState>((set, get) => ({
 
   setOnline: async (online, coords) => {
     try {
-      await axios.patch(
-        `${API_URL}/officers/me/location`,
-        { ...coords, active: online },
-        { withCredentials: true },
-      )
+      await api.patch('/officers/me/location', { ...coords, active: online })
       set({ online })
     } catch {
       throw new Error('ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง')
@@ -103,8 +106,16 @@ export const useFireStore = create<FireState>((set, get) => ({
 
   loadReservedFire: async () => {
     try {
-      const res = await axios.get<Fire | null>(`${API_URL}/officers/me/fire`, { withCredentials: true })
+      const res = await api.get<Fire | null>('/officers/me/fire')
       set({ reservedFire: res.data ?? null })
+    } catch {}
+  },
+
+  // restore the server-side online flag after an app restart
+  loadStatus: async () => {
+    try {
+      const res = await api.get<{ active: boolean }>('/officers/me/status')
+      set({ online: res.data.active })
     } catch {}
   },
 }))

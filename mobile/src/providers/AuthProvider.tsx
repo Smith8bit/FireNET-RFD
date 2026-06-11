@@ -1,8 +1,6 @@
-import axios from 'axios'
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL!
+import { api, setOnUnauthorized } from '@/lib/api'
 
 export type AuthUser = {
   id: string
@@ -38,7 +36,7 @@ export function useAuthSession() {
 
 async function fetchMe(): Promise<AuthUser | null> {
   try {
-    const res = await axios.get<AuthUser>(`${API_URL}/users/me`, { withCredentials: true, timeout: 8000 })
+    const res = await api.get<AuthUser>('/users/me', { timeout: 8000 })
     return res.data
   } catch {
     return null
@@ -50,6 +48,11 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    // expired/invalid session on any API call → clear state and return to Login
+    setOnUnauthorized(() => {
+      setUser(null)
+      router.replace('/Login')
+    })
     ;(async () => {
       setUser(await fetchMe())
       setIsLoading(false)
@@ -59,9 +62,8 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const signIn = useCallback(async (email: string, password: string) => {
     const body = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
     try {
-      await axios.post(`${API_URL}/auth/cookie/login`, body, {
+      await api.post('/auth/cookie/login', body, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        withCredentials: true,
       })
     } catch {
       throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
@@ -72,7 +74,7 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
 
   const signUp = useCallback(async (email: string, password: string, provinceCode: string, name: string) => {
     try {
-      await axios.post(`${API_URL}/officers/register`, { email, password, province_code: provinceCode, name })
+      await api.post('/officers/register', { email, password, province_code: provinceCode, name })
     } catch (e: any) {
       let detail = 'สมัครสมาชิกไม่สำเร็จ'
       const d = e?.response?.data
@@ -84,7 +86,7 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
 
   const signOut = useCallback(async () => {
     try {
-      await axios.post(`${API_URL}/auth/cookie/logout`, null, { withCredentials: true })
+      await api.post('/auth/cookie/logout', null)
     } catch {}
     setUser(null)
     router.replace('/Login')

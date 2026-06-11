@@ -1,14 +1,16 @@
 import asyncio
 import json
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
+from ..config import get_settings
 from ..database import async_session_maker
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
@@ -17,6 +19,9 @@ from .firefetch import fetch_live_fires
 
 
 _REGIONS_PATH = Path(__file__).resolve().parents[1] / "database" / "seedbag" / "regions_info.json"
+
+# the wildfire feed reports detection times in Thai local time
+_INGEST_TZ = ZoneInfo(get_settings().INGEST_TIMEZONE)
 
 
 def _build_province_path_map() -> dict[str, str]:
@@ -60,7 +65,7 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             detected_at = None
             for fmt in ("%Y-%m-%d%H%M", "%y%m%d%H%M"):
                 try:
-                    detected_at = datetime.strptime(date_str + time_str, fmt).replace(tzinfo=timezone.utc)
+                    detected_at = datetime.strptime(date_str + time_str, fmt).replace(tzinfo=_INGEST_TZ)
                     break
                 except ValueError:
                     continue

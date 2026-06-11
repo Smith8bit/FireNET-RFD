@@ -42,7 +42,6 @@ function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCol
         held: f.id === heldFireId,
         time: f.detected_at,
       },
-      details: { tumboon: f.tumboon, aumper: f.aumper, province: f.province }
     })),
   }
 }

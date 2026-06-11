@@ -21,7 +21,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     await manager.connect(ws, user)
     try:
         while True:
-            data = await ws.receive_json()
+            try:
+                data = await ws.receive_json()
+            except ValueError:
+                # malformed JSON: tell the client, keep the connection
+                await ws.send_json({"type": "error", "code": "invalid_json"})
+                continue
             match data.get("type"):
                 case "list_pending_officers":
                     await handle_list_pending(ws, user)
@@ -34,4 +39,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 case _:
                     print(f"[ws/{user.email}] unknown message: {data}")
     except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        print(f"[ws/{user.email}] error: {exc}")
+    finally:
         manager.disconnect(ws)

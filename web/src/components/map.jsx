@@ -10,24 +10,39 @@ import { useMapSelection } from '../functions/stateStore'
 const FIRES_SOURCE = 'fires'
 const FIRES_LAYER = 'fire-circles'
 
+// same palette as the mobile app's fire states
+const FIRE_COLORS = {
+    resolved: '#22c55e', // ดับแล้ว
+    booked: '#facc15', // ถูกเจ้าหน้าที่จอง
+    free: '#ef4444', // ไฟอิสระ กำลังไหม้
+}
+
 function firesToGeoJSON(points) {
     return {
         type: 'FeatureCollection',
         features: points.map((p) => ({
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-            properties: { id: p.id },
+            properties: { id: p.id, status: p.status, booked: p.booked },
         })),
     }
 }
 
+// like mobile: color tells the fire's state; selection grows the dot + stroke
 function firePaint(activeId) {
     const isActive = ['==', ['get', 'id'], activeId ?? '']
     return {
-        'circle-color': ['case', isActive, '#facc15', '#ef4444'],
-        'circle-radius': ['case', isActive, 11, 6],
+        'circle-color': [
+            'case',
+            ['==', ['get', 'status'], true],
+            FIRE_COLORS.resolved,
+            ['==', ['get', 'booked'], true],
+            FIRE_COLORS.booked,
+            FIRE_COLORS.free,
+        ],
+        'circle-radius': ['case', isActive, 10, 6],
         'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 1.5,
+        'circle-stroke-width': ['case', isActive, 2.5, 1.5],
     }
 }
 
@@ -141,14 +156,22 @@ export default function MapView({ layer, startPoint, points, officers = [] }) {
         // source with the latest pointsRef
     }, [points])
 
+    // like mobile: selecting a fire (map click or list card) flies the camera to it
+    useEffect(() => {
+        const map = mapRef.current
+        if (!map || !focusedId) return
+        const p = pointsRef.current?.find((x) => x.id === focusedId)
+        if (p) map.flyTo({ center: [p.lng, p.lat], zoom: 14, duration: 1000 })
+    }, [focusedId])
+
     useEffect(() => {
         const activeId = hoveredId ?? focusedId ?? null
         activeIdRef.current = activeId
         const map = mapRef.current
         if (!map?.getLayer(FIRES_LAYER)) return
         const paint = firePaint(activeId)
-        map.setPaintProperty(FIRES_LAYER, 'circle-color', paint['circle-color'])
         map.setPaintProperty(FIRES_LAYER, 'circle-radius', paint['circle-radius'])
+        map.setPaintProperty(FIRES_LAYER, 'circle-stroke-width', paint['circle-stroke-width'])
     }, [hoveredId, focusedId])
 
     useEffect(() => {

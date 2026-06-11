@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from fastapi_users import schemas
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
@@ -102,7 +102,7 @@ class ProvinceRead(BaseModel):
 
 class OfficerRegister(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8)
     province_code: str  # stable Region.code (e.g. "p50") so clients can ship a static list
     name: str | None = None
 

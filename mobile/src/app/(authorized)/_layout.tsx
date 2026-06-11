@@ -12,11 +12,17 @@ export default function AuthorizedLayout() {
   const { user, isLoading } = useAuthSession()
   const online = useFireStore((s) => s.online)
   const setOnline = useFireStore((s) => s.setOnline)
+  const loadStatus = useFireStore((s) => s.loadStatus)
 
-  // While online, push the officer's position every 5 minutes
+  // the server keeps the online flag across app restarts; restore it
+  useEffect(() => {
+    loadStatus()
+  }, [loadStatus])
+
+  // While online, push the officer's position immediately and then every 5 minutes
   useEffect(() => {
     if (!online) return
-    const id = setInterval(async () => {
+    const push = async () => {
       try {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
         await setOnline(true, {
@@ -26,7 +32,9 @@ export default function AuthorizedLayout() {
       } catch {
         // skip this tick; next poll retries
       }
-    }, LOCATION_POLL_MS)
+    }
+    push()
+    const id = setInterval(push, LOCATION_POLL_MS)
     return () => clearInterval(id)
   }, [online, setOnline])
 

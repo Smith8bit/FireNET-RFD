@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -19,22 +20,48 @@ from .ws.pg_listener import pg_listener
 
 settings = get_settings()
 
+scheduler = AsyncIOScheduler(timezone=settings.INGEST_TIMEZONE)
+
+# upgrade a pre-existing non-unique index to unique (first-come-first-served จอง);
+# no-op once the unique index is in place
+_UNIQUE_FIRE_INDEX_SQL = """
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE indexname = 'ix_field_officer_fire_id'
+          AND indexdef LIKE 'CREATE UNIQUE INDEX%'
+    ) THEN
+        DROP INDEX IF EXISTS ix_field_officer_fire_id;
+        CREATE UNIQUE INDEX ix_field_officer_fire_id ON field_officers (fire_id);
+    END IF;
+END $$;
+"""
+
+
+async def _safe_update_fires() -> None:
+    try:
+        await update_fires()
+    except Exception as exc:
+        print(f"[ingest] fetch failed (will retry on schedule): {exc}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS ltree"))
         await conn.run_sync(Base.metadata.create_all)
-        # upgrade pre-existing non-unique index to unique (first-come-first-served จอง)
-        await conn.execute(text("DROP INDEX IF EXISTS ix_field_officer_fire_id"))
-        await conn.execute(
-            text("CREATE UNIQUE INDEX ix_field_officer_fire_id ON field_officers (fire_id)")
-        )
+        await conn.execute(text(_UNIQUE_FIRE_INDEX_SQL))
     await run_seed()
-    await update_fires()
+    if settings.INGEST_ENABLED:
+        await _safe_update_fires()
+        scheduler.add_job(_safe_update_fires, "interval", minutes=settings.INGEST_INTERVAL_MINUTES)
+        scheduler.start()
     await pg_listener.start()
     yield
     await pg_listener.stop()
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="TFMS API", lifespan=lifespan)
