@@ -26,9 +26,9 @@ export default function AuthorizedLayout() {
         }}
       />
       <Tabs.Screen
-        name="FireList"
+        name="Firespot"
         options={{
-          title: 'รายการไฟ',
+          title: 'ไฟของคุณ',
           tabBarIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
         }}
       />

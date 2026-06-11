@@ -48,7 +48,10 @@
           "locationPermission": "Allow $(PRODUCT_NAME) to use your location"
         }
       ],
-      ["@maplibre/maplibre-react-native"]
+      [
+        "@maplibre/maplibre-react-native"
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,
