@@ -8,6 +8,7 @@ export default function Firespot() {
   const reservedFire = useFireStore((s) => s.reservedFire)
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
   const resolveFire = useFireStore((s) => s.resolveFire)
+  const online = useFireStore((s) => s.online)
 
   useEffect(() => {
     loadReservedFire()
@@ -70,7 +71,11 @@ export default function Firespot() {
       </View>
 
       {!reservedFire.status && (
-        <TouchableOpacity style={styles.resolveButton} onPress={onResolve}>
+        <TouchableOpacity
+          style={[styles.resolveButton, !online && styles.resolveButtonDisabled]}
+          disabled={!online}
+          onPress={onResolve}
+        >
           <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
           <Text style={styles.resolveButtonText}>ดับไฟแล้ว</Text>
         </TouchableOpacity>
@@ -79,7 +84,9 @@ export default function Firespot() {
       <Text style={styles.note}>
         {reservedFire.status
           ? 'ดับไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
-          : 'เจ้าหน้าที่ 1 คน จองได้ครั้งละ 1 จุดไฟ ต้องดับไฟเดิมก่อนจึงจะจองจุดใหม่ได้'}
+          : online
+            ? 'เจ้าหน้าที่ 1 คน จองได้ครั้งละ 1 จุดไฟ ต้องดับไฟเดิมก่อนจึงจะจองจุดใหม่ได้'
+            : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกการดับไฟได้'}
       </Text>
     </ScrollView>
   )
@@ -167,6 +174,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     marginTop: 16,
+  },
+  resolveButtonDisabled: {
+    backgroundColor: '#d1d5db',
   },
   resolveButtonText: {
     color: '#ffffff',

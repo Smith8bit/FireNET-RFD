@@ -63,6 +63,13 @@ class FireAssign(BaseModel):
     fire_id: uuid.UUID | None = None
 
 
+class OfficerStatusUpdate(BaseModel):
+    # coords are optional so an officer can go offline without a GPS fix
+    latitude: float | None = None
+    longitude: float | None = None
+    active: bool
+
+
 class FieldOfficerCreate(BaseModel):
     user_id: uuid.UUID
     fire_id: uuid.UUID

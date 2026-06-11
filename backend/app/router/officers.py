@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.authen import current_active_user
 from ..database import get_async_session
 from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
-from ..database.schemas import FireAssign, OfficerRegister, PointSchema, UserCreate, UserRead
+from ..database.schemas import FireAssign, OfficerRegister, OfficerStatusUpdate, UserCreate, UserRead
 from ..db_control.users import get_user_manager, UserManager
 
 router = APIRouter()
@@ -45,10 +45,10 @@ async def register_officer(
     return user
 
 
-# ---- field officer: update own location ----
+# ---- field officer: update own location / online status ----
 @router.patch("/me/location", status_code=status.HTTP_200_OK)
 async def update_my_location(
-    body: PointSchema,
+    body: OfficerStatusUpdate,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -57,11 +57,12 @@ async def update_my_location(
     ).scalar_one_or_none()
     if fo is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
-    fo.last_location = from_shape(Point(body.longitude, body.latitude), srid=4326)
+    if body.latitude is not None and body.longitude is not None:
+        fo.last_location = from_shape(Point(body.longitude, body.latitude), srid=4326)
     fo.last_updated = datetime.now(timezone.utc)
-    fo.active = False
+    fo.active = body.active
     await session.commit()
-    return {"last_updated": fo.last_updated.isoformat()}
+    return {"active": fo.active, "last_updated": fo.last_updated.isoformat()}
 
 
 def _fire_detail(fire: Firespot, booked: bool = True) -> dict:

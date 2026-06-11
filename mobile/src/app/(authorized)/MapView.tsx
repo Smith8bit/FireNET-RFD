@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { Map, Camera, GeoJSONSource, Layer, type CameraRef, type StyleSpecification } from '@maplibre/maplibre-react-native'
 import base from '@/assets/layers/base.json'
-import { View, Text, StyleSheet, Pressable, useWindowDimensions, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, useWindowDimensions, TouchableOpacity, Alert, Switch } from 'react-native';
+import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +55,9 @@ export default function MapView() {
   const reserveFire = useFireStore((s) => s.reserveFire)
   const reservedFire = useFireStore((s) => s.reservedFire)
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
+  const online = useFireStore((s) => s.online)
+  const setOnline = useFireStore((s) => s.setOnline)
+  const [toggling, setToggling] = useState(false)
   const bottomSheetRef = useRef<BottomSheet>(null)
   const cameraRef = useRef<CameraRef>(null)
   const { height } = useWindowDimensions()
@@ -71,8 +75,39 @@ export default function MapView() {
   const firesGeoJSON = useMemo(() => toGeoJSON(fires, heldFireId), [fires, heldFireId])
   const snapPoints = useMemo(() => ['14%', '60%', '100%'], [])
 
+  const toggleOnline = useCallback(
+    async (value: boolean) => {
+      setToggling(true)
+      try {
+        if (value) {
+          const { status } = await Location.requestForegroundPermissionsAsync()
+          if (status !== 'granted') {
+            Alert.alert('ไม่สามารถออนไลน์ได้', 'กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
+            return
+          }
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+          await setOnline(true, {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          })
+        } else {
+          await setOnline(false)
+        }
+      } catch (e) {
+        Alert.alert(
+          'เปลี่ยนสถานะไม่สำเร็จ',
+          e instanceof Error ? e.message : 'ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง',
+        )
+      } finally {
+        setToggling(false)
+      }
+    },
+    [setOnline],
+  )
+
   const focusFire = useCallback(
     (fire: Fire) => {
+      if (!online) return
       selectFire(fire.id)
       bottomSheetRef.current?.snapToIndex(1)
       cameraRef.current?.flyTo({
@@ -82,7 +117,7 @@ export default function MapView() {
         duration: 1000,
       })
     },
-    [height, selectFire],
+    [height, selectFire, online],
   )
 
   const reserve = useCallback(
@@ -105,9 +140,13 @@ export default function MapView() {
       const selected = item.id === selectedFireId
       const isHeld = item.id === heldFireId
       const bookedByOther = item.booked && !isHeld
-      const disabled = item.status || holdingUnresolved || bookedByOther
+      const disabled = !online || item.status || holdingUnresolved || bookedByOther
       return (
-        <Pressable style={[styles.fireRow, selected && styles.fireRowSelected]} onPress={() => focusFire(item)}>
+        <Pressable
+          style={[styles.fireRow, selected && styles.fireRowSelected, !online && styles.fireRowOffline]}
+          disabled={!online}
+          onPress={() => focusFire(item)}
+        >
           <View style={[styles.fireDot, { backgroundColor: fireColor(item, heldFireId) }]} />
           <View style={styles.fireInfo}>
             <Text style={[styles.fireName, selected && styles.fireNameSelected]}>
@@ -127,7 +166,7 @@ export default function MapView() {
         </Pressable>
       )
     },
-    [focusFire, reserve, selectedFireId, heldFireId, holdingUnresolved],
+    [focusFire, reserve, selectedFireId, heldFireId, holdingUnresolved, online],
   )
 
   const keyExtractor = useCallback((item: Fire) => item.id, [])
@@ -187,6 +226,17 @@ export default function MapView() {
       <TouchableOpacity style={styles.reloadButton} onPress={loadFires}>
         <Ionicons name="refresh" size={20} color="#000000" />
       </TouchableOpacity>
+      <View style={styles.onlineToggle}>
+        <View style={[styles.onlineDot, { backgroundColor: online ? '#22c55e' : '#9ca3af' }]} />
+        <Text style={styles.onlineLabel}>{online ? 'ออนไลน์' : 'ออฟไลน์'}</Text>
+        <Switch
+          value={online}
+          onValueChange={toggleOnline}
+          disabled={toggling}
+          trackColor={{ false: '#d1d5db', true: '#86efac' }}
+          thumbColor={online ? '#22c55e' : '#f4f4f5'}
+        />
+      </View>
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
@@ -226,6 +276,33 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
+  onlineToggle: {
+    position: 'absolute',
+    bottom: '16%',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  onlineLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 10,
+  },
   sheetTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -245,6 +322,9 @@ const styles = StyleSheet.create({
   },
   fireRowSelected: {
     backgroundColor: '#fef3c7',
+  },
+  fireRowOffline: {
+    opacity: 0.5,
   },
   fireDot: {
     width: 10,

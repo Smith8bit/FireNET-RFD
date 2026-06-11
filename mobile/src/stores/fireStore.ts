@@ -22,11 +22,13 @@ type FireState = {
   selectedFireId: string | null
   reservedFire: Fire | null
   loading: boolean
+  online: boolean
   loadFires: () => Promise<void>
   selectFire: (id: string | null) => void
   reserveFire: (fire: Fire) => Promise<void>
   resolveFire: () => Promise<void>
   loadReservedFire: () => Promise<void>
+  setOnline: (online: boolean, coords?: { latitude: number; longitude: number }) => Promise<void>
 }
 
 export const useFireStore = create<FireState>((set, get) => ({
@@ -34,6 +36,7 @@ export const useFireStore = create<FireState>((set, get) => ({
   selectedFireId: null,
   reservedFire: null,
   loading: false,
+  online: false,
 
   loadFires: async () => {
     if (get().loading) return
@@ -83,6 +86,19 @@ export const useFireStore = create<FireState>((set, get) => ({
     // keep showing the fire, now marked as resolved (status=true, booked=false)
     set({ reservedFire: resolved })
     get().loadFires() // fire status changed → refresh the map list
+  },
+
+  setOnline: async (online, coords) => {
+    try {
+      await axios.patch(
+        `${API_URL}/officers/me/location`,
+        { ...coords, active: online },
+        { withCredentials: true },
+      )
+      set({ online })
+    } catch {
+      throw new Error('ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง')
+    }
   },
 
   loadReservedFire: async () => {
