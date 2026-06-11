@@ -4,7 +4,7 @@ import base from '@/assets/layers/base.json'
 import { View, Text, StyleSheet, Pressable, useWindowDimensions, TouchableOpacity, Alert, Switch } from 'react-native';
 import * as Location from 'expo-location';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import BottomSheet, { BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetFlatList, type BottomSheetFlatListMethods } from '@gorhom/bottom-sheet';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useFireStore, type Fire } from '@/stores/fireStore';
@@ -47,6 +47,58 @@ function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCol
   }
 }
 
+const ROW_HEIGHT = 64
+
+type FireRowProps = {
+  item: Fire
+  selected: boolean
+  isHeld: boolean
+  bookedByOther: boolean
+  disabled: boolean
+  online: boolean
+  color: string
+  onFocus: (fire: Fire) => void
+  onReserve: (fire: Fire) => void
+}
+
+// memoized so selection/status changes only re-render the affected rows
+const FireRow = React.memo(function FireRow({
+  item,
+  selected,
+  isHeld,
+  bookedByOther,
+  disabled,
+  online,
+  color,
+  onFocus,
+  onReserve,
+}: FireRowProps) {
+  return (
+    <Pressable
+      style={[styles.fireRow, selected && styles.fireRowSelected, !online && styles.fireRowOffline]}
+      disabled={!online}
+      onPress={() => onFocus(item)}
+    >
+      <View style={[styles.fireDot, { backgroundColor: color }]} />
+      <View style={styles.fireInfo}>
+        <Text style={[styles.fireName, selected && styles.fireNameSelected]}>
+          {item.name}
+        </Text>
+        <Text style={styles.fireTime}>{formatDetectedAt(item.detected_at)}</Text>
+      </View>
+      <TouchableOpacity
+        style={[styles.reserveButton, disabled && !isHeld && styles.reserveButtonDisabled]}
+        disabled={disabled}
+        onPress={() => onReserve(item)}
+      >
+        <Text style={styles.reserveButtonText}>
+          {item.status ? 'ดับแล้ว' : isHeld ? 'จองแล้ว' : bookedByOther ? 'ถูกจอง' : 'ว่าง'}
+        </Text>
+      </TouchableOpacity>
+    </Pressable>
+  )
+})
+
 export default function MapView() {
   const fires = useFireStore((s) => s.fires)
   const selectedFireId = useFireStore((s) => s.selectedFireId)
@@ -58,7 +110,10 @@ export default function MapView() {
   const online = useFireStore((s) => s.online)
   const setOnline = useFireStore((s) => s.setOnline)
   const [toggling, setToggling] = useState(false)
+  const [sortBy, setSortBy] = useState<'time' | 'name'>('time')
+  const [sortAsc, setSortAsc] = useState(false)
   const bottomSheetRef = useRef<BottomSheet>(null)
+  const listRef = useRef<BottomSheetFlatListMethods>(null)
   const cameraRef = useRef<CameraRef>(null)
   const { height } = useWindowDimensions()
 
@@ -73,7 +128,33 @@ export default function MapView() {
   const holdingUnresolved = heldFireId != null
 
   const firesGeoJSON = useMemo(() => toGeoJSON(fires, heldFireId), [fires, heldFireId])
-  const snapPoints = useMemo(() => ['14%', '60%', '100%'], [])
+
+  const sortedFires = useMemo(() => {
+    const sorted = [...fires]
+    const dir = sortAsc ? 1 : -1
+    if (sortBy === 'name') {
+      sorted.sort((a, b) => dir * a.name.localeCompare(b.name, 'th'))
+    } else {
+      sorted.sort(
+        (a, b) => dir * (new Date(a.detected_at).getTime() - new Date(b.detected_at).getTime()),
+      )
+    }
+    return sorted
+  }, [fires, sortBy, sortAsc])
+
+  // tap the active chip again to flip direction; a new key gets its natural default
+  const changeSort = useCallback(
+    (key: 'time' | 'name') => {
+      if (sortBy === key) {
+        setSortAsc((v) => !v)
+      } else {
+        setSortBy(key)
+        setSortAsc(key === 'name') // name: ก→ฮ, time: newest first
+      }
+    },
+    [sortBy],
+  )
+  const snapPoints = useMemo(() => ['14%', '60%'], [])
 
   const toggleOnline = useCallback(
     async (value: boolean) => {
@@ -91,7 +172,13 @@ export default function MapView() {
             longitude: pos.coords.longitude,
           })
         } else {
-          await setOnline(false)
+          // best-effort: still go offline even if the position can't be read
+          let coords: { latitude: number; longitude: number } | undefined
+          try {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+            coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
+          } catch {}
+          await setOnline(false, coords)
         }
       } catch (e) {
         Alert.alert(
@@ -103,6 +190,17 @@ export default function MapView() {
       }
     },
     [setOnline],
+  )
+
+  // scroll the bottom-sheet list so this fire's row is at the top
+  const scrollToFire = useCallback(
+    (fire: Fire) => {
+      const index = sortedFires.findIndex((f) => f.id === fire.id)
+      if (index >= 0) {
+        listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: true })
+      }
+    },
+    [sortedFires],
   )
 
   const focusFire = useCallback(
@@ -137,33 +235,20 @@ export default function MapView() {
 
   const renderFire = useCallback(
     ({ item }: { item: Fire }) => {
-      const selected = item.id === selectedFireId
       const isHeld = item.id === heldFireId
       const bookedByOther = item.booked && !isHeld
-      const disabled = !online || item.status || holdingUnresolved || bookedByOther
       return (
-        <Pressable
-          style={[styles.fireRow, selected && styles.fireRowSelected, !online && styles.fireRowOffline]}
-          disabled={!online}
-          onPress={() => focusFire(item)}
-        >
-          <View style={[styles.fireDot, { backgroundColor: fireColor(item, heldFireId) }]} />
-          <View style={styles.fireInfo}>
-            <Text style={[styles.fireName, selected && styles.fireNameSelected]}>
-              {item.name}
-            </Text>
-            <Text style={styles.fireTime}>{formatDetectedAt(item.detected_at)}</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.reserveButton, disabled && !isHeld && styles.reserveButtonDisabled]}
-            disabled={disabled}
-            onPress={() => reserve(item)}
-          >
-            <Text style={styles.reserveButtonText}>
-              {item.status ? 'ดับแล้ว' : isHeld ? 'จองแล้ว' : bookedByOther ? 'ถูกจอง' : 'ว่าง'}
-            </Text>
-          </TouchableOpacity>
-        </Pressable>
+        <FireRow
+          item={item}
+          selected={item.id === selectedFireId}
+          isHeld={isHeld}
+          bookedByOther={bookedByOther}
+          disabled={!online || item.status || holdingUnresolved || bookedByOther}
+          online={online}
+          color={fireColor(item, heldFireId)}
+          onFocus={focusFire}
+          onReserve={reserve}
+        />
       )
     },
     [focusFire, reserve, selectedFireId, heldFireId, holdingUnresolved, online],
@@ -171,9 +256,15 @@ export default function MapView() {
 
   const keyExtractor = useCallback((item: Fire) => item.id, [])
 
+  // fixed row height: no async measurement, and scrollToIndex is always exact
+  const getItemLayout = useCallback(
+    (_: unknown, index: number) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index }),
+    [],
+  )
+
   return (
     <GestureHandlerRootView style={styles.container}>
-      
+
       <Map
         style={styles.container}
         mapStyle={MAP_STYLE}
@@ -189,6 +280,7 @@ export default function MapView() {
             if (fire) {
               e.stopPropagation()
               focusFire(fire)
+              scrollToFire(fire)
             }
           }}
         >
@@ -243,11 +335,40 @@ export default function MapView() {
         snapPoints={snapPoints}
         enableDynamicSizing={false}
       >
-        <Text style={styles.sheetTitle}>รายการไฟ ({fires.length})</Text>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>รายการไฟ ({fires.length})</Text>
+          <View style={styles.sortGroup}>
+            <Text style={styles.sortLabel}>เรียงตาม</Text>
+            <TouchableOpacity
+              style={[styles.sortButton, sortBy === 'time' && styles.sortButtonActive]}
+              onPress={() => changeSort('time')}
+            >
+              <Text style={[styles.sortText, sortBy === 'time' && styles.sortTextActive]}>เวลา</Text>
+              {sortBy === 'time' && (
+                <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={12} color="#ffffff" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortButton, sortBy === 'name' && styles.sortButtonActive]}
+              onPress={() => changeSort('name')}
+            >
+              <Text style={[styles.sortText, sortBy === 'name' && styles.sortTextActive]}>ชื่อ</Text>
+              {sortBy === 'name' && (
+                <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={12} color="#ffffff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
         <BottomSheetFlatList
-          data={fires}
+          ref={listRef}
+          data={sortedFires}
           keyExtractor={keyExtractor}
           renderItem={renderFire}
+          getItemLayout={getItemLayout}
+          windowSize={7}
+          maxToRenderPerBatch={12}
+          initialNumToRender={12}
+          removeClippedSubviews
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={<Text style={styles.emptyText}>No active fires</Text>}
         />
@@ -278,8 +399,8 @@ const styles = StyleSheet.create({
   },
   onlineToggle: {
     position: 'absolute',
-    bottom: '16%',
-    alignSelf: 'center',
+    top: 40,
+    right: 20,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
@@ -303,11 +424,46 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginRight: 10,
   },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
   sheetTitle: {
     fontSize: 16,
     fontWeight: '600',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+  },
+  sortGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sortLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginRight: 6,
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#f3f4f6',
+    marginLeft: 6,
+  },
+  sortButtonActive: {
+    backgroundColor: '#f59e0b',
+  },
+  sortText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  sortTextActive: {
+    color: '#ffffff',
   },
   listContent: {
     paddingBottom: 24,
@@ -315,7 +471,7 @@ const styles = StyleSheet.create({
   fireRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    height: ROW_HEIGHT, // must match getItemLayout
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e5e7eb',
