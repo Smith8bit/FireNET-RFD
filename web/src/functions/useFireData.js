@@ -5,9 +5,12 @@ function normalize(raw) {
   return raw.map((f) => ({
     id: f.id,
     name: f.name,
+    detected_at: f.detected_at,
     date: f.detected_at?.split('T')[0] ?? '',
     time: f.detected_at?.split('T')[1]?.split('+')[0]?.slice(0, 5) ?? '',
     type: f.type,
+    status: f.status,
+    booked: f.booked,
     lat: f.lat,
     lng: f.lng,
     tumboon: f.tumboon,

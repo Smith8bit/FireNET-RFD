@@ -33,4 +33,4 @@ if ($Fresh) {
 }
 
 .\venv\Scripts\Activate.ps1
-python -m fastapi dev
+python -m fastapi dev --host 0.0.0.0

@@ -180,3 +180,6 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 backend/app/config.py
+
+# VS Code Counter extension reports
+.VSCodeCounter/

@@ -3,9 +3,12 @@ import uuid
 from fastapi import WebSocket
 from sqlalchemy import select, text
 
+from ..config import get_settings
 from ..database import async_session_maker
 from ..database.models import FieldOfficer, Region, User, UserRegion
 from ..db_control.permission import user_region_paths
+
+settings = get_settings()
 
 _PENDING_SQL = """
     SELECT u.id AS user_id, u.email AS email, ur.name AS name,
@@ -18,7 +21,8 @@ _PENDING_SQL = """
 
 _OFFICERS_SQL = """
     SELECT fo.id AS field_officer_id, fo.user_id, fo.name, u.email,
-           fo.active, fo.fire_id::text AS fire_id,
+           (fo.active AND fo.last_updated > now() - make_interval(mins => :ttl)) AS active,
+           fo.fire_id::text AS fire_id,
            fo.last_updated::text AS last_updated,
            ST_Y(fo.last_location::geometry) AS latitude,
            ST_X(fo.last_location::geometry) AS longitude,
@@ -41,15 +45,18 @@ async def _is_admin(user: User, session) -> bool:
 
 
 async def _fetch_officers(session, user: User) -> list[dict]:
+    ttl = settings.OFFICER_ONLINE_TTL_MINUTES
     if user.is_superuser:
-        rows = await session.execute(text(_OFFICERS_SQL + " ORDER BY u.email"))
+        rows = await session.execute(
+            text(_OFFICERS_SQL + " ORDER BY u.email").bindparams(ttl=ttl)
+        )
     else:
         paths = await user_region_paths(user, session)
         if not paths:
             return []
         rows = await session.execute(
             text(_OFFICERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[])) ORDER BY u.email")
-            .bindparams(paths=paths)
+            .bindparams(paths=paths, ttl=ttl)
         )
     return [
         {
@@ -106,13 +113,8 @@ async def handle_list_officers(ws: WebSocket, user: User) -> None:
     print(f"[officers] list_officers requested by {user.email}: {len(officers)} officers found")
     await ws.send_json({"type": "officers_in_region", "officers": officers})
 
-async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
-    async with async_session_maker() as session:
-        if not await _is_admin(user, session):
-            await ws.send_json({"type": "error", "code": "forbidden"})
-            return
-        officers = await _fetch_officers(session, user)
-    map_officers = [
+def _map_subset(officers: list[dict]) -> list[dict]:
+    return [
         {
             "field_officer_id": o["field_officer_id"],
             "name": o["name"],
@@ -123,6 +125,15 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
         }
         for o in officers
     ]
+
+
+async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
+    async with async_session_maker() as session:
+        if not await _is_admin(user, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+        officers = await _fetch_officers(session, user)
+    map_officers = _map_subset(officers)
     print(f"[officers] list_officers_MAP requested by {user.email}: {len(map_officers)} officers found")
     await ws.send_json({"type": "officers_map", "officers": map_officers})
 
@@ -138,6 +149,28 @@ async def broadcast_officers_update(active_connections) -> None:
                 await ws.send_json({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
                 print(f"[broadcast] failed to send to {user.email}: {exc}")
+
+
+async def broadcast_admin_refresh(active_connections, include_pending: bool = False) -> None:
+    """Push fresh officer lists (and optionally the pending list) to every admin."""
+    admins: list[tuple[WebSocket, User]] = []
+    async with async_session_maker() as session:
+        for ws, user in list(active_connections):
+            if await _is_admin(user, session):
+                admins.append((ws, user))
+        for ws, user in admins:
+            try:
+                officers = await _fetch_officers(session, user)
+                await ws.send_json({"type": "officers_in_region", "officers": officers})
+                await ws.send_json({"type": "officers_map", "officers": _map_subset(officers)})
+            except Exception as exc:
+                print(f"[broadcast] officer refresh failed for {user.email}: {exc}")
+    if include_pending:
+        for ws, user in admins:
+            try:
+                await handle_list_pending(ws, user)
+            except Exception as exc:
+                print(f"[broadcast] pending refresh failed for {user.email}: {exc}")
 
 
 async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
@@ -176,6 +209,9 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
                 return
 
         target = await session.get(User, user_id)
+        if target is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
         target.is_verified = True
 
         existing_fo = (

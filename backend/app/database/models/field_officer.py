@@ -25,6 +25,7 @@ class FieldOfficer(Base):
 
     __table_args__ = (
         Index("ix_field_officer_user_id", "user_id"),
-        Index("ix_field_officer_fire_id", "fire_id"),
+        # unique: first-come-first-served — a fire is held by at most one officer
+        Index("ix_field_officer_fire_id", "fire_id", unique=True),
         Index("ix_field_officer_last_updated", "last_updated"),
     )

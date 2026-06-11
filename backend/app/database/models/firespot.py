@@ -21,6 +21,8 @@ class Firespot(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     location: Mapped[WKBElement] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=False)
     status: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # True when status was set by the auto-expiry job rather than an officer
+    expired: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     officer_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("field_officers.id"), nullable=True)
     resolve_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

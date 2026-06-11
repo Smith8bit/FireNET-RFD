@@ -1,19 +1,22 @@
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from ..config import get_settings
 
 
 def fetch_live_fires() -> list[dict]:
-    today = datetime.now()- timedelta(days=2)
-    today = today.strftime("%Y-%m-%d")
+    settings = get_settings()
+    today = datetime.now(ZoneInfo(settings.INGEST_TIMEZONE)).date()
+    start = today - timedelta(days=settings.INGEST_LOOKBACK_DAYS)
     url = (
-        "https://wildfire.forest.go.th/firemap/getdb.php"
+        f"{settings.WILDFIRE_API_URL}"
         f"?snpp=on&nighttime=on&daytime=on"
-        f"&datestart={today}&dateend={today}"
+        f"&datestart={start:%Y-%m-%d}&dateend={today:%Y-%m-%d}"
         f"&province=ทุกจังหวัด"
         f"&nrf=on&alow=on&cmf=on&fio=on&dnp=on&alro=on&cp=on&sd=on&dol=on&td=on&other=on"
         f"&showMap=on"
     )
-    print(url)
     response = requests.get(url, timeout=15)
     response.raise_for_status()
     data = response.json()
