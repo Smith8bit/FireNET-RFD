@@ -74,6 +74,7 @@ def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
         "name": fire.name,
         "detected_at": fire.detected_at.isoformat(),
         "status": fire.status,
+        "expired": fire.expired,
         "booked": booked,
         "lat": pt.y,
         "lng": pt.x,

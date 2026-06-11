@@ -8,6 +8,7 @@ export type Fire = {
   lat: number
   lng: number
   status: boolean
+  expired?: boolean // status was set by auto-expiry, not an officer
   booked: boolean
   detected_at: string
   tumboon: string | null

@@ -1,13 +1,13 @@
 import asyncio
 import json
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from ..config import get_settings
@@ -105,6 +105,28 @@ async def update_fires() -> None:
     print(f"[update_fires] completed")
     return
 
+
+async def expire_old_fires() -> None:
+    """Mark fires unresolved after FIRE_EXPIRE_DAYS as expired and release their officers."""
+    cutoff = datetime.now(_INGEST_TZ) - timedelta(days=get_settings().FIRE_EXPIRE_DAYS)
+    async with async_session_maker() as session:
+        expired_ids = (
+            await session.execute(
+                update(Firespot)
+                .where(Firespot.status == False, Firespot.detected_at < cutoff)  # noqa: E712
+                .values(status=True, expired=True, resolve_time=func.now())
+                .returning(Firespot.id)
+            )
+        ).scalars().all()
+        if expired_ids:
+            await session.execute(
+                update(FieldOfficer)
+                .where(FieldOfficer.fire_id.in_(expired_ids))
+                .values(fire_id=None)
+            )
+            print(f"[expire_old_fires] expired={len(expired_ids)}")
+        await session.commit()
+
 async def get_fires(
     region_path: str | None = None,
     status: bool | None = None,
@@ -123,6 +145,7 @@ async def get_fires(
             Firespot.detail,
             Firespot.detected_at,
             Firespot.status,
+            Firespot.expired,
             Firespot.resolve_time,
             Firespot.location,
             Region.path.label("region_path"),
@@ -137,6 +160,10 @@ async def get_fires(
             stmt = stmt.where(Firespot.status == status)
         if on_date is not None:
             stmt = stmt.where(func.date(Firespot.detected_at) == on_date)
+        else:
+            # default view: only fires detected today (Thai time)
+            today_start = datetime.now(_INGEST_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+            stmt = stmt.where(Firespot.detected_at >= today_start)
 
         if user is not None and not user.is_superuser:
             paths = await user_region_paths(user, session)
@@ -157,6 +184,7 @@ async def get_fires(
                 "name": row.name,
                 "detected_at": row.detected_at.isoformat(),
                 "status": row.status,
+                "expired": row.expired,
                 "booked": row.holder_id is not None,
                 "lat": pt.y,
                 "lng": pt.x,

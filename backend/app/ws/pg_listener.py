@@ -11,12 +11,17 @@ _DEBOUNCE_S = 0.5
 _RECONNECT_S = 5
 
 # Statement-level triggers: any committed change to these tables notifies the
-# channel with the table name. Payload stays tiny; listeners refetch the data
-# they need, so visibility filtering keeps applying per user.
+# channel (payload = trigger argument, falling back to the table name). Payload
+# stays tiny; listeners refetch the data they need, so visibility filtering
+# keeps applying per user.
+#
+# field_officers is split in two so the 5-minute location pings (which can't
+# change any fire's booked flag) only refresh the admin officer lists, while
+# booking changes (fire_id) also refresh every client's fire list.
 _TRIGGER_SQL = """
 CREATE OR REPLACE FUNCTION tfms_notify_change() RETURNS trigger AS $$
 BEGIN
-    PERFORM pg_notify('tfms_changes', TG_TABLE_NAME);
+    PERFORM pg_notify('tfms_changes', COALESCE(TG_ARGV[0], TG_TABLE_NAME));
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -27,8 +32,14 @@ CREATE TRIGGER tfms_notify_firespots
     FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change();
 
 DROP TRIGGER IF EXISTS tfms_notify_field_officers ON field_officers;
-CREATE TRIGGER tfms_notify_field_officers
-    AFTER INSERT OR UPDATE OR DELETE ON field_officers
+DROP TRIGGER IF EXISTS tfms_notify_fo_booking ON field_officers;
+CREATE TRIGGER tfms_notify_fo_booking
+    AFTER INSERT OR DELETE OR UPDATE OF fire_id ON field_officers
+    FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change('field_officers_booking');
+
+DROP TRIGGER IF EXISTS tfms_notify_fo_status ON field_officers;
+CREATE TRIGGER tfms_notify_fo_status
+    AFTER UPDATE ON field_officers
     FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change();
 
 DROP TRIGGER IF EXISTS tfms_notify_user ON "user";
@@ -91,10 +102,10 @@ class PgListener:
             from .officer_handlers import broadcast_admin_refresh
 
             try:
-                # field_officers affects the fires' "booked" flag too
-                if tables & {"firespots", "field_officers"}:
+                # booking changes affect the fires' "booked" flag too
+                if tables & {"firespots", "field_officers_booking"}:
                     await manager.broadcast_fires()
-                if tables & {"field_officers", "user"}:
+                if tables & {"field_officers", "field_officers_booking", "user"}:
                     await broadcast_admin_refresh(
                         manager.active, include_pending="user" in tables
                     )
