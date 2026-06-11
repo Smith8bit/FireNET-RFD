@@ -1,73 +1,79 @@
-import axios from 'axios'
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import { Map, Camera, GeoJSONSource, Layer, type CameraRef, type StyleSpecification } from '@maplibre/maplibre-react-native'
 import base from '@/assets/layers/base.json'
-import { View, Text, StyleSheet, Pressable, useWindowDimensions, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Pressable, useWindowDimensions, TouchableOpacity, Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useFireStore, type Fire } from '@/stores/fireStore';
+import { formatDetectedAt } from '@/utils/format';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL! // fallback for emulator: 'http://10.0.2.2:8000'
 const MAP_STYLE = base as unknown as StyleSpecification
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
-type Fire = { id: string; name: string; lat: number; lng: number; status: boolean; detected_at: string; tumboon: string; aumper: string; province: string; type: string }
-
-function formatDetectedAt(iso: string) {
-  return new Date(iso).toLocaleString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const FIRE_COLORS = {
+  resolved: '#22c55e', // ดับแล้ว
+  held: '#f97316', // ไฟที่เราจอง
+  booked: '#facc15', // ถูกเจ้าหน้าที่ท่านอื่นจอง
+  free: '#ef4444', // ไฟอิสระ กำลังไหม้
 }
 
-function toGeoJSON(fires: Fire[]): GeoJSON.FeatureCollection {
+function fireColor(fire: Fire, heldFireId: string | null): string {
+  if (fire.status) return FIRE_COLORS.resolved
+  if (fire.id === heldFireId) return FIRE_COLORS.held
+  if (fire.booked) return FIRE_COLORS.booked
+  return FIRE_COLORS.free
+}
+
+function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: fires.map((f) => ({
       type: 'Feature',
       id: f.id,
       geometry: { type: 'Point', coordinates: [f.lng, f.lat] },
-      properties: { id: f.id, name: f.name, staus: f.status, time: f.detected_at },
+      properties: {
+        id: f.id,
+        name: f.name,
+        status: f.status,
+        booked: f.booked,
+        held: f.id === heldFireId,
+        time: f.detected_at,
+      },
       details: { tumboon: f.tumboon, aumper: f.aumper, province: f.province }
     })),
   }
 }
 
 export default function MapView() {
-  const [fires, setFires] = useState<Fire[]>([])
-  const [selectedFireId, setSelectedFireId] = useState<string | null>(null)
+  const fires = useFireStore((s) => s.fires)
+  const selectedFireId = useFireStore((s) => s.selectedFireId)
+  const loadFires = useFireStore((s) => s.loadFires)
+  const selectFire = useFireStore((s) => s.selectFire)
+  const reserveFire = useFireStore((s) => s.reserveFire)
+  const reservedFire = useFireStore((s) => s.reservedFire)
+  const loadReservedFire = useFireStore((s) => s.loadReservedFire)
   const bottomSheetRef = useRef<BottomSheet>(null)
   const cameraRef = useRef<CameraRef>(null)
   const { height } = useWindowDimensions()
 
-  const loadingRef = useRef(false)
-
-  const loadFires = useCallback(() => {
-    if (loadingRef.current) return
-    loadingRef.current = true
-    axios
-      .get<Fire[]>(`${API_URL}/fires`, { withCredentials: true })
-      .then((res) => setFires(res.data))
-      .catch(() => { })
-      .finally(() => {
-        loadingRef.current = false
-      })
-  }, [])
-
-  // Fetch fires on mount
+  // Fetch fires and own reservation on mount
   useEffect(() => {
     loadFires()
-  }, [loadFires])
+    loadReservedFire()
+  }, [loadFires, loadReservedFire])
 
-  const firesGeoJSON = useMemo(() => toGeoJSON(fires), [fires])
-  const snapPoints = useMemo(() => ['12%', '60%', '100%'], [])
+  // จอง is locked while the officer holds an unresolved fire
+  const heldFireId = reservedFire != null && !reservedFire.status ? reservedFire.id : null
+  const holdingUnresolved = heldFireId != null
+
+  const firesGeoJSON = useMemo(() => toGeoJSON(fires, heldFireId), [fires, heldFireId])
+  const snapPoints = useMemo(() => ['14%', '60%', '100%'], [])
 
   const focusFire = useCallback(
     (fire: Fire) => {
-      setSelectedFireId(fire.id)
+      selectFire(fire.id)
       bottomSheetRef.current?.snapToIndex(1)
       cameraRef.current?.flyTo({
         center: [fire.lng, fire.lat],
@@ -76,28 +82,52 @@ export default function MapView() {
         duration: 1000,
       })
     },
-    [height],
+    [height, selectFire],
+  )
+
+  const reserve = useCallback(
+    async (fire: Fire) => {
+      try {
+        await reserveFire(fire)
+        router.push('/Firespot')
+      } catch (e) {
+        Alert.alert(
+          'จองไม่สำเร็จ',
+          e instanceof Error ? e.message : 'ไม่สามารถจองไฟนี้ได้ กรุณาลองใหม่อีกครั้ง',
+        )
+      }
+    },
+    [reserveFire],
   )
 
   const renderFire = useCallback(
     ({ item }: { item: Fire }) => {
       const selected = item.id === selectedFireId
+      const isHeld = item.id === heldFireId
+      const bookedByOther = item.booked && !isHeld
+      const disabled = item.status || holdingUnresolved || bookedByOther
       return (
         <Pressable style={[styles.fireRow, selected && styles.fireRowSelected]} onPress={() => focusFire(item)}>
-          <View style={[styles.fireDot, selected && styles.fireDotSelected]} />
+          <View style={[styles.fireDot, { backgroundColor: fireColor(item, heldFireId) }]} />
           <View style={styles.fireInfo}>
             <Text style={[styles.fireName, selected && styles.fireNameSelected]}>
               {item.name}
             </Text>
             <Text style={styles.fireTime}>{formatDetectedAt(item.detected_at)}</Text>
           </View>
-          <TouchableOpacity style={styles.reserveButton} onPress={() => console.log('Pressed')}>
-            <Text style={styles.reserveButtonText}>จอง</Text>
+          <TouchableOpacity
+            style={[styles.reserveButton, disabled && !isHeld && styles.reserveButtonDisabled]}
+            disabled={disabled}
+            onPress={() => reserve(item)}
+          >
+            <Text style={styles.reserveButtonText}>
+              {item.status ? 'ดับแล้ว' : isHeld ? 'จองแล้ว' : bookedByOther ? 'ถูกจอง' : 'ว่าง'}
+            </Text>
           </TouchableOpacity>
         </Pressable>
       )
     },
-    [focusFire, selectedFireId],
+    [focusFire, reserve, selectedFireId, heldFireId, holdingUnresolved],
   )
 
   const keyExtractor = useCallback((item: Fire) => item.id, [])
@@ -108,7 +138,7 @@ export default function MapView() {
       <Map
         style={styles.container}
         mapStyle={MAP_STYLE}
-        onPress={() => setSelectedFireId(null)}
+        onPress={() => selectFire(null)}
       >
         <Camera ref={cameraRef} initialViewState={{ center: THAILAND_CENTER, zoom: 6 }} />
         <GeoJSONSource
@@ -129,9 +159,13 @@ export default function MapView() {
             paint={{
               'circle-color': [
                 'case',
-                ['==', ['get', 'id'], selectedFireId ?? ''],
-                '#f59e0b',
-                '#ef4444',
+                ['==', ['get', 'status'], true],
+                FIRE_COLORS.resolved,
+                ['==', ['get', 'held'], true],
+                FIRE_COLORS.held,
+                ['==', ['get', 'booked'], true],
+                FIRE_COLORS.booked,
+                FIRE_COLORS.free,
               ],
               'circle-radius': [
                 'case',
@@ -216,11 +250,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#ef4444',
     marginRight: 12,
-  },
-  fireDotSelected: {
-    backgroundColor: '#f59e0b',
   },
   fireName: {
     fontSize: 15,
@@ -242,6 +272,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     marginLeft: 12,
+  },
+  reserveButtonDisabled: {
+    backgroundColor: '#d1d5db',
   },
   reserveButtonText: {
     color: '#ffffff',

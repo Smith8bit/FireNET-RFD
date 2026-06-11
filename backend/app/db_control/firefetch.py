@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 
 def fetch_live_fires() -> list[dict]:
-    today = datetime.now()- timedelta(days=0)
+    today = datetime.now()- timedelta(days=80)
     today = today.strftime("%Y-%m-%d")
     url = (
         "https://wildfire.forest.go.th/firemap/getdb.php"

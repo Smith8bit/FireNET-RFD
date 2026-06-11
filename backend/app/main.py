@@ -24,6 +24,11 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS ltree"))
         await conn.run_sync(Base.metadata.create_all)
+        # upgrade pre-existing non-unique index to unique (first-come-first-served จอง)
+        await conn.execute(text("DROP INDEX IF EXISTS ix_field_officer_fire_id"))
+        await conn.execute(
+            text("CREATE UNIQUE INDEX ix_field_officer_fire_id ON field_officers (fire_id)")
+        )
     await run_seed()
     await update_fires()
     yield

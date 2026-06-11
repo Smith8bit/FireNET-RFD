@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from ..database import async_session_maker
+from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
 from .firefetch import fetch_live_fires
@@ -120,7 +121,10 @@ async def get_fires(
             Firespot.resolve_time,
             Firespot.location,
             Region.path.label("region_path"),
-        ).join(Region, Firespot.region_id == Region.id)
+            FieldOfficer.id.label("holder_id"),
+        ).join(Region, Firespot.region_id == Region.id).outerjoin(
+            FieldOfficer, FieldOfficer.fire_id == Firespot.id
+        )
 
         if region_path is not None:
             stmt = stmt.where(Region.path.op("<@")(region_path))
@@ -148,6 +152,7 @@ async def get_fires(
                 "name": row.name,
                 "detected_at": row.detected_at.isoformat(),
                 "status": row.status,
+                "booked": row.holder_id is not None,
                 "lat": pt.y,
                 "lng": pt.x,
                 "tumboon": row.detail.get("TUMBON") if hasattr(row, "detail") else None,

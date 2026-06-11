@@ -59,6 +59,10 @@ class FirespotUpdate(BaseModel):
     resolve_time: datetime | None = None
 
 
+class FireAssign(BaseModel):
+    fire_id: uuid.UUID | None = None
+
+
 class FieldOfficerCreate(BaseModel):
     user_id: uuid.UUID
     fire_id: uuid.UUID
