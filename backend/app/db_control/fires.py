@@ -18,6 +18,7 @@ from ..database.models.fire_resolution import FireResolution, FireResolutionImag
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
+from .audit import audit
 from .firefetch import fetch_live_fires
 
 
@@ -89,14 +90,18 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     "resolve_time": None,
                 }
             )
-        if not rows:
-            return
-        stmt = (
-            insert(Firespot)
-            .values(rows)
-            .on_conflict_do_nothing(index_elements=["external_id"])
-        )
-        await session.execute(stmt)
+        inserted = 0
+        if rows:
+            stmt = (
+                insert(Firespot)
+                .values(rows)
+                .on_conflict_do_nothing(index_elements=["external_id"])
+                .returning(Firespot.id)
+            )
+            inserted = len((await session.execute(stmt)).scalars().all())
+        # skipped = duplicates + rows dropped for missing region/coords/date
+        audit(session, actor=None, action="fire.ingest", entity_type="fire",
+              detail={"fetched": len(fires), "inserted": inserted, "skipped": len(fires) - inserted})
         await session.commit()
 
 async def update_fires() -> None:
@@ -127,6 +132,8 @@ async def expire_old_fires() -> None:
                 .where(FieldOfficer.fire_id.in_(expired_ids))
                 .values(fire_id=None)
             )
+            audit(session, actor=None, action="fire.expire", entity_type="fire",
+                  detail={"count": len(expired_ids)})
             print(f"[expire_old_fires] expired={len(expired_ids)}")
         await session.commit()
 

@@ -24,6 +24,7 @@ from ..database.models import (
     UserRegion,
 )
 from ..database.schemas import FireAssign, OfficerRegister, OfficerStatusUpdate, UserCreate, UserRead
+from ..db_control.audit import audit
 from ..db_control.permission import fire_visible
 from ..db_control.users import get_user_manager, UserManager
 
@@ -75,6 +76,15 @@ async def update_my_location(
     if body.latitude is not None and body.longitude is not None:
         fo.last_location = from_shape(Point(body.longitude, body.latitude), srid=4326)
     if body.active is not None:
+        # audit only the on/off transition, never routine location pings
+        if body.active != fo.active:
+            audit(
+                session,
+                actor=user,
+                action="officer.online" if body.active else "officer.offline",
+                entity_type="officer",
+                entity_id=str(fo.id),
+            )
         fo.active = body.active
     fo.last_updated = datetime.now(timezone.utc)
     await session.commit()
@@ -149,7 +159,15 @@ async def reserve_fire(
         ).first()
         if holder is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already reserved")
+    previous_fire_id = fo.fire_id
     fo.fire_id = body.fire_id
+    if body.fire_id is not None:
+        if body.fire_id != previous_fire_id:
+            audit(session, actor=user, action="fire.reserve", entity_type="fire",
+                  entity_id=str(fire.id), detail={"name": fire.name})
+    elif previous_fire_id is not None:
+        audit(session, actor=user, action="fire.release", entity_type="fire",
+              entity_id=str(previous_fire_id))
     try:
         await session.commit()
     except IntegrityError:
@@ -282,6 +300,8 @@ async def resolve_my_fire(
     fo.fire_id = None
     fire.status = True
     fire.resolve_time = datetime.now(timezone.utc)
+    audit(session, actor=user, action="fire.resolve", entity_type="fire", entity_id=str(fire.id),
+          detail={"name": fire.name, "resolution_id": str(resolution.id), "images": len(prepared)})
     try:
         await session.commit()
     except Exception:

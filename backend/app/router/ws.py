@@ -7,6 +7,7 @@ from ..ws.manager import manager
 from ..ws.officer_handlers import (
     handle_list_officers,
     handle_list_pending,
+    handle_update_officer,
     handle_verify_officer,
     handle_list_officers_MAP
 )
@@ -39,6 +40,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_list_pending(ws, user)
                 case "verify_officer":
                     await handle_verify_officer(ws, user, data, manager.active)
+                case "update_officer":
+                    await handle_update_officer(ws, user, data, manager.active)
                 case "list_officers":
                     await handle_list_officers(ws, user)
                 case "list_officers_MAP":

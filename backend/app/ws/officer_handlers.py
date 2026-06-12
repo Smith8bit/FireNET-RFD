@@ -1,11 +1,12 @@
 import uuid
 
 from fastapi import WebSocket
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from ..config import get_settings
 from ..database import async_session_maker
 from ..database.models import FieldOfficer, Region, User, UserRegion
+from ..db_control.audit import audit
 from ..db_control.permission import is_admin_user, user_region_paths
 
 settings = get_settings()
@@ -140,7 +141,8 @@ async def broadcast_officers_update(active_connections) -> None:
                 if not await _is_admin(user, session):
                     continue
                 officers = await _fetch_officers(session, user)
-                print(f"[broadcast] officers_in_region → {user.email}: {len(officers)} officers")
+                # ASCII only: a non-cp1252 char here raises on Windows consoles and kills the send
+                print(f"[broadcast] officers_in_region -> {user.email}: {len(officers)} officers")
                 await ws.send_json({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
                 print(f"[broadcast] failed to send to {user.email}: {exc}")
@@ -192,16 +194,9 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
             return
         province_path, officer_name = ur_row
 
-        if not admin.is_superuser:
-            ok = await session.execute(
-                text(
-                    "SELECT 1 FROM regions r JOIN user_regions ur ON ur.region_id = r.id "
-                    "WHERE ur.user_id = :aid AND CAST(:p AS ltree) <@ r.path LIMIT 1"
-                ).bindparams(aid=admin.id, p=province_path)
-            )
-            if ok.first() is None:
-                await ws.send_json({"type": "error", "code": "out_of_scope"})
-                return
+        if not await _admin_covers_path(admin, province_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
 
         target = await session.get(User, user_id)
         if target is None:
@@ -218,8 +213,105 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
         else:
             print(f"[verify] FieldOfficer already exists for user {user_id}")
 
+        audit(session, actor=admin, action="officer.verify", entity_type="officer",
+              entity_id=str(user_id),
+              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
     print(f"[verify] officer {user_id} verified by {admin.email}")
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
     await broadcast_officers_update(active_connections)
+
+
+async def _admin_covers_path(admin: User, path, session) -> bool:
+    if admin.is_superuser:
+        return True
+    ok = await session.execute(
+        text(
+            "SELECT 1 FROM regions r JOIN user_regions ur ON ur.region_id = r.id "
+            "WHERE ur.user_id = :aid AND CAST(:p AS ltree) <@ r.path LIMIT 1"
+        ).bindparams(aid=admin.id, p=str(path))
+    )
+    return ok.first() is not None
+
+
+async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
+    """Admin edit of an officer's name and/or province assignment."""
+    try:
+        user_id = uuid.UUID(data["user_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_user_id"})
+        return
+    new_name = (data.get("name") or "").strip() or None if "name" in data else None
+    province_code = (data.get("province_code") or "").strip() or None
+    if new_name is None and province_code is None:
+        await ws.send_json({"type": "error", "code": "nothing_to_update"})
+        return
+
+    async with async_session_maker() as session:
+        if not await _is_admin(admin, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+
+        ur_row = (
+            await session.execute(
+                select(UserRegion, Region.path)
+                .join(Region, Region.id == UserRegion.region_id)
+                .where(UserRegion.user_id == user_id, UserRegion.role == "field_officer")
+            )
+        ).one_or_none()
+        if ur_row is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
+        user_region, current_path = ur_row
+
+        if not await _admin_covers_path(admin, current_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        changes: dict = {}
+        ur_values: dict = {}
+        if new_name is not None and new_name != user_region.name:
+            changes["name"] = new_name
+            ur_values["name"] = new_name
+
+        if province_code is not None:
+            province = (
+                await session.execute(
+                    select(Region).where(Region.code == province_code, Region.level == "province")
+                )
+            ).scalar_one_or_none()
+            if province is None:
+                await ws.send_json({"type": "error", "code": "invalid_province"})
+                return
+            if province.id != user_region.region_id:
+                # the admin must cover the destination province too
+                if not await _admin_covers_path(admin, province.path, session):
+                    await ws.send_json({"type": "error", "code": "out_of_scope"})
+                    return
+                changes["province_path"] = str(province.path)
+                changes["previous_province_path"] = str(current_path)
+                ur_values["region_id"] = province.id
+
+        if changes:
+            # region_id is part of the composite PK — write via UPDATE, not ORM identity
+            old_region_id = user_region.region_id
+            session.expunge(user_region)
+            await session.execute(
+                update(UserRegion)
+                .where(UserRegion.user_id == user_id, UserRegion.region_id == old_region_id)
+                .values(**ur_values)
+            )
+            if "name" in ur_values:
+                await session.execute(
+                    update(FieldOfficer).where(FieldOfficer.user_id == user_id).values(name=new_name)
+                )
+            audit(session, actor=admin, action="officer.update", entity_type="officer",
+                  entity_id=str(user_id), detail=changes)
+            await session.commit()
+
+    # keys only: values may hold Thai text, which can crash cp1252 console prints
+    print(f"[update] officer {user_id} updated by {admin.email}: {sorted(changes)}")
+    await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
+    if changes:
+        await broadcast_admin_refresh(active_connections, include_pending=True)
