@@ -2,12 +2,14 @@ import uuid
 
 from fastapi import WebSocket
 from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
 from ..database import async_session_maker
-from ..database.models import FieldOfficer, Region, User, UserRegion
+from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
 from ..db_control.audit import audit
 from ..db_control.permission import is_admin_user, user_region_paths
+from ..db_control.push import send_push
 
 settings = get_settings()
 
@@ -315,3 +317,108 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
     await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
     if changes:
         await broadcast_admin_refresh(active_connections, include_pending=True)
+
+
+async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
+    """Admin appoints a fire to a specific field officer (the inverse of an
+    officer self-reserving). Same first-come-first-served invariants apply:
+    a fire is held by at most one officer, an officer holds at most one
+    unresolved fire. On success the officer is notified via FCM; the pg_listener
+    booking trigger refreshes every web client's fire/officer lists."""
+    try:
+        fire_id = uuid.UUID(data["fire_id"])
+        officer_id = uuid.UUID(data["officer_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_request"})
+        return
+
+    notify_user_id = None
+    fire_name = None
+    async with async_session_maker() as session:
+        if not await _is_admin(admin, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+
+        fire = await session.get(Firespot, fire_id)
+        if fire is None:
+            await ws.send_json({"type": "error", "code": "fire_not_found"})
+            return
+        if fire.status:
+            await ws.send_json({"type": "error", "code": "fire_resolved"})
+            return
+
+        fire_path = (
+            await session.execute(select(Region.path).where(Region.id == fire.region_id))
+        ).scalar_one()
+        if not await _admin_covers_path(admin, fire_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        officer = await session.get(FieldOfficer, officer_id)
+        if officer is None:
+            await ws.send_json({"type": "error", "code": "officer_not_found"})
+            return
+
+        # the officer must be within the admin's scope too
+        officer_path = (
+            await session.execute(
+                select(Region.path)
+                .join(UserRegion, UserRegion.region_id == Region.id)
+                .where(UserRegion.user_id == officer.user_id, UserRegion.role == "field_officer")
+            )
+        ).scalar_one_or_none()
+        if officer_path is None or not await _admin_covers_path(admin, officer_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        # fire must be free (idempotent if it's already this officer's)
+        if officer.fire_id == fire_id:
+            await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
+                                "officer_id": str(officer_id)})
+            return
+        holder = (
+            await session.execute(
+                select(FieldOfficer.id).where(
+                    FieldOfficer.fire_id == fire_id, FieldOfficer.id != officer_id
+                )
+            )
+        ).first()
+        if holder is not None:
+            await ws.send_json({"type": "error", "code": "fire_already_booked"})
+            return
+        # officer must not already hold a different unresolved fire (coexist rule)
+        if officer.fire_id is not None:
+            held = await session.get(Firespot, officer.fire_id)
+            if held is not None and not held.status:
+                await ws.send_json({"type": "error", "code": "officer_busy"})
+                return
+
+        officer.fire_id = fire_id
+        audit(session, actor=admin, action="fire.appoint", entity_type="fire",
+              entity_id=str(fire_id),
+              detail={"officer_id": str(officer_id), "officer_user_id": str(officer.user_id),
+                      "name": fire.name})
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await ws.send_json({"type": "error", "code": "fire_already_booked"})
+            return
+
+        notify_user_id = officer.user_id
+        fire_name = fire.name
+
+    # push is best-effort and outside the appoint transaction
+    if notify_user_id is not None:
+        async with async_session_maker() as session:
+            await send_push(
+                session, notify_user_id,
+                title="ได้รับมอบหมายงานใหม่",
+                body=f"คุณได้รับมอบหมายให้ดูแลไฟ: {fire_name}",
+                data={"type": "fire_appointment", "fire_id": str(fire_id)},
+            )
+            await session.commit()
+
+    print(f"[appoint] fire {fire_id} -> officer {officer_id} by {admin.email}")
+    await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
+                        "officer_id": str(officer_id)})

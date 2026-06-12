@@ -7,6 +7,7 @@ const ACTION_LABELS = {
   'fire.reserve': 'จองจุดไฟ',
   'fire.release': 'ยกเลิกการจอง',
   'fire.resolve': 'ดับไฟสำเร็จ',
+  'fire.appoint': 'มอบหมายเจ้าหน้าที่',
   'fire.expire': 'หมดอายุอัตโนมัติ',
   'fire.ingest': 'นำเข้าข้อมูลดาวเทียม',
   'officer.verify': 'ยืนยันเจ้าหน้าที่',
@@ -39,6 +40,7 @@ function summarize(item) {
       return `${d.count ?? 0} รายการ`
     case 'fire.reserve':
     case 'fire.resolve':
+    case 'fire.appoint':
       return d.name ?? ''
     case 'officer.verify':
       return [d.name, d.email].filter(Boolean).join(' · ')

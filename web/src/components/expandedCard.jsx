@@ -1,14 +1,50 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSocketStore } from '../functions/stateStore'
 import { formatDate, formatTime } from '../functions/datetime'
 
+const APPOINT_ERRORS = {
+    out_of_scope: 'ไฟหรือเจ้าหน้าที่อยู่นอกพื้นที่ของคุณ',
+    officer_busy: 'เจ้าหน้าที่มีไฟที่รับผิดชอบอยู่แล้ว',
+    fire_already_booked: 'ไฟนี้ถูกจองโดยเจ้าหน้าที่ท่านอื่นแล้ว',
+    fire_resolved: 'ไฟนี้ดับแล้ว',
+    fire_not_found: 'ไม่พบข้อมูลไฟ',
+    officer_not_found: 'ไม่พบข้อมูลเจ้าหน้าที่',
+    forbidden: 'คุณไม่มีสิทธิ์มอบหมายงาน',
+}
+
 export default function ExpandedCard({ fire, officers }) {
     const [selectedOfficer, setSelectedOfficer] = useState('')
+    const [pending, setPending] = useState(false)
+    const [message, setMessage] = useState(null) // { text, ok }
     const send = useSocketStore((s) => s.send)
+    const appointedMsg = useSocketStore((s) => s.byType?.officer_appointed)
+    const errorMsg = useSocketStore((s) => s.byType?.error)
 
     // a resolved or already-booked fire can't be (re)assigned:
     // lock the officer list + actions
     const locked = fire.status || fire.booked
+
+    // resolve the outcome of an appoint we initiated (ignores stale store messages)
+    useEffect(() => {
+        if (!pending || !appointedMsg) return
+        if (appointedMsg.fire_id === fire.id) {
+            setPending(false)
+            setMessage({ text: 'มอบหมายเจ้าหน้าที่สำเร็จ', ok: true })
+        }
+    }, [appointedMsg, pending, fire.id])
+
+    useEffect(() => {
+        if (!pending || !errorMsg) return
+        setPending(false)
+        setMessage({ text: APPOINT_ERRORS[errorMsg.code] ?? 'มอบหมายไม่สำเร็จ', ok: false })
+    }, [errorMsg, pending])
+
+    const appoint = () => {
+        if (!selectedOfficer) return
+        setPending(true)
+        setMessage(null)
+        send({ type: 'appoint_officer', fire_id: fire.id, officer_id: selectedOfficer })
+    }
 
     return (
         <div id="container" className="bg-white w-full flex-1 min-h-0 flex flex-col px-4">
@@ -80,20 +116,26 @@ export default function ExpandedCard({ fire, officers }) {
                 )}
             </div>
 
+            {message && (
+                <p className={`px-1 pt-2 text-sm font-medium ${message.ok ? 'text-forest-700' : 'text-red-600'}`}>
+                    {message.text}
+                </p>
+            )}
+
             <div id="actions" className="py-2 flex gap-2">
                 <button
-                    disabled={locked || !selectedOfficer}
+                    disabled={locked || !selectedOfficer || pending}
                     className="py-3 px-5 font-bold text-lg text-gray-700 border border-gray-300 rounded-lg bg-white hover:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
                     onClick={() => setSelectedOfficer('')}
                 >
                     ล้าง
                 </button>
                 <button
-                    disabled={locked || !selectedOfficer}
+                    disabled={locked || !selectedOfficer || pending}
                     className="flex-1 py-3 text-white font-bold text-lg border rounded-lg bg-forest-500 hover:bg-forest-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    onClick={() => send({ type: 'appoint_officer', fire_id: fire.id, officer_id: selectedOfficer })}
+                    onClick={appoint}
                 >
-                    {fire.status ? 'ดับแล้ว' : fire.booked ? 'ถูกจองแล้ว' : 'มอบหมายเจ้าหน้าที่'}
+                    {fire.status ? 'ดับแล้ว' : fire.booked ? 'ถูกจองแล้ว' : pending ? 'กำลังมอบหมาย…' : 'มอบหมายเจ้าหน้าที่'}
                 </button>
             </div>
         </div>

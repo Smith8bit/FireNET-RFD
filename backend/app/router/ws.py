@@ -5,6 +5,7 @@ from ..database import async_session_maker
 from ..db_control.permission import is_admin_user
 from ..ws.manager import manager
 from ..ws.officer_handlers import (
+    handle_appoint_officer,
     handle_list_officers,
     handle_list_pending,
     handle_update_officer,
@@ -42,6 +43,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_verify_officer(ws, user, data, manager.active)
                 case "update_officer":
                     await handle_update_officer(ws, user, data, manager.active)
+                case "appoint_officer":
+                    await handle_appoint_officer(ws, user, data, manager.active)
                 case "list_officers":
                     await handle_list_officers(ws, user)
                 case "list_officers_MAP":

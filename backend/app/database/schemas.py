@@ -114,3 +114,12 @@ class PendingOfficerRead(BaseModel):
     name: str | None
     province_name_th: str
     province_path: str
+
+
+class PushTokenRegister(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
+    platform: str | None = None  # "android" | "ios" | "web"
+
+
+class PushTokenDelete(BaseModel):
+    token: str

@@ -1,6 +1,7 @@
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
 import { api, setOnUnauthorized } from '@/lib/api'
+import { registerPushToken, unregisterPushToken } from '@/lib/push'
 
 export type AuthUser = {
   id: string
@@ -46,6 +47,13 @@ async function fetchMe(): Promise<AuthUser | null> {
   }
 }
 
+// a verified field officer can receive appointments → register this device for push
+function maybeRegisterPush(user: AuthUser | null) {
+  if (user?.is_field_officer && user.is_verified) {
+    registerPushToken().catch(() => {})
+  }
+}
+
 export default function AuthProvider({ children }: { children: ReactNode }): ReactNode {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -64,6 +72,7 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
         setUser(null)
       } else {
         setUser(me)
+        maybeRegisterPush(me)
       }
       setIsLoading(false)
     })()
@@ -86,6 +95,7 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
       throw new Error('บัญชีนี้เป็นผู้ดูแลระบบ กรุณาใช้งานผ่านเว็บ')
     }
     setUser(me)
+    maybeRegisterPush(me)
     router.replace('/') // guard sends unverified users to /Pending
   }, [])
 
@@ -102,6 +112,8 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   }, [])
 
   const signOut = useCallback(async () => {
+    // drop this device's push token first, while the session cookie is still valid
+    await unregisterPushToken()
     try {
       await api.post('/auth/cookie/logout', null)
     } catch {}

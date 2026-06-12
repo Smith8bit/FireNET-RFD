@@ -7,3 +7,4 @@ shapely
 requests
 apscheduler
 minio
+firebase-admin  # FCM push; sends are logged-and-skipped until FCM_CREDENTIALS_FILE is set

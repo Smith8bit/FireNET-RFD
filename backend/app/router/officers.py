@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi_users.exceptions import UserAlreadyExists, InvalidPasswordException
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from ..auth.authen import current_active_user
 from ..config import get_settings
 from ..database import get_async_session
 from ..database.models import (
+    DeviceToken,
     FieldOfficer,
     FireResolution,
     FireResolutionImage,
@@ -23,7 +25,15 @@ from ..database.models import (
     User,
     UserRegion,
 )
-from ..database.schemas import FireAssign, OfficerRegister, OfficerStatusUpdate, UserCreate, UserRead
+from ..database.schemas import (
+    FireAssign,
+    OfficerRegister,
+    OfficerStatusUpdate,
+    PushTokenDelete,
+    PushTokenRegister,
+    UserCreate,
+    UserRead,
+)
 from ..db_control.audit import audit
 from ..db_control.permission import fire_visible
 from ..db_control.users import get_user_manager, UserManager
@@ -335,3 +345,39 @@ async def my_reserved_fire(
         return None
     fire = await session.get(Firespot, fo.fire_id)
     return _fire_detail(fire) if fire is not None else None
+
+
+# ---- field officer: register / remove this device's FCM push token ----
+@router.put("/me/push-token", status_code=status.HTTP_204_NO_CONTENT)
+async def register_push_token(
+    body: PushTokenRegister,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    # a token is globally unique to one device; if it moves to a new account
+    # (shared phone, re-login), reassign it rather than rejecting the insert
+    stmt = (
+        insert(DeviceToken)
+        .values(user_id=user.id, token=body.token, platform=body.platform)
+        .on_conflict_do_update(
+            index_elements=["token"],
+            set_={"user_id": user.id, "platform": body.platform, "last_seen": func.now()},
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+
+@router.delete("/me/push-token", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_push_token(
+    body: PushTokenDelete,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    # scoped to the caller so one account can't unregister another's device
+    await session.execute(
+        delete(DeviceToken).where(
+            DeviceToken.token == body.token, DeviceToken.user_id == user.id
+        )
+    )
+    await session.commit()
