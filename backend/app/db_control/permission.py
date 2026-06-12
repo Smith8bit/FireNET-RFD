@@ -4,6 +4,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database.models import Region, User, UserRegion
 
 
+async def user_roles(user: User, session: AsyncSession) -> list[str]:
+    """All roles the user holds across their region assignments."""
+    result = await session.execute(
+        select(UserRegion.role).where(UserRegion.user_id == user.id)
+    )
+    return [row[0] for row in result.all()]
+
+
+async def is_admin_user(user: User, session: AsyncSession) -> bool:
+    """Web side: superuser, or any non-field-officer role (dispatcher/admin/viewer)."""
+    if user.is_superuser:
+        return True
+    return any(r != "field_officer" for r in await user_roles(user, session))
+
+
+async def is_field_officer(user: User, session: AsyncSession) -> bool:
+    """Mobile side: holds the field_officer role (set at registration, before verification)."""
+    return "field_officer" in await user_roles(user, session)
+
+
 async def user_region_paths(user: User, session: AsyncSession) -> list[str]:
     """Return the ltree paths the user is directly assigned to.
     Empty list = no access (non-superuser with no assignments)."""

@@ -6,7 +6,7 @@ from sqlalchemy import select, text
 from ..config import get_settings
 from ..database import async_session_maker
 from ..database.models import FieldOfficer, Region, User, UserRegion
-from ..db_control.permission import user_region_paths
+from ..db_control.permission import is_admin_user, user_region_paths
 
 settings = get_settings()
 
@@ -36,12 +36,7 @@ _OFFICERS_SQL = """
 
 
 async def _is_admin(user: User, session) -> bool:
-    if user.is_superuser:
-        return True
-    roles = (
-        await session.execute(select(UserRegion.role).where(UserRegion.user_id == user.id))
-    ).scalars().all()
-    return any(r != "field_officer" for r in roles)
+    return await is_admin_user(user, session)
 
 
 async def _fetch_officers(session, user: User) -> list[dict]:

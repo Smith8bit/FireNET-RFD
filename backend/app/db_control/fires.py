@@ -185,9 +185,12 @@ async def get_fires(
         if on_date is not None:
             stmt = stmt.where(func.date(Firespot.detected_at) == on_date)
         else:
-            # default view: only fires detected today (Thai time)
+            # default view: fires detected within the last FIRE_DISPLAY_DAYS (Thai time),
+            # inclusive of today (1 = today only)
+            days = max(get_settings().FIRE_DISPLAY_DAYS, 1)
             today_start = datetime.now(_INGEST_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-            stmt = stmt.where(Firespot.detected_at >= today_start)
+            window_start = today_start - timedelta(days=days - 1)
+            stmt = stmt.where(Firespot.detected_at >= window_start)
 
         if user is not None and not user.is_superuser:
             paths = await user_region_paths(user, session)

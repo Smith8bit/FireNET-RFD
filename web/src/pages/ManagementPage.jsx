@@ -59,7 +59,7 @@ export default function ManagementPage() {
   const tabs = ['Pending', 'Officers', 'Audit']
 
   return (
-    <div className="py-6 h-screen flex flex-col gap-6 w-1/2 self-center overflow-y-hidden">
+    <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
       <div className='bg-white border-0 rounded-2xl p-6'>
         <h2 className="text-lg font-semibold text-forest-700 mb-3">จัดการเจ้าหน้าที่ภาคสนาม</h2>
         <div className="flex gap-2 border-b border-gray-200">

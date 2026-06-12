@@ -35,6 +35,7 @@ type FireState = {
   loadReservedFire: () => Promise<void>
   loadStatus: () => Promise<void>
   setOnline: (online: boolean, coords?: { latitude: number; longitude: number }) => Promise<void>
+  pushLocation: (coords: { latitude: number; longitude: number }) => Promise<void>
 }
 
 export const useFireStore = create<FireState>((set, get) => ({
@@ -110,6 +111,7 @@ export const useFireStore = create<FireState>((set, get) => ({
     get().loadFires() // fire status changed → refresh the map list
   },
 
+  // explicit user-driven status change; sends the `active` flag
   setOnline: async (online, coords) => {
     try {
       await api.patch('/officers/me/location', { ...coords, active: online })
@@ -117,6 +119,14 @@ export const useFireStore = create<FireState>((set, get) => ({
     } catch {
       throw new Error('ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง')
     }
+  },
+
+  // periodic heartbeat: refresh position only, never touch the online flag, so a
+  // poll that lands after the user toggles off can't silently re-activate them
+  pushLocation: async (coords) => {
+    try {
+      await api.patch('/officers/me/location', coords)
+    } catch {}
   },
 
   loadReservedFire: async () => {

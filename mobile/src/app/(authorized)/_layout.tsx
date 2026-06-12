@@ -11,7 +11,7 @@ const LOCATION_POLL_MS = 5 * 60 * 1000
 export default function AuthorizedLayout() {
   const { user, isLoading } = useAuthSession()
   const online = useFireStore((s) => s.online)
-  const setOnline = useFireStore((s) => s.setOnline)
+  const pushLocation = useFireStore((s) => s.pushLocation)
   const loadStatus = useFireStore((s) => s.loadStatus)
 
   // the server keeps the online flag across app restarts; restore it
@@ -19,16 +19,14 @@ export default function AuthorizedLayout() {
     loadStatus()
   }, [loadStatus])
 
-  // While online, push the officer's position immediately and then every 5 minutes
+  // While online, push the officer's position immediately and then every 5 minutes.
+  // Coords-only (no `active`): going offline is owned solely by the toggle.
   useEffect(() => {
     if (!online) return
     const push = async () => {
       try {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
-        await setOnline(true, {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        })
+        await pushLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
       } catch {
         // skip this tick; next poll retries
       }
@@ -36,7 +34,7 @@ export default function AuthorizedLayout() {
     push()
     const id = setInterval(push, LOCATION_POLL_MS)
     return () => clearInterval(id)
-  }, [online, setOnline])
+  }, [online, pushLocation])
 
   if (isLoading) {
     return (

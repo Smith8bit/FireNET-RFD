@@ -10,8 +10,12 @@ import {
   TextInput,
   Image,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import Animated, { SlideInDown } from 'react-native-reanimated'
 import * as ImagePicker from 'expo-image-picker'
 import * as Location from 'expo-location'
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
@@ -171,12 +175,20 @@ export default function Firespot() {
 
       <Modal
         visible={formVisible}
-        animationType="slide"
+        animationType="none"
         transparent
         onRequestClose={() => !submitting && setFormVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          {/* tapping outside the card dismisses (blocked while submitting) */}
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => !submitting && setFormVisible(false)}
+          />
+          <Animated.View style={styles.modalCard} entering={SlideInDown.duration(250)}>
             <Text style={styles.modalTitle}>บันทึกการดับไฟ</Text>
 
             <Text style={styles.modalLabel}>หมายเหตุ (ไม่บังคับ)</Text>
@@ -243,8 +255,8 @@ export default function Firespot() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
   )

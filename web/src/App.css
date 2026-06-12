@@ -11,5 +11,30 @@
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
   }
+
+  /* slim scrollbar tinted with the forest theme color */
+  .minimal-scrollbar {
+    scrollbar-width: thin;                                   /* Firefox */
+    scrollbar-color: var(--color-forest-500) transparent;    /* thumb / track */
+  }
+  .minimal-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .minimal-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .minimal-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--color-forest-500);
+    border-radius: 9999px;
+  }
+  .minimal-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-forest-600);
+  }
+}
+
+/* push the maplibre zoom controls below the layer buttons (top-3 + ~32px tall) */
+.maplibregl-ctrl-top-left {
+  top: 48px;
 }
     
