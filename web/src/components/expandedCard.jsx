@@ -6,6 +6,10 @@ export default function ExpandedCard({ fire, officers }) {
     const [selectedOfficer, setSelectedOfficer] = useState('')
     const send = useSocketStore((s) => s.send)
 
+    // a resolved or already-booked fire can't be (re)assigned:
+    // lock the officer list + actions
+    const locked = fire.status || fire.booked
+
     return (
         <div id="container" className="bg-white w-full flex-1 min-h-0 flex flex-col px-4">
             <div id="detail" className="no-scrollbar border-b-2 border-gray-300 pb-4 pt-2">
@@ -39,10 +43,16 @@ export default function ExpandedCard({ fire, officers }) {
                             {[fire.tumboon, fire.aumper, fire.province].filter(Boolean).join(' · ') || '-'}
                         </dd>
                     </div>
+                    <div className="flex justify-between gap-2">
+                        <dt className="min-w-fit shrink-0 text-gray-500">ผู้รับผิดชอบ</dt>
+                        <dd className={`font-semibold text-right ${fire.holder_name ? 'text-amber-700' : 'text-gray-400'}`}>
+                            {fire.holder_name || 'ยังไม่มีเจ้าหน้าที่'}
+                        </dd>
+                    </div>
                 </dl>
             </div>
 
-            <div id="available-officers" className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar pb-2 border-b-2 border-gray-300">
+            <div className={`flex-1 min-h-0 overflow-y-auto minimal-scrollbar pb-2 border-b-2 border-gray-300 ${locked ? 'opacity-50 pointer-events-none select-none' : ''}`} id="available-officers">
                 <p className="sticky top-0 z-10 bg-white py-2 text-md font-semibold text-gray-500">เจ้าหน้าที่ในพื้นที่</p>
                 {officers.length === 0 ? (
                     <p className="text-sm text-gray-400 text-center py-4">ไม่มีเจ้าหน้าที่</p>
@@ -50,6 +60,7 @@ export default function ExpandedCard({ fire, officers }) {
                     officers.map((o) => (
                         <button
                             key={o.field_officer_id}
+                            disabled={locked}
                             onClick={() => setSelectedOfficer(o.field_officer_id)}
                             className={`w-full text-left px-3 py-2 mb-1 rounded-lg border transition-colors ${
                                 selectedOfficer === o.field_officer_id
@@ -71,18 +82,18 @@ export default function ExpandedCard({ fire, officers }) {
 
             <div id="actions" className="py-2 flex gap-2">
                 <button
-                    disabled={!selectedOfficer}
+                    disabled={locked || !selectedOfficer}
                     className="py-3 px-5 font-bold text-lg text-gray-700 border border-gray-300 rounded-lg bg-white hover:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
                     onClick={() => setSelectedOfficer('')}
                 >
                     ล้าง
                 </button>
                 <button
-                    disabled={!selectedOfficer}
+                    disabled={locked || !selectedOfficer}
                     className="flex-1 py-3 text-white font-bold text-lg border rounded-lg bg-forest-500 hover:bg-forest-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     onClick={() => send({ type: 'appoint_officer', fire_id: fire.id, officer_id: selectedOfficer })}
                 >
-                    มอบหมายเจ้าหน้าที่
+                    {fire.status ? 'ดับแล้ว' : fire.booked ? 'ถูกจองแล้ว' : 'มอบหมายเจ้าหน้าที่'}
                 </button>
             </div>
         </div>

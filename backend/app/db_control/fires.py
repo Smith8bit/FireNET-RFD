@@ -9,11 +9,12 @@ from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import aliased
 
 from .. import storage
 from ..config import get_settings
 from ..database import async_session_maker
-from ..database.models.fire_resolution import FireResolutionImage
+from ..database.models.fire_resolution import FireResolution, FireResolutionImage
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
@@ -162,6 +163,10 @@ async def get_fires(
     from .permission import user_region_paths
 
     async with async_session_maker() as session:
+        # the officer who resolved a fire: resolve clears FieldOfficer.fire_id, so the
+        # live holder join goes null — recover the name via the resolution record instead
+        # (auto-expired fires have no resolution row, so they stay unattributed)
+        ResolverOfficer = aliased(FieldOfficer)
         stmt = select(
             Firespot.id,
             Firespot.external_id,
@@ -174,8 +179,14 @@ async def get_fires(
             Firespot.location,
             Region.path.label("region_path"),
             FieldOfficer.id.label("holder_id"),
+            FieldOfficer.name.label("holder_name"),
+            ResolverOfficer.name.label("resolver_name"),
         ).join(Region, Firespot.region_id == Region.id).outerjoin(
             FieldOfficer, FieldOfficer.fire_id == Firespot.id
+        ).outerjoin(
+            FireResolution, FireResolution.fire_id == Firespot.id
+        ).outerjoin(
+            ResolverOfficer, ResolverOfficer.id == FireResolution.officer_id
         )
 
         if region_path is not None:
@@ -213,6 +224,9 @@ async def get_fires(
                 "status": row.status,
                 "expired": row.expired,
                 "booked": row.holder_id is not None,
+                "holder_id": str(row.holder_id) if row.holder_id else None,
+                # live holder (booked) or, for a resolved fire, whoever resolved it
+                "holder_name": row.holder_name or row.resolver_name,
                 "lat": pt.y,
                 "lng": pt.x,
                 "tumboon": row.detail.get("TUMBON") if hasattr(row, "detail") else None,
