@@ -1,10 +1,14 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..auth.ws_auth import get_user_from_ws
+from ..database import async_session_maker
+from ..db_control.permission import is_admin_user
 from ..ws.manager import manager
 from ..ws.officer_handlers import (
+    handle_appoint_officer,
     handle_list_officers,
     handle_list_pending,
+    handle_update_officer,
     handle_verify_officer,
     handle_list_officers_MAP
 )
@@ -18,6 +22,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     if user is None:
         await ws.close(code=1008)
         return
+    # the web app is admin/dispatcher only; field officers use the mobile app
+    async with async_session_maker() as session:
+        if not await is_admin_user(user, session):
+            await ws.close(code=1008)
+            return
     await manager.connect(ws, user)
     try:
         while True:
@@ -32,6 +41,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_list_pending(ws, user)
                 case "verify_officer":
                     await handle_verify_officer(ws, user, data, manager.active)
+                case "update_officer":
+                    await handle_update_officer(ws, user, data, manager.active)
+                case "appoint_officer":
+                    await handle_appoint_officer(ws, user, data, manager.active)
                 case "list_officers":
                     await handle_list_officers(ws, user)
                 case "list_officers_MAP":

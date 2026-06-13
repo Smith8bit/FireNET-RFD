@@ -1,12 +1,15 @@
 import uuid
 
 from fastapi import WebSocket
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
 from ..database import async_session_maker
-from ..database.models import FieldOfficer, Region, User, UserRegion
-from ..db_control.permission import user_region_paths
+from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
+from ..db_control.audit import audit
+from ..db_control.permission import is_admin_user, user_region_paths
+from ..db_control.push import send_push
 
 settings = get_settings()
 
@@ -36,12 +39,7 @@ _OFFICERS_SQL = """
 
 
 async def _is_admin(user: User, session) -> bool:
-    if user.is_superuser:
-        return True
-    roles = (
-        await session.execute(select(UserRegion.role).where(UserRegion.user_id == user.id))
-    ).scalars().all()
-    return any(r != "field_officer" for r in roles)
+    return await is_admin_user(user, session)
 
 
 async def _fetch_officers(session, user: User) -> list[dict]:
@@ -119,6 +117,7 @@ def _map_subset(officers: list[dict]) -> list[dict]:
             "field_officer_id": o["field_officer_id"],
             "name": o["name"],
             "active": o["active"],
+            "busy": o["fire_id"] is not None,  # already holds a fire → not appointable
             "last_updated": o["last_updated"],
             "location": o["location"],
             "province_name_th": o["province_name_th"],
@@ -145,7 +144,8 @@ async def broadcast_officers_update(active_connections) -> None:
                 if not await _is_admin(user, session):
                     continue
                 officers = await _fetch_officers(session, user)
-                print(f"[broadcast] officers_in_region → {user.email}: {len(officers)} officers")
+                # ASCII only: a non-cp1252 char here raises on Windows consoles and kills the send
+                print(f"[broadcast] officers_in_region -> {user.email}: {len(officers)} officers")
                 await ws.send_json({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
                 print(f"[broadcast] failed to send to {user.email}: {exc}")
@@ -197,16 +197,9 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
             return
         province_path, officer_name = ur_row
 
-        if not admin.is_superuser:
-            ok = await session.execute(
-                text(
-                    "SELECT 1 FROM regions r JOIN user_regions ur ON ur.region_id = r.id "
-                    "WHERE ur.user_id = :aid AND CAST(:p AS ltree) <@ r.path LIMIT 1"
-                ).bindparams(aid=admin.id, p=province_path)
-            )
-            if ok.first() is None:
-                await ws.send_json({"type": "error", "code": "out_of_scope"})
-                return
+        if not await _admin_covers_path(admin, province_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
 
         target = await session.get(User, user_id)
         if target is None:
@@ -223,8 +216,210 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
         else:
             print(f"[verify] FieldOfficer already exists for user {user_id}")
 
+        audit(session, actor=admin, action="officer.verify", entity_type="officer",
+              entity_id=str(user_id),
+              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
     print(f"[verify] officer {user_id} verified by {admin.email}")
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
     await broadcast_officers_update(active_connections)
+
+
+async def _admin_covers_path(admin: User, path, session) -> bool:
+    if admin.is_superuser:
+        return True
+    ok = await session.execute(
+        text(
+            "SELECT 1 FROM regions r JOIN user_regions ur ON ur.region_id = r.id "
+            "WHERE ur.user_id = :aid AND CAST(:p AS ltree) <@ r.path LIMIT 1"
+        ).bindparams(aid=admin.id, p=str(path))
+    )
+    return ok.first() is not None
+
+
+async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
+    """Admin edit of an officer's name and/or province assignment."""
+    try:
+        user_id = uuid.UUID(data["user_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_user_id"})
+        return
+    new_name = (data.get("name") or "").strip() or None if "name" in data else None
+    province_code = (data.get("province_code") or "").strip() or None
+    if new_name is None and province_code is None:
+        await ws.send_json({"type": "error", "code": "nothing_to_update"})
+        return
+
+    async with async_session_maker() as session:
+        if not await _is_admin(admin, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+
+        ur_row = (
+            await session.execute(
+                select(UserRegion, Region.path)
+                .join(Region, Region.id == UserRegion.region_id)
+                .where(UserRegion.user_id == user_id, UserRegion.role == "field_officer")
+            )
+        ).one_or_none()
+        if ur_row is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
+        user_region, current_path = ur_row
+
+        if not await _admin_covers_path(admin, current_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        changes: dict = {}
+        ur_values: dict = {}
+        if new_name is not None and new_name != user_region.name:
+            changes["name"] = new_name
+            ur_values["name"] = new_name
+
+        if province_code is not None:
+            province = (
+                await session.execute(
+                    select(Region).where(Region.code == province_code, Region.level == "province")
+                )
+            ).scalar_one_or_none()
+            if province is None:
+                await ws.send_json({"type": "error", "code": "invalid_province"})
+                return
+            if province.id != user_region.region_id:
+                # the admin must cover the destination province too
+                if not await _admin_covers_path(admin, province.path, session):
+                    await ws.send_json({"type": "error", "code": "out_of_scope"})
+                    return
+                changes["province_path"] = str(province.path)
+                changes["previous_province_path"] = str(current_path)
+                ur_values["region_id"] = province.id
+
+        if changes:
+            # region_id is part of the composite PK — write via UPDATE, not ORM identity
+            old_region_id = user_region.region_id
+            session.expunge(user_region)
+            await session.execute(
+                update(UserRegion)
+                .where(UserRegion.user_id == user_id, UserRegion.region_id == old_region_id)
+                .values(**ur_values)
+            )
+            if "name" in ur_values:
+                await session.execute(
+                    update(FieldOfficer).where(FieldOfficer.user_id == user_id).values(name=new_name)
+                )
+            audit(session, actor=admin, action="officer.update", entity_type="officer",
+                  entity_id=str(user_id), detail=changes)
+            await session.commit()
+
+    # keys only: values may hold Thai text, which can crash cp1252 console prints
+    print(f"[update] officer {user_id} updated by {admin.email}: {sorted(changes)}")
+    await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
+    if changes:
+        await broadcast_admin_refresh(active_connections, include_pending=True)
+
+
+async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
+    """Admin appoints a fire to a specific field officer (the inverse of an
+    officer self-reserving). Same first-come-first-served invariants apply:
+    a fire is held by at most one officer, an officer holds at most one
+    unresolved fire. On success the officer is notified via FCM; the pg_listener
+    booking trigger refreshes every web client's fire/officer lists."""
+    try:
+        fire_id = uuid.UUID(data["fire_id"])
+        officer_id = uuid.UUID(data["officer_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_request"})
+        return
+
+    notify_user_id = None
+    fire_name = None
+    async with async_session_maker() as session:
+        if not await _is_admin(admin, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+
+        fire = await session.get(Firespot, fire_id)
+        if fire is None:
+            await ws.send_json({"type": "error", "code": "fire_not_found"})
+            return
+        if fire.status:
+            await ws.send_json({"type": "error", "code": "fire_resolved"})
+            return
+
+        fire_path = (
+            await session.execute(select(Region.path).where(Region.id == fire.region_id))
+        ).scalar_one()
+        if not await _admin_covers_path(admin, fire_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        officer = await session.get(FieldOfficer, officer_id)
+        if officer is None:
+            await ws.send_json({"type": "error", "code": "officer_not_found"})
+            return
+
+        # the officer must be within the admin's scope too
+        officer_path = (
+            await session.execute(
+                select(Region.path)
+                .join(UserRegion, UserRegion.region_id == Region.id)
+                .where(UserRegion.user_id == officer.user_id, UserRegion.role == "field_officer")
+            )
+        ).scalar_one_or_none()
+        if officer_path is None or not await _admin_covers_path(admin, officer_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        # fire must be free (idempotent if it's already this officer's)
+        if officer.fire_id == fire_id:
+            await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
+                                "officer_id": str(officer_id)})
+            return
+        holder = (
+            await session.execute(
+                select(FieldOfficer.id).where(
+                    FieldOfficer.fire_id == fire_id, FieldOfficer.id != officer_id
+                )
+            )
+        ).first()
+        if holder is not None:
+            await ws.send_json({"type": "error", "code": "fire_already_booked"})
+            return
+        # officer must not already hold a different unresolved fire (coexist rule)
+        if officer.fire_id is not None:
+            held = await session.get(Firespot, officer.fire_id)
+            if held is not None and not held.status:
+                await ws.send_json({"type": "error", "code": "officer_busy"})
+                return
+
+        officer.fire_id = fire_id
+        audit(session, actor=admin, action="fire.appoint", entity_type="fire",
+              entity_id=str(fire_id),
+              detail={"officer_id": str(officer_id), "officer_user_id": str(officer.user_id),
+                      "name": fire.name})
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await ws.send_json({"type": "error", "code": "fire_already_booked"})
+            return
+
+        notify_user_id = officer.user_id
+        fire_name = fire.name
+
+    # push is best-effort and outside the appoint transaction
+    if notify_user_id is not None:
+        async with async_session_maker() as session:
+            await send_push(
+                session, notify_user_id,
+                title="ได้รับมอบหมายงานใหม่",
+                body=f"คุณได้รับมอบหมายให้ดูแลไฟ: {fire_name}",
+                data={"type": "fire_appointment", "fire_id": str(fire_id)},
+            )
+            await session.commit()
+
+    print(f"[appoint] fire {fire_id} -> officer {officer_id} by {admin.email}")
+    await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
+                        "officer_id": str(officer_id)})

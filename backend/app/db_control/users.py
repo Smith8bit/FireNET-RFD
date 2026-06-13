@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..database import get_async_session
 from ..database.models import User
+from .audit import audit
 
 settings = get_settings()
 
@@ -19,9 +20,15 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_register(self, user: User, request=None):
         print(f"[users] registered: {user.email}")
+        audit(self.user_db.session, actor=user, action="auth.register",
+              entity_type="user", entity_id=str(user.id))
+        await self.user_db.session.commit()
 
     async def on_after_login(self, user: User, request=None, response=None):
         print(f"[users] login: {user.email}")
+        audit(self.user_db.session, actor=user, action="auth.login",
+              entity_type="user", entity_id=str(user.id))
+        await self.user_db.session.commit()
 
 
 async def get_user_db(

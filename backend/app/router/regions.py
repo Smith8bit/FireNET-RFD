@@ -8,6 +8,7 @@ from ..auth import current_active_user, current_superuser
 from ..database import get_async_session
 from ..database.models import Region, User, UserRegion
 from ..database.schemas import RegionRead, UserRegionAssign, ProvinceRead
+from ..db_control.audit import audit
 from ..db_control.permission import user_region_paths
 
 router = APIRouter()
@@ -48,7 +49,7 @@ async def list_regions(
 async def assign_user_region(
     user_id: uuid.UUID,
     body: UserRegionAssign,
-    _: User = Depends(current_superuser),
+    actor: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
     region = await session.get(Region, body.region_id)
@@ -59,6 +60,8 @@ async def assign_user_region(
         existing.role = body.role
     else:
         session.add(UserRegion(user_id=user_id, region_id=body.region_id, role=body.role))
+    audit(session, actor=actor, action="region.assign", entity_type="user", entity_id=str(user_id),
+          detail={"region_id": str(body.region_id), "region_path": str(region.path), "role": body.role})
     await session.commit()
     return {"ok": True}
 
@@ -67,12 +70,17 @@ async def assign_user_region(
 async def revoke_user_region(
     user_id: uuid.UUID,
     region_id: uuid.UUID,
-    _: User = Depends(current_superuser),
+    actor: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
     existing = await session.get(UserRegion, (user_id, region_id))
     if existing is None:
         return
+    region = await session.get(Region, region_id)
+    audit(session, actor=actor, action="region.revoke", entity_type="user", entity_id=str(user_id),
+          detail={"region_id": str(region_id),
+                  "region_path": str(region.path) if region else None,
+                  "role": existing.role})
     await session.delete(existing)
     await session.commit()
 

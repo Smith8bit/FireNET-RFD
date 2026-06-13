@@ -20,7 +20,7 @@ export default function Navbar() {
   }
 
 return (
-    <nav className="flex justify-between items-center px-2 bg-white font-medium text-md">
+    <nav className="relative z-20 flex justify-between items-center px-2 bg-white font-medium text-md shadow-md">
       <div className="flex items-center ml-4 gap-4 py-2">
         <img
           className="h-12 "

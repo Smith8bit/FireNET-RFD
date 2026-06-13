@@ -16,6 +16,12 @@ export const useAuthStore = create((set, get) => ({
       const res = await api('/users/me/profile')
       if (res.ok) {
         const user = await res.json()
+        if (!user.is_admin) {
+          // field officers belong in the mobile app, not the web console
+          await api('/auth/cookie/logout', { method: 'POST' }).catch(() => {})
+          set({ user: null, status: 'guest' })
+          return
+        }
         set({ user, status: 'authed' })
         return
       }
@@ -40,7 +46,12 @@ export const useAuthStore = create((set, get) => ({
     const me = await api('/users/me/profile')
     console.debug('[auth] /users/me/profile status', me.status)
     const user = me.ok ? await me.json() : null
-    console.debug('[auth] user', user, 'status →', user ? 'authed' : 'guest')
+    if (user && !user.is_admin) {
+      // logged in fine, but this is a field-officer account — block web access
+      await api('/auth/cookie/logout', { method: 'POST' }).catch(() => {})
+      set({ user: null, status: 'guest' })
+      throw new Error('บัญชีนี้เป็นเจ้าหน้าที่ภาคสนาม กรุณาใช้แอปพลิเคชันมือถือ')
+    }
     set({ user, status: user ? 'authed' : 'guest' })
   },
 

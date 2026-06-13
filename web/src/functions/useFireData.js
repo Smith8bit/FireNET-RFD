@@ -11,6 +11,8 @@ function normalize(raw) {
     type: f.type,
     status: f.status,
     booked: f.booked,
+    holder_id: f.holder_id,
+    holder_name: f.holder_name,
     lat: f.lat,
     lng: f.lng,
     tumboon: f.tumboon,

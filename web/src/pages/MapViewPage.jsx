@@ -1,5 +1,6 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { List } from 'react-window'
+import { ArrowsPointingOutIcon } from '@heroicons/react/20/solid'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
 import { useFireData } from '../functions/useFireData'
 import Map from '../components/map'
@@ -12,7 +13,7 @@ import topoStyle from '../components/layers/topo.json'
 
 const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
 const START_POINT = { lat: 13.736717, lng: 100.523186 }
-const CARD_HEIGHT = 125 // px — must match Card's rendered height (p-4 + 3 text lines + border)
+const CARD_HEIGHT = 135 // px — must match Card's rendered height (py-3 + 3 text lines + border)
 
 function FireRow({ index, style, fires }) {
   const f = fires[index]
@@ -33,6 +34,7 @@ function FireRow({ index, style, fires }) {
 
 export default function MapViewPage() {
   const [selectedLayer, setSelectedLayer] = useState(LAYERS.Base)
+  const mapRef = useRef(null)
 
   const [officers, setOfficers] = useState([])
   const send = useSocketStore((s) => s.send)
@@ -108,37 +110,49 @@ export default function MapViewPage() {
 
   return (
     <div className="flex flex-1 w-full overflow-hidden">
-      <div className="w-3/4 h-full">
-        <Map layer={selectedLayer} points={points} startPoint={START_POINT} officers={officers} />
-      </div>
-      <div className="relative w-1/4 h-full">
-        {/* list panel stays mounted while the expanded card overlays it,
-            so the scroll position is kept naturally */}
-        <div
-          className="h-full bg-background pb-2 overflow-hidden flex flex-col"
-          id="map-controller"
-        >
-          <div id="layers" className="flex justify-center min-h-1/12 divide-x-2 divide-gray-300 ">
+      <div className="relative w-3/4 h-full">
+        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={START_POINT} officers={officers} />
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+          <div
+            id="layers"
+            className="flex rounded-lg overflow-hidden shadow-md divide-x divide-gray-300"
+          >
             {Object.keys(LAYERS).map((key) => (
               <button
                 key={key}
-                className={`flex-1 hover:bg-forest-500 hover:text-primary-foreground ${selectedLayer === LAYERS[key] ? 'bg-forest-500 text-primary-foreground' : 'bg-default'}`}
+                className={`px-3 py-1.5 text-sm font-medium hover:bg-forest-500 hover:text-primary-foreground ${selectedLayer === LAYERS[key] ? 'bg-forest-500 text-primary-foreground' : 'bg-white'}`}
                 onClick={() => setSelectedLayer(LAYERS[key])}
               >
                 {key}
               </button>
             ))}
           </div>
+          <button
+            title="กลับไปจุดเริ่มต้น"
+            className="flex items-center justify-center bg-white rounded-lg shadow-md p-1.5 hover:bg-forest-500 hover:text-primary-foreground"
+            onClick={() => mapRef.current?.resetView()}
+          >
+            <ArrowsPointingOutIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      <div className="relative w-1/4 h-full">
+        {/* list panel stays mounted while the expanded card overlays it,
+            so the scroll position is kept naturally */}
+        <div
+          className="h-full bg-background overflow-hidden flex flex-col"
+          id="map-controller"
+        >
           <div id="list-controls" className="px-3 py-2 space-y-2 bg-white border-b border-gray-300">
             <div className="flex items-center justify-between">
-              <p className="font-semibold text-sm">รายการไฟ ({listFires.length})</p>
+              <p className="font-semibold text-md">รายการไฟ ({listFires.length})</p>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-500">เรียงตาม</span>
+                <span className="text-sm text-gray-500">เรียงตาม</span>
                 {[{ key: 'time', label: 'เวลา' }, { key: 'name', label: 'ชื่อ' }].map(({ key, label }) => (
                   <button
                     key={key}
                     onClick={() => changeSort(key)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+                    className={`px-2.5 py-1 rounded-full text-sm font-semibold transition-colors ${
                       sortBy === key
                         ? 'bg-amber-500 text-white'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -156,7 +170,7 @@ export default function MapViewPage() {
                 className="flex-1 min-w-0 text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
               >
                 <option value="all">สถานะ: ทั้งหมด</option>
-                <option value="free">ว่าง</option>
+                <option value="free">ลุกไหม้</option>
                 <option value="booked">ถูกจอง</option>
                 <option value="resolved">ดับแล้ว</option>
               </select>
@@ -186,7 +200,7 @@ export default function MapViewPage() {
           </div>
         </div>
         {focused && (
-          <div className="absolute inset-0 z-10 bg-white pb-2 overflow-hidden flex flex-col">
+          <div className="absolute inset-0 z-10 bg-white py-2 overflow-hidden flex flex-col">
             <button
               className="bg-white p-1 w-fit"
               onClick={clearSelection}

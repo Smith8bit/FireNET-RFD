@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi_users.exceptions import UserAlreadyExists, InvalidPasswordException
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from ..auth.authen import current_active_user
 from ..config import get_settings
 from ..database import get_async_session
 from ..database.models import (
+    DeviceToken,
     FieldOfficer,
     FireResolution,
     FireResolutionImage,
@@ -23,7 +25,16 @@ from ..database.models import (
     User,
     UserRegion,
 )
-from ..database.schemas import FireAssign, OfficerRegister, OfficerStatusUpdate, UserCreate, UserRead
+from ..database.schemas import (
+    FireAssign,
+    OfficerRegister,
+    OfficerStatusUpdate,
+    PushTokenDelete,
+    PushTokenRegister,
+    UserCreate,
+    UserRead,
+)
+from ..db_control.audit import audit
 from ..db_control.permission import fire_visible
 from ..db_control.users import get_user_manager, UserManager
 
@@ -74,8 +85,18 @@ async def update_my_location(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
     if body.latitude is not None and body.longitude is not None:
         fo.last_location = from_shape(Point(body.longitude, body.latitude), srid=4326)
+    if body.active is not None:
+        # audit only the on/off transition, never routine location pings
+        if body.active != fo.active:
+            audit(
+                session,
+                actor=user,
+                action="officer.online" if body.active else "officer.offline",
+                entity_type="officer",
+                entity_id=str(fo.id),
+            )
+        fo.active = body.active
     fo.last_updated = datetime.now(timezone.utc)
-    fo.active = body.active
     await session.commit()
     return {"active": fo.active, "last_updated": fo.last_updated.isoformat()}
 
@@ -148,7 +169,15 @@ async def reserve_fire(
         ).first()
         if holder is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already reserved")
+    previous_fire_id = fo.fire_id
     fo.fire_id = body.fire_id
+    if body.fire_id is not None:
+        if body.fire_id != previous_fire_id:
+            audit(session, actor=user, action="fire.reserve", entity_type="fire",
+                  entity_id=str(fire.id), detail={"name": fire.name})
+    elif previous_fire_id is not None:
+        audit(session, actor=user, action="fire.release", entity_type="fire",
+              entity_id=str(previous_fire_id))
     try:
         await session.commit()
     except IntegrityError:
@@ -281,6 +310,8 @@ async def resolve_my_fire(
     fo.fire_id = None
     fire.status = True
     fire.resolve_time = datetime.now(timezone.utc)
+    audit(session, actor=user, action="fire.resolve", entity_type="fire", entity_id=str(fire.id),
+          detail={"name": fire.name, "resolution_id": str(resolution.id), "images": len(prepared)})
     try:
         await session.commit()
     except Exception:
@@ -314,3 +345,39 @@ async def my_reserved_fire(
         return None
     fire = await session.get(Firespot, fo.fire_id)
     return _fire_detail(fire) if fire is not None else None
+
+
+# ---- field officer: register / remove this device's FCM push token ----
+@router.put("/me/push-token", status_code=status.HTTP_204_NO_CONTENT)
+async def register_push_token(
+    body: PushTokenRegister,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    # a token is globally unique to one device; if it moves to a new account
+    # (shared phone, re-login), reassign it rather than rejecting the insert
+    stmt = (
+        insert(DeviceToken)
+        .values(user_id=user.id, token=body.token, platform=body.platform)
+        .on_conflict_do_update(
+            index_elements=["token"],
+            set_={"user_id": user.id, "platform": body.platform, "last_seen": func.now()},
+        )
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+
+@router.delete("/me/push-token", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_push_token(
+    body: PushTokenDelete,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    # scoped to the caller so one account can't unregister another's device
+    await session.execute(
+        delete(DeviceToken).where(
+            DeviceToken.token == body.token, DeviceToken.user_id == user.id
+        )
+    )
+    await session.commit()

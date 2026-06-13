@@ -1,4 +1,4 @@
-import { useEffect, useRef, createElement } from 'react'
+import { useEffect, useRef, createElement, forwardRef, useImperativeHandle } from 'react'
 import { createRoot } from 'react-dom/client'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -12,7 +12,7 @@ const FIRES_LAYER = 'fire-circles'
 
 // same palette as the mobile app's fire states
 const FIRE_COLORS = {
-    resolved: '#22c55e', // ดับแล้ว
+    resolved: '#d1d5dc', // ดับแล้ว
     booked: '#facc15', // ถูกเจ้าหน้าที่จอง
     free: '#ef4444', // ไฟอิสระ กำลังไหม้
 }
@@ -94,7 +94,7 @@ function makeOfficerEl(active, name) {
     return wrapper
 }
 
-export default function MapView({ layer, startPoint, points, officers = [] }) {
+const MapView = forwardRef(function MapView({ layer, startPoint, points, officers = [] }, ref) {
     const mapRef = useRef(null)
     const pointsRef = useRef(points)
     const activeIdRef = useRef(null)
@@ -103,6 +103,13 @@ export default function MapView({ layer, startPoint, points, officers = [] }) {
     const focusedId = useMapSelection((s) => s.focusedId)
     const hoveredId = useMapSelection((s) => s.hoveredId)
     const setFocused = useMapSelection((s) => s.setFocused)
+
+    // let the parent recenter the map to the starting view (zoom 8)
+    useImperativeHandle(ref, () => ({
+        resetView: () => {
+            mapRef.current?.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: 8, duration: 800 })
+        },
+    }), [startPoint])
 
     useEffect(() => {
         const map = new maplibregl.Map({
@@ -117,7 +124,7 @@ export default function MapView({ layer, startPoint, points, officers = [] }) {
         map.setRenderWorldCopies(false)
         map.dragRotate.disable()
         map.doubleClickZoom.disable()
-        map.addControl(new maplibregl.NavigationControl(), 'top-right')
+        map.addControl(new maplibregl.NavigationControl(), 'top-left')
 
         // setStyle() wipes custom sources, so re-add fires after every style load
         map.on('style.load', () => {
@@ -201,4 +208,6 @@ export default function MapView({ layer, startPoint, points, officers = [] }) {
             <div id="map" style={{ width: '100%', height: '100%' }}></div>
         </div>
     )
-}
+})
+
+export default MapView

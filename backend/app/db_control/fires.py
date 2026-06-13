@@ -9,14 +9,16 @@ from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import aliased
 
 from .. import storage
 from ..config import get_settings
 from ..database import async_session_maker
-from ..database.models.fire_resolution import FireResolutionImage
+from ..database.models.fire_resolution import FireResolution, FireResolutionImage
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
+from .audit import audit
 from .firefetch import fetch_live_fires
 
 
@@ -88,14 +90,18 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     "resolve_time": None,
                 }
             )
-        if not rows:
-            return
-        stmt = (
-            insert(Firespot)
-            .values(rows)
-            .on_conflict_do_nothing(index_elements=["external_id"])
-        )
-        await session.execute(stmt)
+        inserted = 0
+        if rows:
+            stmt = (
+                insert(Firespot)
+                .values(rows)
+                .on_conflict_do_nothing(index_elements=["external_id"])
+                .returning(Firespot.id)
+            )
+            inserted = len((await session.execute(stmt)).scalars().all())
+        # skipped = duplicates + rows dropped for missing region/coords/date
+        audit(session, actor=None, action="fire.ingest", entity_type="fire",
+              detail={"fetched": len(fires), "inserted": inserted, "skipped": len(fires) - inserted})
         await session.commit()
 
 async def update_fires() -> None:
@@ -126,6 +132,8 @@ async def expire_old_fires() -> None:
                 .where(FieldOfficer.fire_id.in_(expired_ids))
                 .values(fire_id=None)
             )
+            audit(session, actor=None, action="fire.expire", entity_type="fire",
+                  detail={"count": len(expired_ids)})
             print(f"[expire_old_fires] expired={len(expired_ids)}")
         await session.commit()
 
@@ -162,6 +170,10 @@ async def get_fires(
     from .permission import user_region_paths
 
     async with async_session_maker() as session:
+        # the officer who resolved a fire: resolve clears FieldOfficer.fire_id, so the
+        # live holder join goes null — recover the name via the resolution record instead
+        # (auto-expired fires have no resolution row, so they stay unattributed)
+        ResolverOfficer = aliased(FieldOfficer)
         stmt = select(
             Firespot.id,
             Firespot.external_id,
@@ -174,8 +186,14 @@ async def get_fires(
             Firespot.location,
             Region.path.label("region_path"),
             FieldOfficer.id.label("holder_id"),
+            FieldOfficer.name.label("holder_name"),
+            ResolverOfficer.name.label("resolver_name"),
         ).join(Region, Firespot.region_id == Region.id).outerjoin(
             FieldOfficer, FieldOfficer.fire_id == Firespot.id
+        ).outerjoin(
+            FireResolution, FireResolution.fire_id == Firespot.id
+        ).outerjoin(
+            ResolverOfficer, ResolverOfficer.id == FireResolution.officer_id
         )
 
         if region_path is not None:
@@ -185,9 +203,12 @@ async def get_fires(
         if on_date is not None:
             stmt = stmt.where(func.date(Firespot.detected_at) == on_date)
         else:
-            # default view: only fires detected today (Thai time)
+            # default view: fires detected within the last FIRE_DISPLAY_DAYS (Thai time),
+            # inclusive of today (1 = today only)
+            days = max(get_settings().FIRE_DISPLAY_DAYS, 1)
             today_start = datetime.now(_INGEST_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-            stmt = stmt.where(Firespot.detected_at >= today_start)
+            window_start = today_start - timedelta(days=days - 1)
+            stmt = stmt.where(Firespot.detected_at >= window_start)
 
         if user is not None and not user.is_superuser:
             paths = await user_region_paths(user, session)
@@ -210,6 +231,9 @@ async def get_fires(
                 "status": row.status,
                 "expired": row.expired,
                 "booked": row.holder_id is not None,
+                "holder_id": str(row.holder_id) if row.holder_id else None,
+                # live holder (booked) or, for a resolved fire, whoever resolved it
+                "holder_name": row.holder_name or row.resolver_name,
                 "lat": pt.y,
                 "lng": pt.x,
                 "tumboon": row.detail.get("TUMBON") if hasattr(row, "detail") else None,

@@ -12,6 +12,7 @@ from .database.schemas import UserCreate, UserRead, UserUpdate
 from . import storage
 from .database.seed import run_all as run_seed
 from .db_control.fires import expire_old_fires, sweep_orphan_images, update_fires
+from .router.audit import router as audit_router
 from .router.fires import router as fires_router
 from .router.regions import router as regions_router
 from .router.officers import router as officers_router
@@ -35,6 +36,26 @@ BEGIN
     ) THEN
         DROP INDEX IF EXISTS ix_field_officer_fire_id;
         CREATE UNIQUE INDEX ix_field_officer_fire_id ON field_officers (fire_id);
+    END IF;
+END $$;
+"""
+
+# the audit trail is append-only: block UPDATE/DELETE at the DB level
+_AUDIT_BLOCK_FN_SQL = """
+CREATE OR REPLACE FUNCTION audit_log_block_mutation() RETURNS trigger AS $fn$
+BEGIN
+    RAISE EXCEPTION 'audit_log is append-only';
+END;
+$fn$ LANGUAGE plpgsql
+"""
+
+_AUDIT_BLOCK_TRIGGER_SQL = """
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_log_append_only') THEN
+        CREATE TRIGGER trg_audit_log_append_only
+            BEFORE UPDATE OR DELETE ON audit_log
+            FOR EACH ROW EXECUTE FUNCTION audit_log_block_mutation();
     END IF;
 END $$;
 """
@@ -68,6 +89,8 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS expired boolean NOT NULL DEFAULT false")
         )
+        await conn.execute(text(_AUDIT_BLOCK_FN_SQL))
+        await conn.execute(text(_AUDIT_BLOCK_TRIGGER_SQL))
     await run_seed()
     try:
         await storage.ensure_bucket()
@@ -114,6 +137,7 @@ app.include_router(
 app.include_router(fires_router, prefix="/fires", tags=["fires"])
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
 app.include_router(officers_router, prefix="/officers", tags=["officers"])
+app.include_router(audit_router, prefix="/audit", tags=["audit"])
 app.include_router(users_router, prefix="/users", tags=["users"])
 app.include_router(ws_router, tags=["ws"])
 

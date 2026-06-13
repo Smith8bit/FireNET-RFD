@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.authen import current_active_user
 from ..database import get_async_session
 from ..database.models import User, UserRegion
+from ..db_control.permission import is_admin_user, is_field_officer
 
 router = APIRouter()
 
@@ -27,4 +28,7 @@ async def get_my_profile(
         "is_superuser": user.is_superuser,
         "is_verified": user.is_verified,
         "name": name,
+        # platform gating: web requires is_admin, mobile requires is_field_officer
+        "is_admin": await is_admin_user(user, session),
+        "is_field_officer": await is_field_officer(user, session),
     }

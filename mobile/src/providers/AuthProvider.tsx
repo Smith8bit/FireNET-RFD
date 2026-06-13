@@ -1,6 +1,7 @@
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
 import { api, setOnUnauthorized } from '@/lib/api'
+import { registerPushToken, unregisterPushToken } from '@/lib/push'
 
 export type AuthUser = {
   id: string
@@ -8,6 +9,9 @@ export type AuthUser = {
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
+  name: string | null
+  is_admin: boolean
+  is_field_officer: boolean
 }
 export type Province = { id: string; code: string; name_th: string; name_en: string | null; path: string }
 
@@ -36,10 +40,17 @@ export function useAuthSession() {
 
 async function fetchMe(): Promise<AuthUser | null> {
   try {
-    const res = await api.get<AuthUser>('/users/me', { timeout: 8000 })
+    const res = await api.get<AuthUser>('/users/me/profile', { timeout: 8000 })
     return res.data
   } catch {
     return null
+  }
+}
+
+// a verified field officer can receive appointments → register this device for push
+function maybeRegisterPush(user: AuthUser | null) {
+  if (user?.is_field_officer && user.is_verified) {
+    registerPushToken().catch(() => {})
   }
 }
 
@@ -54,7 +65,15 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
       router.replace('/Login')
     })
     ;(async () => {
-      setUser(await fetchMe())
+      const me = await fetchMe()
+      // a non-officer account (admin/dispatcher) doesn't belong in the mobile app
+      if (me && !me.is_field_officer) {
+        await api.post('/auth/cookie/logout', null).catch(() => {})
+        setUser(null)
+      } else {
+        setUser(me)
+        maybeRegisterPush(me)
+      }
       setIsLoading(false)
     })()
   }, [])
@@ -68,7 +87,15 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     } catch {
       throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
     }
-    setUser(await fetchMe())
+    const me = await fetchMe()
+    if (me && !me.is_field_officer) {
+      // logged in fine, but this is an admin/dispatcher account — block mobile access
+      await api.post('/auth/cookie/logout', null).catch(() => {})
+      setUser(null)
+      throw new Error('บัญชีนี้เป็นผู้ดูแลระบบ กรุณาใช้งานผ่านเว็บ')
+    }
+    setUser(me)
+    maybeRegisterPush(me)
     router.replace('/') // guard sends unverified users to /Pending
   }, [])
 
@@ -85,6 +112,8 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   }, [])
 
   const signOut = useCallback(async () => {
+    // drop this device's push token first, while the session cookie is still valid
+    await unregisterPushToken()
     try {
       await api.post('/auth/cookie/logout', null)
     } catch {}

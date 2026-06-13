@@ -11,6 +11,7 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -18,7 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.smith8bit.tfmsmobile",
+      "package": "com.sitarthon.tfmsmobile",
       "config": {
         "googleMaps": {
           "apiKey": ""
@@ -58,7 +59,11 @@
           "photosPermission": "Allow $(PRODUCT_NAME) to attach photos as evidence of extinguished fires"
         }
       ],
-      "expo-image"
+      "expo-image",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      "expo-notifications",
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -64,10 +64,12 @@ class FireAssign(BaseModel):
 
 
 class OfficerStatusUpdate(BaseModel):
-    # coords are optional so an officer can go offline without a GPS fix
+    # coords are optional so an officer can go offline without a GPS fix.
+    # active is optional too: a heartbeat sends coords only and must NOT change
+    # the online flag (avoids an in-flight poll re-activating a just-toggled-off officer).
     latitude: float | None = None
     longitude: float | None = None
-    active: bool
+    active: bool | None = None
 
 
 class FieldOfficerCreate(BaseModel):
@@ -112,3 +114,12 @@ class PendingOfficerRead(BaseModel):
     name: str | None
     province_name_th: str
     province_path: str
+
+
+class PushTokenRegister(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
+    platform: str | None = None  # "android" | "ios" | "web"
+
+
+class PushTokenDelete(BaseModel):
+    token: str

@@ -165,17 +165,15 @@ export default function MapView() {
             Alert.alert('ไม่สามารถออนไลน์ได้', 'กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
             return
           }
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
-          await setOnline(true, {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          })
+          // go online immediately; the layout poll pushes the first GPS fix
+          await setOnline(true)
         } else {
-          // best-effort: still go offline even if the position can't be read
+          // go offline immediately — never block on a GPS fix; attach a cached
+          // position if one is already available (instant), otherwise send none
           let coords: { latitude: number; longitude: number } | undefined
           try {
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
-            coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
+            const last = await Location.getLastKnownPositionAsync()
+            if (last) coords = { latitude: last.coords.latitude, longitude: last.coords.longitude }
           } catch {}
           await setOnline(false, coords)
         }

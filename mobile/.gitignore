@@ -33,6 +33,11 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase / FCM config (contains project keys — keep out of git)
+google-services.json
+GoogleService-Info.plist
+*-firebase-adminsdk-*.json
+
 # typescript
 *.tsbuildinfo
 
