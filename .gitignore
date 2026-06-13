@@ -181,5 +181,10 @@ cython_debug/
 .cursorindexingignore
 backend/app/config.py
 
+# Firebase / FCM secrets — service-account private keys (never commit)
+*-firebase-adminsdk-*.json
+google-services.json
+GoogleService-Info.plist
+
 # VS Code Counter extension reports
 .VSCodeCounter/

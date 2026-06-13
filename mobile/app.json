@@ -62,6 +62,7 @@
       "expo-image",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
+      "expo-notifications",
       "expo-build-properties"
     ],
     "experiments": {

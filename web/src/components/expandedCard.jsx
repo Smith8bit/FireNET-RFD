@@ -24,6 +24,10 @@ export default function ExpandedCard({ fire, officers }) {
     // lock the officer list + actions
     const locked = fire.status || fire.booked
 
+    // the picked officer may turn busy via a live officers_map refresh (self-reserve
+    // or another admin) — disarm the action so we don't fire a doomed appoint
+    const selectedBusy = officers.some((o) => o.field_officer_id === selectedOfficer && o.busy)
+
     // resolve the outcome of an appoint we initiated (ignores stale store messages)
     useEffect(() => {
         if (!pending || !appointedMsg) return
@@ -40,7 +44,7 @@ export default function ExpandedCard({ fire, officers }) {
     }, [errorMsg, pending])
 
     const appoint = () => {
-        if (!selectedOfficer) return
+        if (!selectedOfficer || selectedBusy) return
         setPending(true)
         setMessage(null)
         send({ type: 'appoint_officer', fire_id: fire.id, officer_id: selectedOfficer })
@@ -96,23 +100,30 @@ export default function ExpandedCard({ fire, officers }) {
                     officers.map((o) => (
                         <button
                             key={o.field_officer_id}
-                            disabled={locked}
+                            disabled={locked || o.busy}
                             onClick={() => setSelectedOfficer(o.field_officer_id)}
                             className={`w-full text-left px-3 py-2 mb-1 rounded-lg border transition-colors ${
-                                selectedOfficer === o.field_officer_id
+                                o.busy
+                                    ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+                                    : selectedOfficer === o.field_officer_id
                                     ? 'bg-forest-100 border-forest-500'
                                     : 'bg-white border-gray-200 hover:bg-gray-50'
                             }`}
                         >
                             <div className="flex items-center justify-between">
                                 <span className="font-medium text-md">{o.name}</span>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                    {o.active ? 'ออนไลน์' : 'ออฟไลน์'}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                    {o.busy && (
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">มีงานอยู่</span>
+                                    )}
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                        {o.active ? 'ออนไลน์' : 'ออฟไลน์'}
+                                    </span>
+                                </div>
                             </div>
                             <p className="text-sm text-gray-500 mt-0.5">{o.province_name_th}</p>
                         </button>
-                    ))  
+                    ))
                 )}
             </div>
 
@@ -131,7 +142,7 @@ export default function ExpandedCard({ fire, officers }) {
                     ล้าง
                 </button>
                 <button
-                    disabled={locked || !selectedOfficer || pending}
+                    disabled={locked || !selectedOfficer || selectedBusy || pending}
                     className="flex-1 py-3 text-white font-bold text-lg border rounded-lg bg-forest-500 hover:bg-forest-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     onClick={appoint}
                 >

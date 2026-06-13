@@ -91,7 +91,12 @@ async def send_push(
             tokens=tokens,
             notification=messaging.Notification(title=title, body=body),
             data=data_str,
-            android=messaging.AndroidConfig(priority="high"),
+            # channel_id must match ANDROID_CHANNEL_ID in mobile/src/lib/push.ts so
+            # background notifications use the same HIGH-importance heads-up channel
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(channel_id="appointments"),
+            ),
         )
         return messaging.send_each_for_multicast(message).responses
 
