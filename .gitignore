@@ -188,3 +188,12 @@ GoogleService-Info.plist
 
 # VS Code Counter extension reports
 .VSCodeCounter/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+mobile/google-services.json
+backend/tfms-fcm-firebase-adminsdk-fbsvc-8bd030a43a.json
