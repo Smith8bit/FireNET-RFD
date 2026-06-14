@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..auth.ws_auth import get_user_from_ws
 from ..database import async_session_maker
-from ..db_control.permission import is_admin_user
+from ..db_control.permission import is_admin_user, user_region_paths
 from ..ws.manager import manager
 from ..ws.officer_handlers import (
     handle_appoint_officer,
@@ -27,7 +27,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         if not await is_admin_user(user, session):
             await ws.close(code=1008)
             return
-    await manager.connect(ws, user)
+        # resolve the visibility scope once, here, so recurring broadcasts can
+        # bucket by it instead of re-deriving paths per connection on every tick
+        paths = await user_region_paths(user, session)
+    await manager.connect(ws, user, paths)
     try:
         while True:
             try:

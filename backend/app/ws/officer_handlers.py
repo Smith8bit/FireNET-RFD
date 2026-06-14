@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from fastapi import WebSocket
@@ -10,6 +11,7 @@ from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
 from ..db_control.audit import audit
 from ..db_control.permission import is_admin_user, user_region_paths
 from ..db_control.push import send_push
+from .manager import fanout, group_by_scope
 
 settings = get_settings()
 
@@ -138,39 +140,44 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
 
 
 async def broadcast_officers_update(active_connections) -> None:
+    """Bucketed: one officer fetch per distinct scope, fanned out to its sockets."""
     async with async_session_maker() as session:
-        for ws, user in list(active_connections):
+        admins = [c for c in list(active_connections) if await _is_admin(c.user, session)]
+        for scope, members in group_by_scope(admins).items():
             try:
-                if not await _is_admin(user, session):
-                    continue
-                officers = await _fetch_officers(session, user)
-                # ASCII only: a non-cp1252 char here raises on Windows consoles and kills the send
-                print(f"[broadcast] officers_in_region -> {user.email}: {len(officers)} officers")
-                await ws.send_json({"type": "officers_in_region", "officers": officers})
+                officers = await _fetch_officers(session, members[0].user)
+                payload = json.dumps({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
-                print(f"[broadcast] failed to send to {user.email}: {exc}")
+                print(f"[broadcast] officer update failed for scope {scope}: {exc}")
+                continue
+            await fanout(members, payload)
 
 
 async def broadcast_admin_refresh(active_connections, include_pending: bool = False) -> None:
-    """Push fresh officer lists (and optionally the pending list) to every admin."""
-    admins: list[tuple[WebSocket, User]] = []
+    """Push fresh officer lists (and optionally the pending list) to every admin.
+
+    Bucketed: the officer query runs once per distinct scope (not once per admin),
+    and each scope's two payloads are serialized once and fanned out to every
+    socket in that scope — same frames each admin received before, O(scopes) DB."""
     async with async_session_maker() as session:
-        for ws, user in list(active_connections):
-            if await _is_admin(user, session):
-                admins.append((ws, user))
-        for ws, user in admins:
+        admins = [c for c in list(active_connections) if await _is_admin(c.user, session)]
+        groups = group_by_scope(admins)
+        for scope, members in groups.items():
             try:
-                officers = await _fetch_officers(session, user)
-                await ws.send_json({"type": "officers_in_region", "officers": officers})
-                await ws.send_json({"type": "officers_map", "officers": _map_subset(officers)})
+                officers = await _fetch_officers(session, members[0].user)
+                in_region = json.dumps({"type": "officers_in_region", "officers": officers})
+                officers_map = json.dumps({"type": "officers_map", "officers": _map_subset(officers)})
             except Exception as exc:
-                print(f"[broadcast] officer refresh failed for {user.email}: {exc}")
+                print(f"[broadcast] officer refresh failed for scope {scope}: {exc}")
+                continue
+            await fanout(members, in_region)
+            await fanout(members, officers_map)
     if include_pending:
-        for ws, user in admins:
+        for c in admins:
             try:
-                await handle_list_pending(ws, user)
+                await handle_list_pending(c.ws, c.user)
             except Exception as exc:
-                print(f"[broadcast] pending refresh failed for {user.email}: {exc}")
+                print(f"[broadcast] pending refresh failed for {c.user.email}: {exc}")
 
 
 async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:

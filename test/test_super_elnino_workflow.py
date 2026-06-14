@@ -17,9 +17,9 @@ Fixtures self-bootstrap from the live feed if missing (needs network + venv):
     backend/venv/Scripts/python.exe test/fixtures/_fetch_real_fires.py 2026-04-13
     backend/venv/Scripts/python.exe test/fixtures/_fetch_real_fires.py 2026-04-14
 
-The web broadcasts run UNMODIFIED, so this shows how the per-connection fan-out
-and the DB-free workflow behave when the fire payload roughly triples while the
-client population stays at the national target.
+The broadcasts run scope-bucketed, so this shows the bucketed fan-out and the
+DB-free workflow when the fire payload roughly triples while the client
+population stays at the national target.
 
 Population knobs (env): SIM_WEB_USERS (10000), SIM_MOBILE_USERS (50000).
 
@@ -72,8 +72,7 @@ def test_combined_load_is_the_sum_of_three_real_days():
     assert set(per_day) == set(DAYS)
     assert WORLD.national_fires == sum(per_day.values())
     worst_single_day = max(per_day.values())
-    assert WORLD.national_fires > worst_single_day        # genuinely heavier than any one day
-    # union of provinces: at least as many as the broadest single day
+    assert WORLD.national_fires > worst_single_day
     assert len(WORLD.fire_paths) >= max(len(load_real_day(d)["by_path"]) for d in DAYS)
     print(f"\n[{TAG}] per-day {per_day}; combined {WORLD.national_fires} fires "
           f"= {WORLD.national_fires / worst_single_day:.1f}x the worst single day "
@@ -86,20 +85,20 @@ def test_combined_load_is_the_sum_of_three_real_days():
 def test_web_population_spans_all_account_levels():
     conns = WORLD.build_web_population()
     by_level: dict[str, int] = {}
-    for _, u in conns:
-        by_level[u.level] = by_level.get(u.level, 0) + 1
+    for c in conns:
+        by_level[c.user.level] = by_level.get(c.user.level, 0) + 1
     print(f"[{TAG}] web tier: {len(conns)} admins = "
           f"{by_level.get('national', 0)} national / {by_level.get('region', 0)} region / "
           f"{by_level.get('province', 0)} province")
     assert by_level["national"] == WORLD.national_superusers
     assert by_level["region"] == len(WORLD.region_paths) * WORLD.region_admins_each
     assert by_level["province"] >= len(WORLD.fire_paths)
-    nat = next(u for _, u in conns if u.is_superuser)
+    nat = next(c.user for c in conns if c.is_super)
     assert len(WORLD.fire_list_for(nat)) == WORLD.national_fires   # superuser carries all 3 days
 
 
 # --------------------------------------------------------------------------
-# fire broadcast at ~3x payload — cost is still O(connections), payload heavier
+# fire broadcast at ~3x payload — bucketed, so DB cost is still O(scopes)
 # --------------------------------------------------------------------------
 async def test_super_elnino_fire_broadcast_cost_model(world):
     calls, _ = world
@@ -113,31 +112,32 @@ async def test_super_elnino_fire_broadcast_cost_model(world):
     await m.broadcast_fires()
     elapsed = time.perf_counter() - t0
 
-    frames = sum(ws.frames for ws, _ in conns)
-    print(f"[{TAG}, peak {WORLD.peak_province_fires}] FIRE broadcast: {n_admins} admins, "
-          f"{n_scopes} distinct scopes -> {frames} frames, {calls['fires']} get_fires() "
+    frames = sum(c.ws.frames for c in conns)
+    print(f"[{TAG}, peak {WORLD.peak_province_fires}] FIRE broadcast (bucketed): {n_admins} "
+          f"admins across {n_scopes} scopes -> {frames} frames, {calls['fires']} get_fires() "
           f"calls in {elapsed*1000:.0f} ms")
-    assert calls["fires"] == n_admins          # still one refetch per CONNECTION
+    assert calls["fires"] == n_scopes          # still one fetch per scope at 3x payload
     assert frames == n_admins
     assert n_scopes < n_admins
-    print(f"    -> scope-bucketed fan-out would issue {n_scopes} queries, "
-          f"{n_admins / n_scopes:.0f}x fewer than the {n_admins} this build makes")
+    print(f"    -> {n_admins / n_scopes:.0f}x fewer DB queries than per-connection "
+          f"({n_admins} -> {n_scopes})")
 
 
 async def test_super_elnino_officer_cadence_cost_model(world):
     calls, _ = world
     conns = WORLD.build_web_population()
     n_admins = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
 
     t0 = time.perf_counter()
     await oh_mod.broadcast_admin_refresh(conns, include_pending=False)
     elapsed = time.perf_counter() - t0
 
-    frames = sum(ws.frames for ws, _ in conns)
-    print(f"[{TAG}] OFFICER cadence: {n_admins} admins -> {frames} frames, "
+    frames = sum(c.ws.frames for c in conns)
+    print(f"[{TAG}] OFFICER cadence (bucketed): {n_admins} admins -> {frames} frames, "
           f"{calls['officers']} _fetch_officers() calls in {elapsed*1000:.0f} ms; "
           f"cadence budget {WORLD.officer_cadence_s}s")
-    assert calls["officers"] == n_admins
+    assert calls["officers"] == n_scopes
     assert frames == 2 * n_admins
 
 
@@ -151,8 +151,8 @@ async def test_booking_is_reflected_in_next_broadcast(world):
     m.active = conns
     await m.broadcast_fires()
 
-    watcher = next(ws for ws, u in conns
-                   if u.is_superuser or any(WORLD.fire_paths[0].startswith(p) for p in u.paths))
+    watcher = next(c.ws for c in conns
+                   if c.is_super or any(WORLD.fire_paths[0].startswith(p) for p in c.paths))
     fires = {f["id"]: f for f in watcher.last["fires"]["fires"]}
     assert fires[target]["booked"] is True
 
@@ -183,6 +183,7 @@ async def test_web_and_mobile_run_concurrently(world):
     calls, _ = world
     conns = WORLD.build_web_population()
     n_admins = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
     m = ConnectionManager()
     m.active = conns
 
@@ -190,10 +191,10 @@ async def test_web_and_mobile_run_concurrently(world):
     await asyncio.gather(m.broadcast_fires(), location_swarm(WORLD.mobile_users))
     elapsed = time.perf_counter() - t0
 
-    assert calls["fires"] == n_admins
-    assert sum(ws.frames for ws, _ in conns) == n_admins
-    print(f"\n[{TAG}] CONCURRENT worst case: {n_admins} web fire-broadcasts + "
-          f"{WORLD.mobile_users} mobile pings together in {elapsed*1000:.0f} ms")
+    assert calls["fires"] == n_scopes
+    assert sum(c.ws.frames for c in conns) == n_admins
+    print(f"\n[{TAG}] CONCURRENT worst case: bucketed fire broadcast ({n_scopes} scopes -> "
+          f"{n_admins} admins) + {WORLD.mobile_users} mobile pings together in {elapsed*1000:.0f} ms")
 
 
 def test_report_per_connection_vs_bucketed():
@@ -202,11 +203,11 @@ def test_report_per_connection_vs_bucketed():
     n_scopes = WORLD.distinct_scopes(conns)
     q_ms = 5.0
 
-    per_conn_s = n_admins * q_ms / 1000
-    bucketed_s = n_scopes * q_ms / 1000
+    before_s = n_admins * q_ms / 1000
+    now_s = n_scopes * q_ms / 1000
     print(f"\n[{TAG}] per-broadcast DB time @ {q_ms:.0f}ms/query:")
-    print(f"    this build (per-connection): {n_admins} queries ~ {per_conn_s:.1f} s "
-          f"({per_conn_s / WORLD.officer_cadence_s:.0f}x the {WORLD.officer_cadence_s}s cadence)")
-    print(f"    scope-bucketed (planned):    {n_scopes} queries ~ {bucketed_s*1000:.0f} ms")
-    assert bucketed_s < WORLD.officer_cadence_s
-    assert per_conn_s > bucketed_s
+    print(f"    before (per-connection): {n_admins} queries ~ {before_s:.1f} s "
+          f"({before_s / WORLD.officer_cadence_s:.0f}x the {WORLD.officer_cadence_s}s cadence)")
+    print(f"    now (scope-bucketed):    {n_scopes} queries ~ {now_s*1000:.0f} ms")
+    assert now_s < WORLD.officer_cadence_s
+    assert now_s < before_s
