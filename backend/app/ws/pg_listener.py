@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import asyncpg
 
@@ -57,6 +58,9 @@ class PgListener:
         self._flusher: asyncio.Task | None = None
         self._pending: set[str] = set()
         self._stopping = False
+        # officer-list cadence throttle (routine position/status pings)
+        self._last_officer_refresh = 0.0          # monotonic
+        self._officer_trailing: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._stopping = False
@@ -64,7 +68,7 @@ class PgListener:
 
     async def stop(self) -> None:
         self._stopping = True
-        for task in (self._runner, self._flusher):
+        for task in (self._runner, self._flusher, self._officer_trailing):
             if task is not None:
                 task.cancel()
 
@@ -99,20 +103,50 @@ class PgListener:
         while True:
             tables, self._pending = set(self._pending), set()
             from .manager import manager
-            from .officer_handlers import broadcast_admin_refresh
 
             try:
                 # booking changes affect the fires' "booked" flag too
                 if tables & {"firespots", "field_officers_booking"}:
                     await manager.broadcast_fires()
-                if tables & {"field_officers", "field_officers_booking", "user"}:
-                    await broadcast_admin_refresh(
-                        manager.active, include_pending="user" in tables
-                    )
+                # officer lists: booking/registration changes refresh promptly;
+                # routine position/status pings (every field_officers UPDATE) are
+                # rate-limited to OFFICER_REFRESH_INTERVAL_SECONDS, so 40k officers
+                # pinging every 5 min can't drive a 0.5s-debounced full-fleet fanout
+                if tables & {"field_officers_booking", "user"}:
+                    await self._refresh_officers(include_pending="user" in tables)
+                elif "field_officers" in tables:
+                    await self._maybe_refresh_officers()
             except Exception as exc:
                 print(f"[pg_listener] broadcast failed: {exc}")
             if not self._pending:
                 return
+
+    async def _refresh_officers(self, include_pending: bool = False) -> None:
+        from .manager import manager
+        from .officer_handlers import broadcast_admin_refresh
+
+        if not manager.active:
+            return
+        self._last_officer_refresh = time.monotonic()
+        await broadcast_admin_refresh(manager.active, include_pending=include_pending)
+
+    async def _maybe_refresh_officers(self) -> None:
+        """Routine position/status refresh, throttled to the configured cadence.
+        If pings keep arriving during the cooldown, schedule a single trailing
+        refresh so the freshest positions still land once the window elapses."""
+        interval = settings.OFFICER_REFRESH_INTERVAL_SECONDS
+        elapsed = time.monotonic() - self._last_officer_refresh
+        if elapsed >= interval:
+            await self._refresh_officers()
+        elif self._officer_trailing is None or self._officer_trailing.done():
+            self._officer_trailing = asyncio.create_task(self._trailing_refresh(interval - elapsed))
+
+    async def _trailing_refresh(self, delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+            await self._refresh_officers()
+        except asyncio.CancelledError:
+            pass
 
 
 pg_listener = PgListener()
