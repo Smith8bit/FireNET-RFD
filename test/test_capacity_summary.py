@@ -107,11 +107,13 @@ def test_target_10k_50k_workers_needed_before_vs_now():
 
 
 # --------------------------------------------------------------------------
-# operational ceiling: a post-deploy reconnect storm is still O(connections)
+# operational ceiling: a post-deploy reconnect storm now shares one snapshot/scope
 # --------------------------------------------------------------------------
-async def test_connect_storm_is_one_get_fires_per_socket(monkeypatch):
+async def test_connect_storm_shares_one_snapshot_per_scope(monkeypatch):
     calls, _ = WORLD.patch(monkeypatch)
     conns = WORLD.build_web_population()
+    n = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
     m = ConnectionManager()
 
     t0 = time.perf_counter()
@@ -119,10 +121,10 @@ async def test_connect_storm_is_one_get_fires_per_socket(monkeypatch):
         await m.connect(c.ws, c.user, c.user.paths)
     elapsed = time.perf_counter() - t0
 
-    n = len(conns)
-    assert calls["fires"] == n              # initial fire snapshot per socket (not bucketed)
+    # the short-TTL snapshot cache collapses the storm to one query per scope
+    assert calls["fires"] == n_scopes
     assert all(c.ws.accepted for c in conns)
-    assert all(c.ws.frames == 1 for c in conns)
+    assert all(c.ws.frames == 1 for c in conns)   # every admin still gets its snapshot
     assert len(m.active) == n
     print(f"\n[peak fire] connect storm: {n:,} admins reconnected -> {calls['fires']:,} "
-          f"get_fires() snapshots in {elapsed*1000:.0f} ms (still O(connections) at connect)")
+          f"get_fires() snapshots ({n // n_scopes}x fewer than per-socket) in {elapsed*1000:.0f} ms")

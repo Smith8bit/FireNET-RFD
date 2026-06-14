@@ -83,30 +83,41 @@ def combine_real_days(date_strs: list[str]) -> dict | None:
 # population primitives
 # --------------------------------------------------------------------------
 class FakeWS:
-    """WebSocket stand-in: counts frames, keeps the last payload of each type."""
-    __slots__ = ("frames", "last", "accepted")
+    """WebSocket stand-in: counts frames and keeps raw payloads. Parsing is
+    deferred to `.last` so the send path stays O(1) — a real socket write doesn't
+    deserialize, and parsing every fanned frame would distort the timings."""
+    __slots__ = ("frames", "accepted", "_raw")
 
     def __init__(self):
         self.frames = 0
-        self.last: dict = {}
         self.accepted = False
+        self._raw: list = []
 
     async def accept(self) -> None:          # ConnectionManager.connect awaits this
         self.accepted = True
 
     async def send_json(self, payload) -> None:   # initial per-connection snapshot
         self.frames += 1
-        if isinstance(payload, dict):
-            self.last[payload.get("type", "fires")] = payload
+        self._raw.append(payload)
 
     async def send_text(self, payload) -> None:   # bucketed fanout (pre-serialized)
         self.frames += 1
-        try:
-            data = json.loads(payload)
-        except (ValueError, TypeError):
-            return
-        if isinstance(data, dict):
-            self.last[data.get("type", "fires")] = data
+        self._raw.append(payload)
+
+    @property
+    def last(self) -> dict:
+        """Most recent payload of each message type (parsed on demand)."""
+        out: dict = {}
+        for p in self._raw:
+            data = p
+            if isinstance(p, str):
+                try:
+                    data = json.loads(p)
+                except (ValueError, TypeError):
+                    continue
+            if isinstance(data, dict):
+                out[data.get("type", "fires")] = data
+        return out
 
 
 @dataclass

@@ -39,24 +39,30 @@ _OFFICERS_SQL = """
     WHERE u.is_verified = true
 """
 
+# A national/large-region admin must never be handed the whole fleet: cap every
+# officer fetch at OFFICER_MAP_MAX, keeping the freshest (most recently active)
+# rows. Province admins are far under the cap, so they're unaffected.
+_OFFICERS_ORDER_CAP = " ORDER BY fo.last_updated DESC NULLS LAST LIMIT :cap"
+
 
 async def _is_admin(user: User, session) -> bool:
     return await is_admin_user(user, session)
 
 
-async def _fetch_officers(session, user: User) -> list[dict]:
+async def _fetch_officers(session, user: User, *, limit: int | None = None) -> list[dict]:
     ttl = settings.OFFICER_ONLINE_TTL_MINUTES
+    cap = limit if limit is not None else settings.OFFICER_MAP_MAX
     if user.is_superuser:
         rows = await session.execute(
-            text(_OFFICERS_SQL + " ORDER BY u.email").bindparams(ttl=ttl)
+            text(_OFFICERS_SQL + _OFFICERS_ORDER_CAP).bindparams(ttl=ttl, cap=cap)
         )
     else:
         paths = await user_region_paths(user, session)
         if not paths:
             return []
         rows = await session.execute(
-            text(_OFFICERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[])) ORDER BY u.email")
-            .bindparams(paths=paths, ttl=ttl)
+            text(_OFFICERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[]))" + _OFFICERS_ORDER_CAP)
+            .bindparams(paths=paths, ttl=ttl, cap=cap)
         )
     return [
         {

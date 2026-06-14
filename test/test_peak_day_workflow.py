@@ -130,6 +130,35 @@ async def test_booking_is_reflected_in_next_broadcast(world):
     assert fires[target]["booked"] is True
 
 
+async def test_unchanged_rebroadcast_skips_fanout_only_changed_scope_resends(world):
+    """A global trigger re-queries every scope, but a scope whose payload didn't
+    change is not re-sent — and a single booking re-sends only its own scope."""
+    calls, booked = world
+    conns = WORLD.build_web_population()
+    n_admins = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
+    m = ConnectionManager()
+    m.active = conns
+
+    await m.broadcast_fires()                              # first tick: everyone served
+    assert sum(c.ws.frames for c in conns) == n_admins
+
+    for c in conns:
+        c.ws.frames = 0
+    await m.broadcast_fires()                              # nothing changed
+    assert calls["fires"] == 2 * n_scopes                 # still re-queries per scope...
+    assert sum(c.ws.frames for c in conns) == 0           # ...but sends nothing (dedupe)
+
+    for c in conns:
+        c.ws.frames = 0
+    booked["id"] = f"{WORLD.fire_paths[0]}-0"              # one booking in the worst province
+    await m.broadcast_fires()
+    resent = sum(c.ws.frames for c in conns)
+    assert 0 < resent < n_admins                          # only the affected scope's admins
+    print(f"\n[{TAG}] dedupe: a single booking re-sent to {resent} admins "
+          f"(not all {n_admins}); unchanged scopes skipped")
+
+
 async def test_mobile_location_swarm_is_sustainable():
     n = WORLD.mobile_users
     t0 = time.perf_counter()
