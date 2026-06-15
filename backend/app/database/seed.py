@@ -119,7 +119,7 @@ async def seed_regional_users() -> None:
     regional_specs = [
         {
             "email": f"{ro['code'].replace('-', '')}@forest.com",
-            "password": f"forest@{ro['name_en']}1234",
+            "password": f"forest@{ro['code'].replace('-', '')}1234",
             "region_code": ro["code"],
             "name": ro["name_en"],
         }
