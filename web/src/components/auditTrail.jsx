@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL ?? ''
 const PAGE_SIZE = 20
 
 const ACTION_LABELS = {
   'fire.reserve': 'จองจุดไฟ',
-  'fire.release': 'ยกเลิกการจอง',
   'fire.resolve': 'ดับไฟสำเร็จ',
   'fire.false_report': 'แจ้งว่าไม่ใช่ไฟ',
   'fire.appoint': 'มอบหมายเจ้าหน้าที่',
@@ -15,8 +14,7 @@ const ACTION_LABELS = {
   'officer.update': 'แก้ไขข้อมูลเจ้าหน้าที่',
   'officer.online': 'เข้าปฏิบัติงาน',
   'officer.offline': 'ออกปฏิบัติงาน',
-  'region.assign': 'กำหนดสิทธิ์พื้นที่',
-  'region.revoke': 'ถอนสิทธิ์พื้นที่',
+  'officer.delete': 'ลบเจ้าหน้าที่',
   'auth.login': 'เข้าสู่ระบบ',
   'auth.register': 'สมัครบัญชี',
 }
@@ -24,7 +22,6 @@ const ACTION_LABELS = {
 const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
   officer: 'bg-blue-100 text-blue-700',
-  region: 'bg-purple-100 text-purple-700',
   auth: 'bg-gray-100 text-gray-600',
 }
 
@@ -32,7 +29,10 @@ const AT_FORMAT = new Intl.DateTimeFormat('th-TH', {
   day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
 })
 
-function summarize(item) {
+// resolve a province ltree path to its Thai name, falling back to the raw path
+const provName = (names, path) => (path ? (names[path] ?? path) : path)
+
+function summarize(item, names = {}) {
   const d = item.detail ?? {}
   switch (item.action) {
     case 'fire.ingest':
@@ -45,12 +45,16 @@ function summarize(item) {
     case 'fire.appoint':
       return d.name ?? ''
     case 'officer.verify':
+    case 'officer.delete':
       return [d.name, d.email].filter(Boolean).join(' · ')
-    case 'officer.update':
-      return [d.name, d.province_path && `→ ${d.province_path}`].filter(Boolean).join(' · ')
-    case 'region.assign':
-    case 'region.revoke':
-      return [d.role, d.region_path].filter(Boolean).join(' · ')
+    case 'officer.update': {
+      const parts = []
+      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
+      if (d.email) parts.push(`เปลี่ยนอีเมล: ${d.previous_email ? `${d.previous_email} → ` : ''}${d.email}`)
+      if (d.province_path) parts.push(`ย้ายไป: ${d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''}${provName(names, d.province_path)}`)
+      if (d.password_changed) parts.push(`รีเซ็ตรหัสผ่าน${d.officer_name ? `: ${d.officer_name}` : ''}`)
+      return parts.join('\n')
+    }
     default:
       return ''
   }
@@ -66,6 +70,33 @@ export default function AuditTrail() {
   const [actorInput, setActorInput] = useState('')
   const [actor, setActor] = useState('')
   const [reload, setReload] = useState(0)
+  const [provinceNames, setProvinceNames] = useState({}) // ltree path -> Thai name
+  const provincesLoaded = useRef(false)
+
+  // load the province path→name map lazily — only once a visible row actually
+  // references a province (officer.update with a province_path), and only once
+  useEffect(() => {
+    if (provincesLoaded.current) return
+    const needsProvince = (items ?? []).some(
+      (it) => it.action === 'officer.update' && it.detail?.province_path
+    )
+    if (!needsProvince) return
+    provincesLoaded.current = true
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_URL}/regions/provinces`, { credentials: 'include' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        if (cancelled) return
+        setProvinceNames(Object.fromEntries(data.map((p) => [p.path, p.name_th])))
+      } catch (e) {
+        console.warn('[AuditTrail] provinces load failed:', e)
+        provincesLoaded.current = false // allow a retry on a later render
+      }
+    })()
+    return () => { cancelled = true }
+  }, [items])
 
   useEffect(() => {
     let cancelled = false
@@ -147,28 +178,46 @@ export default function AuditTrail() {
         <p className="text-gray-500">ไม่พบประวัติ</p>
       )}
 
-      <div className="overflow-y-auto max-h-96 no-scrollbar">
-        <ul className="space-y-2">
-          {(items ?? []).map((item) => (
-            <li key={item.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2.5">
-              <div className="min-w-0">
-                <p className="font-medium flex items-center gap-2">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ACTION_COLORS[item.action.split('.')[0]] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {ACTION_LABELS[item.action] ?? item.action}
-                  </span>
-                  <span className="text-sm text-gray-700 truncate">{summarize(item)}</span>
-                </p>
-                <p className="text-sm text-gray-500 truncate">
-                  {item.actor_email === 'system' ? 'ระบบ' : item.actor_email}
-                </p>
-              </div>
-              <span className="text-xs text-gray-400 whitespace-nowrap ml-3">
-                {AT_FORMAT.format(new Date(item.at))} น.
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {items !== null && !error && items.length > 0 && (
+        <div className="overflow-y-auto max-h-96 no-scrollbar">
+          <table className="w-full text-sm border-collapse table-fixed">
+            <colgroup>
+              <col className="w-40" />
+              <col className="w-48" />
+              <col />
+              <col className="w-32" />
+            </colgroup>
+            <thead>
+              <tr className="text-xs font-medium text-gray-400 text-left border-b border-gray-200">
+                <th className="px-3 py-2 font-medium">เหตุการณ์</th>
+                <th className="px-3 py-2 font-medium">ผู้กระทำ</th>
+                <th className="px-3 py-2 font-medium">รายละเอียด</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap">เวลา</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className="border-b border-gray-100 last:border-0">
+                  <td className="px-3 py-2.5 align-top">
+                    <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ACTION_COLORS[item.action.split('.')[0]] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {ACTION_LABELS[item.action] ?? item.action}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-gray-600 break-all">
+                    {item.actor_email === 'system' ? 'ระบบ' : item.actor_email}
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-gray-700 whitespace-pre-line wrap-break-word">
+                    {summarize(item, provinceNames) || '—'}
+                  </td>
+                  <td className="px-3 py-2.5 align-top text-xs text-gray-400 whitespace-nowrap text-right">
+                    {AT_FORMAT.format(new Date(item.at))} น.
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between pt-3 text-sm text-gray-600">

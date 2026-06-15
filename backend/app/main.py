@@ -41,10 +41,25 @@ BEGIN
 END $$;
 """
 
-# the audit trail is append-only: block UPDATE/DELETE at the DB level
+# the audit trail is append-only: block UPDATE/DELETE at the DB level.
+# the one permitted mutation is the ON DELETE SET NULL cascade that anonymizes a
+# deleted account's rows (actor_id -> NULL, every other column untouched). The
+# denormalized actor_email keeps those rows attributable, so the trail is preserved.
 _AUDIT_BLOCK_FN_SQL = """
 CREATE OR REPLACE FUNCTION audit_log_block_mutation() RETURNS trigger AS $fn$
 BEGIN
+    IF TG_OP = 'UPDATE'
+       AND OLD.actor_id IS NOT NULL
+       AND NEW.actor_id IS NULL
+       AND NEW.actor_email IS NOT DISTINCT FROM OLD.actor_email
+       AND NEW.action      IS NOT DISTINCT FROM OLD.action
+       AND NEW.entity_type IS NOT DISTINCT FROM OLD.entity_type
+       AND NEW.entity_id   IS NOT DISTINCT FROM OLD.entity_id
+       AND NEW.detail      IS NOT DISTINCT FROM OLD.detail
+       AND NEW.at          IS NOT DISTINCT FROM OLD.at
+       AND NEW.id          IS NOT DISTINCT FROM OLD.id THEN
+        RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'audit_log is append-only';
 END;
 $fn$ LANGUAGE plpgsql

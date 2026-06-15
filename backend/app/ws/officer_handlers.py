@@ -2,7 +2,8 @@ import json
 import uuid
 
 from fastapi import WebSocket
-from sqlalchemy import select, text, update
+from fastapi_users.password import PasswordHelper
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
@@ -14,6 +15,8 @@ from ..db_control.push import send_push
 from .manager import fanout, group_by_scope
 
 settings = get_settings()
+_password_helper = PasswordHelper()
+_MIN_PASSWORD_LEN = 8
 
 _PENDING_SQL = """
     SELECT u.id AS user_id, u.email AS email, ur.name AS name,
@@ -252,7 +255,7 @@ async def _admin_covers_path(admin: User, path, session) -> bool:
 
 
 async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
-    """Admin edit of an officer's name and/or province assignment."""
+    """Admin edit of an officer's name, province assignment, login email and/or password."""
     try:
         user_id = uuid.UUID(data["user_id"])
     except (KeyError, ValueError):
@@ -260,8 +263,16 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
         return
     new_name = (data.get("name") or "").strip() or None if "name" in data else None
     province_code = (data.get("province_code") or "").strip() or None
-    if new_name is None and province_code is None:
+    new_email = ((data.get("email") or "").strip().lower() or None) if "email" in data else None
+    new_password = data.get("password") or None
+    if new_name is None and province_code is None and new_email is None and new_password is None:
         await ws.send_json({"type": "error", "code": "nothing_to_update"})
+        return
+    if new_email is not None and ("@" not in new_email or "." not in new_email):
+        await ws.send_json({"type": "error", "code": "invalid_email"})
+        return
+    if new_password is not None and len(new_password) < _MIN_PASSWORD_LEN:
+        await ws.send_json({"type": "error", "code": "weak_password"})
         return
 
     async with async_session_maker() as session:
@@ -283,6 +294,11 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
 
         if not await _admin_covers_path(admin, current_path, session):
             await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        target = await session.get(User, user_id)
+        if target is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
             return
 
         changes: dict = {}
@@ -309,7 +325,23 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
                 changes["previous_province_path"] = str(current_path)
                 ur_values["region_id"] = province.id
 
-        if changes:
+        # login credentials live on the user row, not the region assignment
+        if new_email is not None and new_email != target.email:
+            changes["email"] = new_email
+            changes["previous_email"] = target.email
+            target.email = new_email
+        if new_password is not None:
+            # never record the secret itself — only that a reset happened, and whose
+            target.hashed_password = _password_helper.hash(new_password)
+            changes["password_changed"] = True
+            changes["officer_name"] = new_name or user_region.name or target.email
+
+        if not changes:
+            # every field matched the current value — nothing to persist or broadcast
+            await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
+            return
+
+        if ur_values:
             # region_id is part of the composite PK — write via UPDATE, not ORM identity
             old_region_id = user_region.region_id
             session.expunge(user_region)
@@ -322,15 +354,73 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
                 await session.execute(
                     update(FieldOfficer).where(FieldOfficer.user_id == user_id).values(name=new_name)
                 )
-            audit(session, actor=admin, action="officer.update", entity_type="officer",
-                  entity_id=str(user_id), detail=changes)
+        audit(session, actor=admin, action="officer.update", entity_type="officer",
+              entity_id=str(user_id), detail=changes)
+        try:
             await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await ws.send_json({"type": "error", "code": "email_taken"})
+            return
 
-    # keys only: values may hold Thai text, which can crash cp1252 console prints
+    # keys only: values may hold Thai text / the new email, which we keep out of logs
     print(f"[update] officer {user_id} updated by {admin.email}: {sorted(changes)}")
     await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
-    if changes:
-        await broadcast_admin_refresh(active_connections, include_pending=True)
+    await broadcast_admin_refresh(active_connections, include_pending=True)
+
+
+async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
+    """Admin removes a field officer account entirely (within their scope).
+
+    Deletes the FieldOfficer row first — its user_id FK is ON DELETE SET NULL but the
+    column is NOT NULL, so the user row can't be dropped while it still points at one.
+    Deleting the user then cascades user_regions and device_tokens; audit_log.actor_id
+    and fire_resolutions.officer_id are SET NULL so history stays intact (attributed by
+    the denormalized actor_email). Any fire the officer was holding is released."""
+    try:
+        user_id = uuid.UUID(data["user_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_user_id"})
+        return
+
+    async with async_session_maker() as session:
+        if not await _is_admin(admin, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+
+        ur_row = (
+            await session.execute(
+                select(UserRegion.name, Region.path)
+                .join(Region, Region.id == UserRegion.region_id)
+                .where(UserRegion.user_id == user_id, UserRegion.role == "field_officer")
+            )
+        ).one_or_none()
+        if ur_row is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
+        officer_name, province_path = ur_row
+
+        if not await _admin_covers_path(admin, province_path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        target = await session.get(User, user_id)
+        if target is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
+
+        # capture attribution before the rows are gone
+        audit(session, actor=admin, action="officer.delete", entity_type="officer",
+              entity_id=str(user_id),
+              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
+        # FieldOfficer must go before the user (NOT NULL user_id with SET NULL FK)
+        await session.execute(delete(FieldOfficer).where(FieldOfficer.user_id == user_id))
+        await session.delete(target)
+        await session.commit()
+
+    print(f"[delete] officer {user_id} removed by {admin.email}")
+    await ws.send_json({"type": "officer_deleted", "user_id": str(user_id)})
+    await broadcast_admin_refresh(active_connections, include_pending=True)
 
 
 async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:

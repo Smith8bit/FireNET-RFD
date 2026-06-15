@@ -31,7 +31,7 @@ return (
           ระบบรายงานและจัดการไฟป่า
         </p>
       </div>
-      <span className="min-w-48 flex justify-center font-light italic bg-primary-foreground border-2 border-gray-300 rounded-full px-4 py-1">
+      <span className="w-fit flex text-lg  justify-center font-light italic bg-primary-foreground border-2 border-gray-300 rounded-full px-4 py-1">
         {user.name ?? user.email}
       </span>
       <ul className="flex h-full">

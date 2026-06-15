@@ -5,6 +5,14 @@ import { useAuthStore } from '../functions/useAuthStore'
 
 const API_URL = import.meta.env.VITE_API_URL ?? ''
 
+const ERROR_MESSAGES = {
+  email_taken: 'อีเมลนี้ถูกใช้งานแล้ว',
+  invalid_email: 'รูปแบบอีเมลไม่ถูกต้อง',
+  weak_password: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร',
+  out_of_scope: 'อยู่นอกพื้นที่รับผิดชอบของคุณ',
+  nothing_to_update: 'ไม่มีการเปลี่ยนแปลง',
+}
+
 export default function ManagementPage() {
   const send = useSocketStore((s) => s.send)
   const user = useAuthStore((s) => s.user)
@@ -12,6 +20,7 @@ export default function ManagementPage() {
   const verifiedMsg = useSocketStore((s) => s.byType?.officer_verified)
   const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
   const updatedMsg = useSocketStore((s) => s.byType?.officer_updated)
+  const deletedMsg = useSocketStore((s) => s.byType?.officer_deleted)
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
   const [selectedTab, setSelectedTab] = useState("Pending")
@@ -23,7 +32,10 @@ export default function ManagementPage() {
   const [editingId, setEditingId] = useState(null) // user_id being edited
   const [editName, setEditName] = useState('')
   const [editProvince, setEditProvince] = useState('') // Region.code
+  const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('') // blank = keep current
   const [savingId, setSavingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
 
   useEffect(() => {
     send({ type: 'list_pending_officers' })
@@ -54,11 +66,19 @@ export default function ManagementPage() {
   }, [updatedMsg])
 
   useEffect(() => {
+    if (!deletedMsg) return
+    setRegionOfficers((prev) => prev.filter((o) => o.user_id !== deletedMsg.user_id))
+    setEditingId(null)
+    setDeletingId(null)
+  }, [deletedMsg])
+
+  useEffect(() => {
     if (!errorMsg) return
     console.warn('[ManagementPage] error received:', errorMsg)
-    setError('เกิดข้อผิดพลาด: ' + (errorMsg.code ?? 'unknown'))
+    setError(ERROR_MESSAGES[errorMsg.code] ?? ('เกิดข้อผิดพลาด: ' + (errorMsg.code ?? 'unknown')))
     setBusyId(null)
     setSavingId(null)
+    setDeletingId(null)
   }, [errorMsg])
 
   // provinces for the edit form, loaded once when the Officers tab is opened
@@ -89,15 +109,25 @@ export default function ManagementPage() {
     setEditingId(o.user_id)
     setEditName(o.name ?? '')
     setEditProvince((provinces ?? []).find((p) => p.path === o.province_path)?.code ?? '')
+    setEditEmail(o.email ?? '')
+    setEditPassword('')
     setError(null)
   }
 
   const saveEdit = (o) => {
     setSavingId(o.user_id)
     setError(null)
-    const payload = { type: 'update_officer', user_id: o.user_id, name: editName }
+    const payload = { type: 'update_officer', user_id: o.user_id, name: editName, email: editEmail }
     if (editProvince) payload.province_code = editProvince
+    if (editPassword) payload.password = editPassword
     send(payload)
+  }
+
+  const removeOfficer = (o) => {
+    if (!window.confirm(`ลบเจ้าหน้าที่ ${o.name ?? o.email}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
+    setDeletingId(o.user_id)
+    setError(null)
+    send({ type: 'delete_officer', user_id: o.user_id })
   }
 
   const loading = officers === null
@@ -108,7 +138,7 @@ export default function ManagementPage() {
   return (
     <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
       <div className='bg-white border-0 rounded-2xl p-6'>
-        <h2 className="text-lg font-semibold text-forest-700 mb-3">การจัดการเจ้าหน้าที่ภาคสนาม</h2>
+        <h2 className="text-lg font-semibold text-forest-700 mb-3 font-title">การจัดการเจ้าหน้าที่ภาคสนาม</h2>
         <div className="flex gap-2 border-b border-gray-200">
           {tabs.map((tab) => (
             <button
@@ -128,7 +158,7 @@ export default function ManagementPage() {
       <div className='flex-1 bg-white border-0 rounded-2xl p-6 mb-1'>
         {selectedTab === 'Pending' && (
           <div>
-            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>
+            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>
 
             {loading && <p className="text-gray-500">กำลังโหลด…</p>}
             {error && <p className="text-red-600">{error}</p>}
@@ -160,7 +190,7 @@ export default function ManagementPage() {
 
         {selectedTab === 'Officers' && (
           <div>
-            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300">เจ้าหน้าที่ที่ได้รับการยืนยันแล้วในเขตของคุณ</p>
+            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">เจ้าหน้าที่ที่ได้รับการยืนยันแล้วในเขตของคุณ</p>
 
             {error && <p className="text-red-600 mb-2">{error}</p>}
             {regionOfficers.length === 0
@@ -172,7 +202,14 @@ export default function ManagementPage() {
                       <li key={o.field_officer_id} className="bg-white border border-gray-200 rounded-lg px-4 py-3">
                         {editingId === o.user_id ? (
                           <div className="space-y-2">
-                            <p className="text-sm text-gray-500">{o.email}</p>
+                            <input
+                              type="email"
+                              value={editEmail}
+                              onChange={(e) => setEditEmail(e.target.value)}
+                              placeholder="อีเมล"
+                              autoComplete="off"
+                              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
+                            />
                             <input
                               type="text"
                               value={editName}
@@ -190,22 +227,40 @@ export default function ManagementPage() {
                                 <option key={p.code} value={p.code}>{p.name_th}</option>
                               ))}
                             </select>
-                            <div className="flex justify-end gap-2">
+                            <input
+                              type="password"
+                              value={editPassword}
+                              onChange={(e) => setEditPassword(e.target.value)}
+                              placeholder="ตั้งรหัสผ่านใหม่ (เว้นว่างหากไม่เปลี่ยน)"
+                              autoComplete="new-password"
+                              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
+                            />
+                            <div className="flex items-center justify-between gap-2">
                               <button
                                 type="button"
-                                onClick={() => setEditingId(null)}
-                                className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5"
+                                onClick={() => removeOfficer(o)}
+                                disabled={deletingId === o.user_id}
+                                className="text-sm text-red-600 hover:text-red-700 border border-red-200 hover:border-red-300 rounded-full px-3 py-1.5 disabled:opacity-50"
                               >
-                                ยกเลิก
+                                {deletingId === o.user_id ? 'กำลังลบ…' : 'ลบเจ้าหน้าที่'}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => saveEdit(o)}
-                                disabled={savingId === o.user_id}
-                                className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
-                              >
-                                {savingId === o.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingId(null)}
+                                  className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5"
+                                >
+                                  ยกเลิก
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => saveEdit(o)}
+                                  disabled={savingId === o.user_id}
+                                  className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
+                                >
+                                  {savingId === o.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ) : (
