@@ -90,6 +90,9 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS expired boolean NOT NULL DEFAULT false")
         )
+        await conn.execute(
+            text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS false_alarm boolean NOT NULL DEFAULT false")
+        )
         await conn.execute(text(_AUDIT_BLOCK_FN_SQL))
         await conn.execute(text(_AUDIT_BLOCK_TRIGGER_SQL))
     await run_seed()

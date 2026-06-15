@@ -63,6 +63,10 @@ class FireAssign(BaseModel):
     fire_id: uuid.UUID | None = None
 
 
+class FireFalseReport(BaseModel):
+    note: str | None = None
+
+
 class OfficerStatusUpdate(BaseModel):
     # coords are optional so an officer can go offline without a GPS fix.
     # active is optional too: a heartbeat sends coords only and must NOT change

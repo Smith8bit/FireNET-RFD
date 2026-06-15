@@ -27,6 +27,7 @@ from ..database.models import (
 )
 from ..database.schemas import (
     FireAssign,
+    FireFalseReport,
     OfficerRegister,
     OfficerStatusUpdate,
     PushTokenDelete,
@@ -110,6 +111,7 @@ def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
         "detected_at": fire.detected_at.isoformat(),
         "status": fire.status,
         "expired": fire.expired,
+        "false_alarm": fire.false_alarm,
         "booked": booked,
         "lat": pt.y,
         "lng": pt.x,
@@ -318,6 +320,65 @@ async def resolve_my_fire(
         await session.rollback()
         await storage.remove_objects(stored)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "could not record resolution")
+    return _fire_detail(fire, booked=False)
+
+
+# ---- field officer: report own reserved fire as a false alarm (no evidence) ----
+# Satellite hotspot detection has false positives; an on-site officer who finds no
+# real fire closes it here instead of being forced to fake "fire put out" photos.
+@router.post("/me/fire/false-report", status_code=status.HTTP_200_OK)
+async def false_report_my_fire(
+    body: FireFalseReport,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    note = body.note
+    if note is not None and len(note) > settings.RESOLVE_NOTE_MAX_CHARS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "note too long")
+
+    fo = await _my_field_officer(user, session)
+    if not fo.active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
+    if fo.fire_id is None:
+        # idempotent retry: a prior attempt may have committed before its response was lost
+        recent = (
+            await session.execute(
+                select(FireResolution)
+                .where(
+                    FireResolution.officer_id == fo.id,
+                    FireResolution.created_at >= datetime.now(timezone.utc) - _RESOLVE_RETRY_WINDOW,
+                )
+                .order_by(FireResolution.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if recent is not None:
+            fire = await session.get(Firespot, recent.fire_id)
+            if fire is not None:
+                return _fire_detail(fire, booked=False)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no reserved fire")
+
+    fire = await session.get(Firespot, fo.fire_id)
+    if fire is None:
+        fo.fire_id = None
+        await session.commit()
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
+
+    # records who reported it false and why; no images, unlike a real resolution
+    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, note=note or None)
+    session.add(resolution)
+    await session.flush()
+    fo.fire_id = None
+    fire.status = True
+    fire.false_alarm = True
+    fire.resolve_time = datetime.now(timezone.utc)
+    audit(session, actor=user, action="fire.false_report", entity_type="fire", entity_id=str(fire.id),
+          detail={"name": fire.name, "resolution_id": str(resolution.id)})
+    try:
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "could not record false report")
     return _fire_detail(fire, booked=False)
 
 
