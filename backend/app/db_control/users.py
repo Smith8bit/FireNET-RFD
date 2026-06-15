@@ -6,17 +6,16 @@ from fastapi_users import BaseUserManager, UUIDIDMixin
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import get_settings
+from ..config import derive_secret
 from ..database import get_async_session
 from ..database.models import User
 from .audit import audit
 
-settings = get_settings()
-
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
-    reset_password_token_secret = settings.JWT_SECRET
-    verification_token_secret = settings.JWT_SECRET
+    # distinct, domain-separated secrets — not the raw JWT signing key
+    reset_password_token_secret = derive_secret("reset")
+    verification_token_secret = derive_secret("verify")
 
     async def on_after_register(self, user: User, request=None):
         print(f"[users] registered: {user.email}")

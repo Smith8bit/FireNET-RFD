@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi_users import schemas
 from pydantic import BaseModel, EmailStr, Field
@@ -29,7 +30,9 @@ class RegionRead(BaseModel):
 
 class UserRegionAssign(BaseModel):
     region_id: uuid.UUID
-    role: str = "viewer"
+    # "admin" or "dispatcher" (web console / officer management). Required — there
+    # is no read-only role to fall back to.
+    role: Literal["admin", "dispatcher", "field_officer"]
 
 
 class PointSchema(BaseModel):

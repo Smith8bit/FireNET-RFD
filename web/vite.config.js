@@ -12,13 +12,13 @@ export default defineConfig({
   
   server: {
     proxy: {
-      '/auth': 'http://localhost:8000',
-      '/users': 'http://localhost:8000',
-      '/regions': 'http://localhost:8000',
-      '/fires': 'http://localhost:8000',
-      '/officers': 'http://localhost:8000',
-      '/audit': 'http://localhost:8000',
-      '/ws': { target: 'ws://localhost:8000', ws: true },
+      '/auth': { target: 'https://wildfire.forest.go.th/tfms/api', changeOrigin: true },
+      '/users': { target: 'https://wildfire.forest.go.th/tfms/api', changeOrigin: true },
+      '/regions': { target: 'https://wildfire.forest.go.th/tfms/api', changeOrigin: true },
+      '/fires': { target: 'https://wildfire.forest.go.th/tfms/api', changeOrigin: true },
+      '/officers': { target: 'https://wildfire.forest.go.th/tfms/api', changeOrigin: true },
+      '/audit': { target: 'https://wildfire.forest.go.th/tfms/api', changeOrigin: true },
+      '/ws': { target: 'wss://wildfire.forest.go.th/tfms/api', changeOrigin: true, ws: true },
     },
   },
 

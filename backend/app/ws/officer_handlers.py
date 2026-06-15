@@ -10,7 +10,7 @@ from ..config import get_settings
 from ..database import async_session_maker
 from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
 from ..db_control.audit import audit
-from ..db_control.permission import is_admin_user, user_region_paths
+from ..db_control.permission import can_manage_officers, is_admin_user, user_region_paths
 from ..db_control.push import send_push
 from .manager import fanout, group_by_scope
 
@@ -50,6 +50,10 @@ _OFFICERS_ORDER_CAP = " ORDER BY fo.last_updated DESC NULLS LAST LIMIT :cap"
 
 async def _is_admin(user: User, session) -> bool:
     return await is_admin_user(user, session)
+
+
+async def _can_manage(user: User, session) -> bool:
+    return await can_manage_officers(user, session)
 
 
 async def _fetch_officers(session, user: User, *, limit: int | None = None) -> list[dict]:
@@ -197,7 +201,7 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
         return
 
     async with async_session_maker() as session:
-        if not await _is_admin(admin, session):
+        if not await _can_manage(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
 
@@ -276,7 +280,7 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
         return
 
     async with async_session_maker() as session:
-        if not await _is_admin(admin, session):
+        if not await _can_manage(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
 
@@ -384,7 +388,7 @@ async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_c
         return
 
     async with async_session_maker() as session:
-        if not await _is_admin(admin, session):
+        if not await _can_manage(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
 
@@ -439,7 +443,7 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
     notify_user_id = None
     fire_name = None
     async with async_session_maker() as session:
-        if not await _is_admin(admin, session):
+        if not await _can_manage(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
 

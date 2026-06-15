@@ -179,7 +179,6 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-backend/app/config.py
 
 # Firebase / FCM secrets — service-account private keys (never commit)
 *-firebase-adminsdk-*.json
@@ -196,4 +195,7 @@ desktop.ini
 *.swp
 *~
 mobile/google-services.json
+
+# Seeded account credentials (plaintext passwords) — never commit
+seeded_accounts.csv
 backend/tfms-fcm-firebase-adminsdk-fbsvc-8bd030a43a.json

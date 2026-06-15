@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from .auth.authen import auth_backend, fastapi_users
 from .config import get_settings
+from .middleware import install_rate_limiting
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from . import storage
@@ -131,7 +132,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="TFMS API", lifespan=lifespan)
+app = FastAPI(title="TFMS API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -140,6 +141,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Throttle credential brute force / registration abuse on the auth endpoints.
+install_rate_limiting(app)
 
 app.include_router(
     fastapi_users.get_auth_router(auth_backend),
