@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from fastapi import WebSocket
@@ -10,6 +11,7 @@ from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
 from ..db_control.audit import audit
 from ..db_control.permission import is_admin_user, user_region_paths
 from ..db_control.push import send_push
+from .manager import fanout, group_by_scope
 
 settings = get_settings()
 
@@ -37,24 +39,30 @@ _OFFICERS_SQL = """
     WHERE u.is_verified = true
 """
 
+# A national/large-region admin must never be handed the whole fleet: cap every
+# officer fetch at OFFICER_MAP_MAX, keeping the freshest (most recently active)
+# rows. Province admins are far under the cap, so they're unaffected.
+_OFFICERS_ORDER_CAP = " ORDER BY fo.last_updated DESC NULLS LAST LIMIT :cap"
+
 
 async def _is_admin(user: User, session) -> bool:
     return await is_admin_user(user, session)
 
 
-async def _fetch_officers(session, user: User) -> list[dict]:
+async def _fetch_officers(session, user: User, *, limit: int | None = None) -> list[dict]:
     ttl = settings.OFFICER_ONLINE_TTL_MINUTES
+    cap = limit if limit is not None else settings.OFFICER_MAP_MAX
     if user.is_superuser:
         rows = await session.execute(
-            text(_OFFICERS_SQL + " ORDER BY u.email").bindparams(ttl=ttl)
+            text(_OFFICERS_SQL + _OFFICERS_ORDER_CAP).bindparams(ttl=ttl, cap=cap)
         )
     else:
         paths = await user_region_paths(user, session)
         if not paths:
             return []
         rows = await session.execute(
-            text(_OFFICERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[])) ORDER BY u.email")
-            .bindparams(paths=paths, ttl=ttl)
+            text(_OFFICERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[]))" + _OFFICERS_ORDER_CAP)
+            .bindparams(paths=paths, ttl=ttl, cap=cap)
         )
     return [
         {
@@ -138,39 +146,44 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
 
 
 async def broadcast_officers_update(active_connections) -> None:
+    """Bucketed: one officer fetch per distinct scope, fanned out to its sockets."""
     async with async_session_maker() as session:
-        for ws, user in list(active_connections):
+        admins = [c for c in list(active_connections) if await _is_admin(c.user, session)]
+        for scope, members in group_by_scope(admins).items():
             try:
-                if not await _is_admin(user, session):
-                    continue
-                officers = await _fetch_officers(session, user)
-                # ASCII only: a non-cp1252 char here raises on Windows consoles and kills the send
-                print(f"[broadcast] officers_in_region -> {user.email}: {len(officers)} officers")
-                await ws.send_json({"type": "officers_in_region", "officers": officers})
+                officers = await _fetch_officers(session, members[0].user)
+                payload = json.dumps({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
-                print(f"[broadcast] failed to send to {user.email}: {exc}")
+                print(f"[broadcast] officer update failed for scope {scope}: {exc}")
+                continue
+            await fanout(members, payload)
 
 
 async def broadcast_admin_refresh(active_connections, include_pending: bool = False) -> None:
-    """Push fresh officer lists (and optionally the pending list) to every admin."""
-    admins: list[tuple[WebSocket, User]] = []
+    """Push fresh officer lists (and optionally the pending list) to every admin.
+
+    Bucketed: the officer query runs once per distinct scope (not once per admin),
+    and each scope's two payloads are serialized once and fanned out to every
+    socket in that scope — same frames each admin received before, O(scopes) DB."""
     async with async_session_maker() as session:
-        for ws, user in list(active_connections):
-            if await _is_admin(user, session):
-                admins.append((ws, user))
-        for ws, user in admins:
+        admins = [c for c in list(active_connections) if await _is_admin(c.user, session)]
+        groups = group_by_scope(admins)
+        for scope, members in groups.items():
             try:
-                officers = await _fetch_officers(session, user)
-                await ws.send_json({"type": "officers_in_region", "officers": officers})
-                await ws.send_json({"type": "officers_map", "officers": _map_subset(officers)})
+                officers = await _fetch_officers(session, members[0].user)
+                in_region = json.dumps({"type": "officers_in_region", "officers": officers})
+                officers_map = json.dumps({"type": "officers_map", "officers": _map_subset(officers)})
             except Exception as exc:
-                print(f"[broadcast] officer refresh failed for {user.email}: {exc}")
+                print(f"[broadcast] officer refresh failed for scope {scope}: {exc}")
+                continue
+            await fanout(members, in_region)
+            await fanout(members, officers_map)
     if include_pending:
-        for ws, user in admins:
+        for c in admins:
             try:
-                await handle_list_pending(ws, user)
+                await handle_list_pending(c.ws, c.user)
             except Exception as exc:
-                print(f"[broadcast] pending refresh failed for {user.email}: {exc}")
+                print(f"[broadcast] pending refresh failed for {c.user.email}: {exc}")
 
 
 async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
@@ -212,16 +225,16 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
         ).scalar_one_or_none()
         if existing_fo is None:
             session.add(FieldOfficer(user_id=user_id, name=officer_name))
-            print(f"[verify] created FieldOfficer for user {user_id}")
+            print(f"[verify] created FieldOfficer for {target.email}")
         else:
-            print(f"[verify] FieldOfficer already exists for user {user_id}")
+            print(f"[verify] FieldOfficer already exists for {target.email}")
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
               detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
-    print(f"[verify] officer {user_id} verified by {admin.email}")
+    print(f"[verify] officer {target.email} verified by {admin.email}")
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
     await broadcast_officers_update(active_connections)
 

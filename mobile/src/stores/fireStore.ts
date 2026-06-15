@@ -14,6 +14,7 @@ export type Fire = {
   lng: number
   status: boolean
   expired?: boolean // status was set by auto-expiry, not an officer
+  false_alarm?: boolean // closed as a false detection (no real fire), no photo evidence
   booked: boolean
   detected_at: string
   tumboon: string | null
@@ -32,6 +33,7 @@ type FireState = {
   selectFire: (id: string | null) => void
   reserveFire: (fire: Fire) => Promise<void>
   resolveFire: (note: string, photos: ResolvePhoto[]) => Promise<void>
+  reportFalseFire: (note: string) => Promise<void>
   loadReservedFire: () => Promise<void>
   loadStatus: () => Promise<void>
   setOnline: (online: boolean, coords?: { latitude: number; longitude: number }) => Promise<void>
@@ -107,6 +109,28 @@ export const useFireStore = create<FireState>((set, get) => ({
       throw new Error('ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     }
     // keep showing the fire, now marked as resolved (status=true, booked=false)
+    set({ reservedFire: resolved })
+    get().loadFires() // fire status changed → refresh the map list
+  },
+
+  // close a reserved fire as a false detection — no photo evidence required
+  reportFalseFire: async (note) => {
+    let resolved: Fire | null = null
+    try {
+      const res = await api.post<Fire>('/officers/me/fire/false-report', {
+        note: note.trim() || undefined,
+      })
+      resolved = res.data
+    } catch (e) {
+      if (
+        axios.isAxiosError(e) &&
+        e.response?.status === 409 &&
+        (e.response.data as { detail?: string } | undefined)?.detail === 'officer offline'
+      ) {
+        throw new Error('คุณต้องออนไลน์ก่อนจึงจะรายงานได้')
+      }
+      throw new Error('ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง')
+    }
     set({ reservedFire: resolved })
     get().loadFires() // fire status changed → refresh the map list
   },

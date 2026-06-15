@@ -23,6 +23,8 @@ class Firespot(Base):
     status: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # True when status was set by the auto-expiry job rather than an officer
     expired: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # True when an officer closed the fire as a false detection (no real fire, no photo evidence)
+    false_alarm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     officer_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("field_officers.id"), nullable=True)
     resolve_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

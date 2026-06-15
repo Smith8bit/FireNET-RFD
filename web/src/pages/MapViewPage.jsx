@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { List } from 'react-window'
 import { ArrowsPointingOutIcon } from '@heroicons/react/20/solid'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
+import { useAuthStore } from '../functions/useAuthStore'
 import { useFireData } from '../functions/useFireData'
 import Map from '../components/map'
 import Card from '../components/card'
@@ -12,7 +13,8 @@ import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
 
 const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
-const START_POINT = { lat: 13.736717, lng: 100.523186 }
+// fallback view (all of Thailand) until the profile's per-region home arrives
+const DEFAULT_HOME = { lat: 13.05, lng: 101.45, zoom: 5.5 }
 const CARD_HEIGHT = 135 // px — must match Card's rendered height (py-3 + 3 text lines + border)
 
 function FireRow({ index, style, fires }) {
@@ -36,6 +38,10 @@ export default function MapViewPage() {
   const [selectedLayer, setSelectedLayer] = useState(LAYERS.Base)
   const mapRef = useRef(null)
 
+  // per-user opening view: center + zoom of the region this admin is assigned to
+  const home = useAuthStore((s) => s.user?.home) ?? DEFAULT_HOME
+  const startPoint = { lat: home.lat, lng: home.lng }
+
   const [officers, setOfficers] = useState([])
   const send = useSocketStore((s) => s.send)
   const ready = useSocketStore((s) => s.ready)
@@ -44,13 +50,11 @@ export default function MapViewPage() {
   useEffect(() => {
     if (!ready) return
     send({ type: 'list_officers_MAP' })
-    console.log('SENT!')
   }, [ready])
     
   useEffect(() => {
     if (!officersMsg) return
     setOfficers(officersMsg.officers ?? [])
-    console.log(officersMsg)
   }, [officersMsg])
 
   const fires = useFireData()
@@ -111,7 +115,7 @@ export default function MapViewPage() {
   return (
     <div className="flex flex-1 w-full overflow-hidden">
       <div className="relative w-3/4 h-full">
-        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={START_POINT} officers={officers} />
+        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={officers} />
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
           <div
             id="layers"

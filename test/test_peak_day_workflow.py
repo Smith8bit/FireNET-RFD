@@ -11,10 +11,10 @@ CONCURRENTLY at the stated national peak:
                                         levels: national -> region -> province
     SIM_MOBILE_USERS  (default 50000)   field officers (mobile, REST)
 
-The web broadcasts run UNMODIFIED, so one broadcast costs O(connections) DB
-round-trips on this build. The tests assert that directly (fetches == admins) and
-print the contrast against the number of distinct scopes — the count a
-scope-bucketed fan-out would need. The combined 3-day worst case lives in
+The broadcasts now run scope-bucketed (manager.group_by_scope + fanout), so a
+broadcast costs one DB fetch per DISTINCT SCOPE, not per connection. The tests
+assert that directly (fetches == distinct scopes) while every admin still
+receives its frame. The combined 3-day worst case lives in
 test_super_elnino_workflow.py; the shared harness is _sim_workload.py.
 
 Run (prints a report):
@@ -59,16 +59,16 @@ def world(monkeypatch):
 def test_web_population_spans_all_account_levels():
     conns = WORLD.build_web_population()
     by_level: dict[str, int] = {}
-    for _, u in conns:
-        by_level[u.level] = by_level.get(u.level, 0) + 1
+    for c in conns:
+        by_level[c.user.level] = by_level.get(c.user.level, 0) + 1
     print(f"\n[{TAG}] web tier: {len(conns)} admins = "
           f"{by_level.get('national', 0)} national / {by_level.get('region', 0)} region / "
           f"{by_level.get('province', 0)} province")
     assert by_level["national"] == WORLD.national_superusers
     assert by_level["region"] == len(WORLD.region_paths) * WORLD.region_admins_each
     assert by_level["province"] >= len(WORLD.fire_paths)
-    nat = next(u for _, u in conns if u.is_superuser)
-    prov = next(u for _, u in conns if u.level == "province")
+    nat = next(c.user for c in conns if c.is_super)
+    prov = next(c.user for c in conns if c.user.level == "province")
     assert len(WORLD.fire_list_for(nat)) == WORLD.national_fires
     assert len(WORLD.fire_list_for(prov)) == WORLD.fire_by_path[prov.paths[0]]
 
@@ -85,32 +85,33 @@ async def test_peak_day_fire_broadcast_cost_model(world):
     await m.broadcast_fires()
     elapsed = time.perf_counter() - t0
 
-    frames = sum(ws.frames for ws, _ in conns)
-    print(f"[{TAG}, peak {WORLD.peak_province_fires}] FIRE broadcast: {n_admins} admins, "
-          f"{n_scopes} distinct scopes -> {frames} frames, {calls['fires']} get_fires() "
+    frames = sum(c.ws.frames for c in conns)
+    print(f"[{TAG}, peak {WORLD.peak_province_fires}] FIRE broadcast (bucketed): {n_admins} "
+          f"admins across {n_scopes} scopes -> {frames} frames, {calls['fires']} get_fires() "
           f"calls in {elapsed*1000:.0f} ms")
-    assert calls["fires"] == n_admins          # current build refetches per CONNECTION
-    assert frames == n_admins
+    assert calls["fires"] == n_scopes          # one fetch per scope, not per connection
+    assert frames == n_admins                  # every admin still gets its fire frame
     assert n_scopes < n_admins
-    print(f"    -> scope-bucketed fan-out would issue {n_scopes} queries, "
-          f"{n_admins / n_scopes:.0f}x fewer than the {n_admins} this build makes")
+    print(f"    -> {n_admins / n_scopes:.0f}x fewer DB queries than the per-connection model "
+          f"({n_admins} -> {n_scopes})")
 
 
 async def test_peak_day_officer_cadence_cost_model(world):
     calls, _ = world
     conns = WORLD.build_web_population()
     n_admins = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
 
     t0 = time.perf_counter()
     await oh_mod.broadcast_admin_refresh(conns, include_pending=False)
     elapsed = time.perf_counter() - t0
 
-    frames = sum(ws.frames for ws, _ in conns)
-    print(f"[{TAG}] OFFICER cadence: {n_admins} admins -> {frames} frames, "
+    frames = sum(c.ws.frames for c in conns)
+    print(f"[{TAG}] OFFICER cadence (bucketed): {n_admins} admins -> {frames} frames, "
           f"{calls['officers']} _fetch_officers() calls in {elapsed*1000:.0f} ms; "
           f"cadence budget {WORLD.officer_cadence_s}s")
-    assert calls["officers"] == n_admins       # one fleet query per admin, per tick
-    assert frames == 2 * n_admins              # officers_in_region + officers_map
+    assert calls["officers"] == n_scopes       # one fleet query per scope, per tick
+    assert frames == 2 * n_admins              # officers_in_region + officers_map per admin
 
 
 async def test_booking_is_reflected_in_next_broadcast(world):
@@ -123,10 +124,39 @@ async def test_booking_is_reflected_in_next_broadcast(world):
     m.active = conns
     await m.broadcast_fires()
 
-    watcher = next(ws for ws, u in conns
-                   if u.is_superuser or any(WORLD.fire_paths[0].startswith(p) for p in u.paths))
+    watcher = next(c.ws for c in conns
+                   if c.is_super or any(WORLD.fire_paths[0].startswith(p) for p in c.paths))
     fires = {f["id"]: f for f in watcher.last["fires"]["fires"]}
     assert fires[target]["booked"] is True
+
+
+async def test_unchanged_rebroadcast_skips_fanout_only_changed_scope_resends(world):
+    """A global trigger re-queries every scope, but a scope whose payload didn't
+    change is not re-sent — and a single booking re-sends only its own scope."""
+    calls, booked = world
+    conns = WORLD.build_web_population()
+    n_admins = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
+    m = ConnectionManager()
+    m.active = conns
+
+    await m.broadcast_fires()                              # first tick: everyone served
+    assert sum(c.ws.frames for c in conns) == n_admins
+
+    for c in conns:
+        c.ws.frames = 0
+    await m.broadcast_fires()                              # nothing changed
+    assert calls["fires"] == 2 * n_scopes                 # still re-queries per scope...
+    assert sum(c.ws.frames for c in conns) == 0           # ...but sends nothing (dedupe)
+
+    for c in conns:
+        c.ws.frames = 0
+    booked["id"] = f"{WORLD.fire_paths[0]}-0"              # one booking in the worst province
+    await m.broadcast_fires()
+    resent = sum(c.ws.frames for c in conns)
+    assert 0 < resent < n_admins                          # only the affected scope's admins
+    print(f"\n[{TAG}] dedupe: a single booking re-sent to {resent} admins "
+          f"(not all {n_admins}); unchanged scopes skipped")
 
 
 async def test_mobile_location_swarm_is_sustainable():
@@ -179,6 +209,7 @@ async def test_web_and_mobile_run_concurrently(world):
     calls, _ = world
     conns = WORLD.build_web_population()
     n_admins = len(conns)
+    n_scopes = WORLD.distinct_scopes(conns)
     m = ConnectionManager()
     m.active = conns
 
@@ -186,10 +217,10 @@ async def test_web_and_mobile_run_concurrently(world):
     await asyncio.gather(m.broadcast_fires(), location_swarm(WORLD.mobile_users))
     elapsed = time.perf_counter() - t0
 
-    assert calls["fires"] == n_admins
-    assert sum(ws.frames for ws, _ in conns) == n_admins
-    print(f"\n[{TAG}] CONCURRENT peak: {n_admins} web fire-broadcasts + "
-          f"{WORLD.mobile_users} mobile pings together in {elapsed*1000:.0f} ms")
+    assert calls["fires"] == n_scopes
+    assert sum(c.ws.frames for c in conns) == n_admins
+    print(f"\n[{TAG}] CONCURRENT peak: bucketed fire broadcast ({n_scopes} scopes -> "
+          f"{n_admins} admins) + {WORLD.mobile_users} mobile pings together in {elapsed*1000:.0f} ms")
 
 
 def test_report_per_connection_vs_bucketed():
@@ -198,11 +229,11 @@ def test_report_per_connection_vs_bucketed():
     n_scopes = WORLD.distinct_scopes(conns)
     q_ms = 5.0
 
-    per_conn_s = n_admins * q_ms / 1000
-    bucketed_s = n_scopes * q_ms / 1000
+    before_s = n_admins * q_ms / 1000            # the old per-connection model
+    now_s = n_scopes * q_ms / 1000               # this build, bucketed
     print(f"\n[{TAG}] per-broadcast DB time @ {q_ms:.0f}ms/query:")
-    print(f"    this build (per-connection): {n_admins} queries ~ {per_conn_s:.1f} s "
-          f"({per_conn_s / WORLD.officer_cadence_s:.0f}x the {WORLD.officer_cadence_s}s cadence)")
-    print(f"    scope-bucketed (planned):    {n_scopes} queries ~ {bucketed_s*1000:.0f} ms")
-    assert bucketed_s < WORLD.officer_cadence_s
-    assert per_conn_s > bucketed_s
+    print(f"    before (per-connection): {n_admins} queries ~ {before_s:.1f} s "
+          f"({before_s / WORLD.officer_cadence_s:.0f}x the {WORLD.officer_cadence_s}s cadence)")
+    print(f"    now (scope-bucketed):    {n_scopes} queries ~ {now_s*1000:.0f} ms")
+    assert now_s < WORLD.officer_cadence_s
+    assert now_s < before_s

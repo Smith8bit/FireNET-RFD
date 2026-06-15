@@ -24,6 +24,7 @@ from pathlib import Path
 import app.ws.manager as manager_mod
 import app.ws.officer_handlers as oh_mod
 from app.config import get_settings
+from app.ws.manager import Connection
 
 settings = get_settings()
 FIXT_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -82,21 +83,41 @@ def combine_real_days(date_strs: list[str]) -> dict | None:
 # population primitives
 # --------------------------------------------------------------------------
 class FakeWS:
-    """WebSocket stand-in: counts frames, keeps the last payload of each type."""
-    __slots__ = ("frames", "last", "accepted")
+    """WebSocket stand-in: counts frames and keeps raw payloads. Parsing is
+    deferred to `.last` so the send path stays O(1) — a real socket write doesn't
+    deserialize, and parsing every fanned frame would distort the timings."""
+    __slots__ = ("frames", "accepted", "_raw")
 
     def __init__(self):
         self.frames = 0
-        self.last: dict = {}
         self.accepted = False
+        self._raw: list = []
 
     async def accept(self) -> None:          # ConnectionManager.connect awaits this
         self.accepted = True
 
-    async def send_json(self, payload) -> None:
+    async def send_json(self, payload) -> None:   # initial per-connection snapshot
         self.frames += 1
-        if isinstance(payload, dict):
-            self.last[payload.get("type", "fires")] = payload
+        self._raw.append(payload)
+
+    async def send_text(self, payload) -> None:   # bucketed fanout (pre-serialized)
+        self.frames += 1
+        self._raw.append(payload)
+
+    @property
+    def last(self) -> dict:
+        """Most recent payload of each message type (parsed on demand)."""
+        out: dict = {}
+        for p in self._raw:
+            data = p
+            if isinstance(p, str):
+                try:
+                    data = json.loads(p)
+                except (ValueError, TypeError):
+                    continue
+            if isinstance(data, dict):
+                out[data.get("type", "fires")] = data
+        return out
 
 
 @dataclass
@@ -172,31 +193,35 @@ class SimWorld:
         return out
 
     @staticmethod
-    def scope_key(user: SimUser) -> str:
-        """Distinct visibility bucket: all superusers collapse to one; everyone
-        else is keyed by their order-independent assigned path set."""
+    def scope_key(user: SimUser):
+        """Distinct visibility bucket, matching app.ws.manager.Connection.scope_key:
+        all superusers collapse to one; everyone else is keyed by their
+        order-independent assigned path set."""
         if user.is_superuser:
-            return "\x00national"
-        return "|".join(sorted(user.paths))
+            return ("\x00super",)
+        return tuple(sorted(user.paths))
 
     def distinct_scopes(self, conns) -> int:
-        return len({self.scope_key(u) for _, u in conns})
+        return len({c.scope_key for c in conns})
+
+    def _conn(self, user: SimUser) -> Connection:
+        return Connection(ws=FakeWS(), user=user, is_super=user.is_superuser, paths=user.paths)
 
     # ---- web population across national -> region -> province ----
-    def build_web_population(self) -> list[tuple[FakeWS, SimUser]]:
-        conns: list[tuple[FakeWS, SimUser]] = []
+    def build_web_population(self) -> list[Connection]:
+        conns: list[Connection] = []
         idx = 0
         for _ in range(self.national_superusers):
-            conns.append((FakeWS(), SimUser(idx, f"nat{idx}@x", True, (), "national")))
+            conns.append(self._conn(SimUser(idx, f"nat{idx}@x", True, (), "national")))
             idx += 1
         for region in self.region_paths:
             for _ in range(self.region_admins_each):
-                conns.append((FakeWS(), SimUser(idx, f"reg{idx}@x", False, (region,), "region")))
+                conns.append(self._conn(SimUser(idx, f"reg{idx}@x", False, (region,), "region")))
                 idx += 1
         budget = max(self.web_users - len(conns), len(self.fire_paths))
         for path, fcount in self.fire_by_path.items():
             for _ in range(max(round(budget * fcount / self.national_fires), 1)):
-                conns.append((FakeWS(), SimUser(idx, f"prov{idx}@x", False, (path,), "province")))
+                conns.append(self._conn(SimUser(idx, f"prov{idx}@x", False, (path,), "province")))
                 idx += 1
         return conns
 

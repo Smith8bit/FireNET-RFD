@@ -38,12 +38,16 @@ export default function Firespot() {
   const reservedFire = useFireStore((s) => s.reservedFire)
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
   const resolveFire = useFireStore((s) => s.resolveFire)
+  const reportFalseFire = useFireStore((s) => s.reportFalseFire)
   const online = useFireStore((s) => s.online)
 
   const [formVisible, setFormVisible] = useState(false)
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState<ResolvePhoto[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [falseFormVisible, setFalseFormVisible] = useState(false)
+  const [falseNote, setFalseNote] = useState('')
+  const [falseSubmitting, setFalseSubmitting] = useState(false)
   // fallback GPS for photos without EXIF coordinates (e.g. library picks)
   const deviceGps = useRef<ResolvePhoto['gps']>(null)
 
@@ -117,6 +121,26 @@ export default function Firespot() {
     }
   }, [note, photos, resolveFire])
 
+  const openFalseForm = useCallback(() => {
+    setFalseNote('')
+    setFalseFormVisible(true)
+  }, [])
+
+  const submitFalseReport = useCallback(async () => {
+    setFalseSubmitting(true)
+    try {
+      await reportFalseFire(falseNote)
+      setFalseFormVisible(false)
+    } catch (e) {
+      Alert.alert(
+        'ไม่สำเร็จ',
+        e instanceof Error ? e.message : 'ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง',
+      )
+    } finally {
+      setFalseSubmitting(false)
+    }
+  }, [falseNote, reportFalseFire])
+
   if (!reservedFire) {
     return (
       <View style={styles.emptyContainer}>
@@ -127,23 +151,31 @@ export default function Firespot() {
     )
   }
 
+  const isFalse = reservedFire.status && reservedFire.false_alarm
+  const statusLabel = isFalse ? 'ไม่ใช่ไฟ' : reservedFire.status ? 'ดับแล้ว' : 'กำลังไหม้'
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Ionicons
-          name={reservedFire.status ? 'checkmark-circle' : 'flame'}
+          name={isFalse ? 'close-circle' : reservedFire.status ? 'checkmark-circle' : 'flame'}
           size={28}
-          color={reservedFire.status ? '#10b981' : '#ef4444'}
+          color={isFalse ? '#6b7280' : reservedFire.status ? '#10b981' : '#ef4444'}
         />
         <Text style={styles.title}>{reservedFire.name}</Text>
-        <View style={[styles.badge, reservedFire.status ? styles.badgeResolved : styles.badgeActive]}>
-          <Text style={styles.badgeText}>{reservedFire.status ? 'ดับแล้ว' : 'กำลังไหม้'}</Text>
+        <View
+          style={[
+            styles.badge,
+            isFalse ? styles.badgeFalse : reservedFire.status ? styles.badgeResolved : styles.badgeActive,
+          ]}
+        >
+          <Text style={styles.badgeText}>{statusLabel}</Text>
         </View>
       </View>
 
       <View style={styles.card}>
         <Row label="ตรวจพบเมื่อ" value={formatDetectedAt(reservedFire.detected_at)} />
-        <Row label="สถานะ" value={reservedFire.status ? 'ดับแล้ว' : 'กำลังไหม้'} />
+        <Row label="สถานะ" value={statusLabel} />
         <Row label="ประเภท" value={reservedFire.type} />
         <Row label="ตำบล" value={reservedFire.tumboon} />
         <Row label="อำเภอ" value={reservedFire.aumper} />
@@ -155,22 +187,36 @@ export default function Firespot() {
       </View>
 
       {!reservedFire.status && (
-        <TouchableOpacity
-          style={[styles.resolveButton, !online && styles.resolveButtonDisabled]}
-          disabled={!online}
-          onPress={openResolveForm}
-        >
-          <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
-          <Text style={styles.resolveButtonText}>ดับไฟแล้ว</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={[styles.resolveButton, !online && styles.resolveButtonDisabled]}
+            disabled={!online}
+            onPress={openResolveForm}
+          >
+            <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
+            <Text style={styles.resolveButtonText}>ดับไฟแล้ว</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.falseButton, !online && styles.falseButtonDisabled]}
+            disabled={!online}
+            onPress={openFalseForm}
+          >
+            <Ionicons name="close-circle-outline" size={20} color={online ? '#6b7280' : '#d1d5db'} />
+            <Text style={[styles.falseButtonText, !online && styles.falseButtonTextDisabled]}>
+              ไม่ใช่ไฟ (แจ้งเตือนผิดพลาด)
+            </Text>
+          </TouchableOpacity>
+        </>
       )}
 
       <Text style={styles.note}>
         {reservedFire.status
-          ? 'ดับไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
+          ? isFalse
+            ? 'รายงานว่าไม่ใช่ไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
+            : 'ดับไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
           : online
-            ? 'เจ้าหน้าที่ 1 คน จองได้ครั้งละ 1 จุดไฟ ต้องดับไฟเดิมก่อนจึงจะจองจุดใหม่ได้'
-            : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกการดับไฟได้'}
+            ? 'เจ้าหน้าที่ 1 คน จองได้ครั้งละ 1 จุดไฟ ต้องดับไฟเดิมหรือแจ้งว่าไม่ใช่ไฟก่อนจึงจะจองจุดใหม่ได้'
+            : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกผลได้'}
       </Text>
 
       <Modal
@@ -258,6 +304,61 @@ export default function Firespot() {
           </Animated.View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal
+        visible={falseFormVisible}
+        animationType="none"
+        transparent
+        onRequestClose={() => !falseSubmitting && setFalseFormVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => !falseSubmitting && setFalseFormVisible(false)}
+          />
+          <Animated.View style={styles.modalCard} entering={SlideInDown.duration(250)}>
+            <Text style={styles.modalTitle}>แจ้งว่าไม่ใช่ไฟ</Text>
+            <Text style={styles.modalDescription}>
+              ใช้เมื่อตรวจสอบแล้วพบว่าไม่มีไฟจริงในจุดนี้ (การแจ้งเตือนผิดพลาด) ไม่ต้องแนบรูปถ่าย
+            </Text>
+
+            <Text style={styles.modalLabel}>หมายเหตุ (ไม่บังคับ)</Text>
+            <TextInput
+              value={falseNote}
+              onChangeText={setFalseNote}
+              placeholder="เหตุผลหรือรายละเอียดเพิ่มเติม..."
+              multiline
+              maxLength={2000}
+              editable={!falseSubmitting}
+              style={styles.noteInput}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setFalseFormVisible(false)}
+                disabled={falseSubmitting}
+              >
+                <Text style={styles.modalCancelText}>ยกเลิก</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalFalseSubmit, falseSubmitting && styles.resolveButtonDisabled]}
+                onPress={submitFalseReport}
+                disabled={falseSubmitting}
+              >
+                {falseSubmitting ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>ยืนยันว่าไม่ใช่ไฟ</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   )
 }
@@ -302,6 +403,9 @@ const styles = StyleSheet.create({
   },
   badgeResolved: {
     backgroundColor: '#10b981',
+  },
+  badgeFalse: {
+    backgroundColor: '#6b7280',
   },
   badgeText: {
     color: '#ffffff',
@@ -354,6 +458,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  falseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  falseButtonDisabled: {
+    borderColor: '#e5e7eb',
+  },
+  falseButtonText: {
+    color: '#6b7280',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  falseButtonTextDisabled: {
+    color: '#d1d5db',
+  },
   note: {
     fontSize: 12,
     color: '#9ca3af',
@@ -394,6 +521,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
+  },
+  modalDescription: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 4,
+    lineHeight: 19,
   },
   modalLabel: {
     fontSize: 13,
@@ -473,6 +606,13 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     backgroundColor: '#10b981',
+    alignItems: 'center',
+  },
+  modalFalseSubmit: {
+    flex: 2,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#6b7280',
     alignItems: 'center',
   },
   modalSubmitText: {

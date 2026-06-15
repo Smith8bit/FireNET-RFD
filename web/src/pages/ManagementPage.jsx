@@ -26,34 +26,29 @@ export default function ManagementPage() {
   const [savingId, setSavingId] = useState(null)
 
   useEffect(() => {
-    console.log('[ManagementPage] mounted — requesting pending officers and officers in region')
     send({ type: 'list_pending_officers' })
     send({ type: 'list_officers' })
   }, [send])
 
   useEffect(() => {
     if (!pendingMsg) return
-    console.log('[ManagementPage] pending_officers received:', pendingMsg.officers)
     setOfficers(pendingMsg.officers ?? [])
     setError(null)
   }, [pendingMsg])
 
   useEffect(() => {
     if (!verifiedMsg) return
-    console.log('[ManagementPage] officer_verified received:', verifiedMsg.user_id)
     setOfficers((prev) => prev ? prev.filter((o) => o.user_id !== verifiedMsg.user_id) : prev)
     setBusyId(null)
   }, [verifiedMsg])
 
   useEffect(() => {
     if (!officersMsg) return
-    console.log('[ManagementPage] officers_in_region received:', officersMsg.officers)
     setRegionOfficers(officersMsg.officers ?? [])
   }, [officersMsg])
 
   useEffect(() => {
     if (!updatedMsg) return
-    console.log('[ManagementPage] officer_updated received:', updatedMsg.user_id)
     setEditingId(null)
     setSavingId(null)
   }, [updatedMsg])
@@ -85,7 +80,6 @@ export default function ManagementPage() {
   }, [selectedTab, provinces])
 
   const verify = (id) => {
-    console.log('[ManagementPage] verifying officer:', id)
     setBusyId(id)
     setError(null)
     send({ type: 'verify_officer', user_id: id })
@@ -99,7 +93,6 @@ export default function ManagementPage() {
   }
 
   const saveEdit = (o) => {
-    console.log('[ManagementPage] updating officer:', o.user_id)
     setSavingId(o.user_id)
     setError(null)
     const payload = { type: 'update_officer', user_id: o.user_id, name: editName }

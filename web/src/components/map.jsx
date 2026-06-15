@@ -94,7 +94,7 @@ function makeOfficerEl(active, name) {
     return wrapper
 }
 
-const MapView = forwardRef(function MapView({ layer, startPoint, points, officers = [] }, ref) {
+const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 8, points, officers = [] }, ref) {
     const mapRef = useRef(null)
     const pointsRef = useRef(points)
     const activeIdRef = useRef(null)
@@ -104,19 +104,19 @@ const MapView = forwardRef(function MapView({ layer, startPoint, points, officer
     const hoveredId = useMapSelection((s) => s.hoveredId)
     const setFocused = useMapSelection((s) => s.setFocused)
 
-    // let the parent recenter the map to the starting view (zoom 8)
+    // let the parent recenter the map to the user's starting view
     useImperativeHandle(ref, () => ({
         resetView: () => {
-            mapRef.current?.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: 8, duration: 800 })
+            mapRef.current?.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: startZoom, duration: 800 })
         },
-    }), [startPoint])
+    }), [startPoint, startZoom])
 
     useEffect(() => {
         const map = new maplibregl.Map({
             container: 'map',
             style: layer,
             center: [startPoint.lng, startPoint.lat],
-            zoom: 8,
+            zoom: startZoom,
             maxZoom: 20,
             preserveDrawingBuffer: true,
         })

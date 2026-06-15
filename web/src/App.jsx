@@ -58,7 +58,6 @@ function App() {
   const { sendMessage, lastMessage, readyState } = useWebSocket(
     wsUrl,
     {
-      onOpen: () => console.log('WebSocket Connected'),
       shouldReconnect: () => true,
     },
     status === 'authed'
