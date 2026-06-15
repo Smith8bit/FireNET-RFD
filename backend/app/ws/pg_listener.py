@@ -105,9 +105,10 @@ class PgListener:
             from .manager import manager
 
             try:
-                # booking changes affect the fires' "booked" flag too
+                # booking changes affect the fires' "booked" flag too; the delta
+                # path diffs the national set and sends only the changed fires
                 if tables & {"firespots", "field_officers_booking"}:
-                    await manager.broadcast_fires()
+                    await manager.refresh_and_broadcast_deltas()
                 # officer lists: booking/registration changes refresh promptly;
                 # routine position/status pings (every field_officers UPDATE) are
                 # rate-limited to OFFICER_REFRESH_INTERVAL_SECONDS, so 40k officers

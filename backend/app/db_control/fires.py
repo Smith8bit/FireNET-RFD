@@ -236,6 +236,9 @@ async def get_fires(
                 "holder_name": row.holder_name or row.resolver_name,
                 "lat": pt.y,
                 "lng": pt.x,
+                # ltree region path — lets the ws layer route per-fire deltas to the
+                # scopes that can see this fire (see permission.filter_fires)
+                "path": row.region_path,
                 "tumboon": row.detail.get("TUMBON") if hasattr(row, "detail") else None,
                 "aumper": row.detail.get("AUMPER") if hasattr(row, "detail") else None,
                 "province": row.detail.get("PROVINCE") if hasattr(row, "detail") else None,

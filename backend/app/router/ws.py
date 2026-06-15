@@ -30,7 +30,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         # resolve the visibility scope once, here, so recurring broadcasts can
         # bucket by it instead of re-deriving paths per connection on every tick
         paths = await user_region_paths(user, session)
-    await manager.connect(ws, user, paths)
+    conn = await manager.connect(ws, user, paths)
     try:
         while True:
             try:
@@ -52,6 +52,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_list_officers(ws, user)
                 case "list_officers_MAP":
                     await handle_list_officers_MAP(ws, user)
+                case "resync_fires":
+                    # client detected a delta version gap: re-baseline its scope
+                    await manager.send_snapshot(conn)
                 case _:
                     print(f"[ws/{user.email}] unknown message: {data}")
     except WebSocketDisconnect:

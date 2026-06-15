@@ -18,6 +18,7 @@ from .router.regions import router as regions_router
 from .router.officers import router as officers_router
 from .router.users import router as users_router
 from .router.ws import router as ws_router
+from .ws.manager import manager
 from .ws.pg_listener import pg_listener
 
 settings = get_settings()
@@ -103,6 +104,9 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_safe_sweep_orphans, "interval", hours=24)
         scheduler.start()
     await pg_listener.start()
+    # prime the fire registry so the first change after boot sends a minimal
+    # delta (not the whole list) to already-connected clients
+    await manager.warm_registry()
     yield
     await pg_listener.stop()
     if scheduler.running:
