@@ -115,11 +115,12 @@ async def seed_superuser() -> None:
 
 
 async def seed_regional_users() -> None:
+    settings = get_settings()
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     regional_specs = [
         {
             "email": f"{ro['code'].replace('-', '')}@forest.com",
-            "password": f"forest@{ro['code'].replace('-', '')}1234",
+            "password": f"forest@{ro['code'].replace('-', '')}{settings.SEEDING_KEY}",
             "region_code": ro["code"],
             "name": ro["name_en"],
         }
@@ -170,10 +171,11 @@ async def seed_province_users() -> None:
             await session.execute(select(Region).where(Region.level == "province"))
         ).scalars().all()
 
+        settings = get_settings()
         for region in province_regions:
             username = region.name_en.lower().replace(" ", "_")
             email = f"{username}@province.com"
-            password = f"{username.replace('_', ''  )}1234"
+            password = f"{username.replace('_', ''  )}{settings.SEEDING_KEY}"
 
             try:
                 user = await manager.create(
