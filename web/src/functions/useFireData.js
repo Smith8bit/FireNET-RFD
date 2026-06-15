@@ -26,15 +26,3 @@ export function useFireData() {
   const source = Array.isArray(live?.fires) ? live.fires : []
   return useMemo(() => normalize(source), [source])
 }
-
-export function firePopupHtml(f) {
-  return `
-    <div>
-      <h3>${f.date ?? ''}</h3>
-      <p>ตำบล: ${f.raw?.TUMBON ?? ''}</p>
-      <p>อำเภอ: ${f.raw?.AUMPER ?? ''}</p>
-      <p>จังหวัด: ${f.raw?.PROVINCE ?? ''}</p>
-      <p>Lat/Lan: ${f.lat}/${f.lng}</p>
-    </div>
-  `
-}

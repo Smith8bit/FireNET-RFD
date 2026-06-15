@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 SENSITIVE_PATHS = frozenset(
     {
         "/auth/cookie/login",
+        "/auth/jwt/login",
         "/auth/register",
         "/auth/forgot-password",
         "/auth/reset-password",

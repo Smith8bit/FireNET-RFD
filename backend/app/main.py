@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from .auth.authen import auth_backend, fastapi_users
+from .auth.authen import auth_backend, bearer_backend, fastapi_users
 from .config import get_settings
 from .middleware import install_rate_limiting
 from .database import Base, engine
@@ -169,6 +169,12 @@ install_rate_limiting(app)
 app.include_router(
     fastapi_users.get_auth_router(auth_backend),
     prefix="/auth/cookie",
+    tags=["auth"],
+)
+# mobile bearer-token login (returns {access_token, token_type})
+app.include_router(
+    fastapi_users.get_auth_router(bearer_backend),
+    prefix="/auth/jwt",
     tags=["auth"],
 )
 app.include_router(

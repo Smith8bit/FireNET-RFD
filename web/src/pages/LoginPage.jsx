@@ -24,10 +24,8 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
 
-    const body = new URLSearchParams({ username: identifier, password })
-
     try {
-      await login(identifier,password)
+      await login(identifier, password)
       showToast('เข้าสู่ระบบสำเร็จ')
       setTimeout(() => navigate(from, { replace: true }), 800)
     } catch (err) {

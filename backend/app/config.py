@@ -15,10 +15,11 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://tfms:tfms@localhost:5432/tfms"
 
-    # Connection pool, per worker process. At 40k officers + multi-worker, put
-    # PgBouncer (transaction pooling) in front of Postgres and set DB_PGBOUNCER=true
-    # — that disables asyncpg's prepared-statement cache, which transaction pooling
-    # breaks. Keep the per-worker pool modest; PgBouncer multiplexes to Postgres.
+    # Connection pool, per worker process (applied in database/db.py). To put
+    # PgBouncer (transaction pooling) in front of Postgres, set DB_PGBOUNCER=true —
+    # that disables SQLAlchemy's prepared-statement cache and uses unique statement
+    # names, which transaction pooling otherwise breaks. Keep the per-worker pool
+    # modest; PgBouncer multiplexes to Postgres.
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_TIMEOUT: int = 30

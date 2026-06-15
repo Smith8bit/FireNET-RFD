@@ -1,4 +1,4 @@
-from sqlalchemy.types import TypeDecorator, UserDefinedType
+from sqlalchemy.types import UserDefinedType
 
 
 class Ltree(UserDefinedType):
