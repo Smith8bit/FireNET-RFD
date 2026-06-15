@@ -4,7 +4,7 @@ services:
     container_name: tfms-postgres
     environment:
       POSTGRES_USER: tfms
-      POSTGRES_PASSWORD: tfms
+      POSTGRES_PASSWORD: CxrUUB3!:S6ZkZi+oEqon[9A6_%?Kz0J
       POSTGRES_DB: tfms
     ports:
       - "5432:5432"
@@ -17,7 +17,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: tfms
-      MINIO_ROOT_PASSWORD: tfms-minio-secret
+      MINIO_ROOT_PASSWORD: lDIS+M}+<M+Gde.Mhcb78xEC#&qgA^sR
     ports:
       - "9000:9000"
       - "9001:9001"
