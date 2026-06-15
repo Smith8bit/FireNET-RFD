@@ -97,8 +97,7 @@ export default function AuditTrail() {
     return () => { cancelled = true }
   }, [page, action, actor, onDate, reload])
 
-  const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
-
+  const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)  
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 border-b border-gray-300">

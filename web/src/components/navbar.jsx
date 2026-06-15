@@ -9,9 +9,9 @@ export default function Navbar() {
   const logout = useAuthStore((s) => s.logout)
 
   const links = [
-    { name: 'Map View', path: '/map' },
-    { name: 'Dashboard', path: '/dashboard' },
-    { name: 'Management', path: '/management' },
+    { name: 'แผนที่', path: '/map' },
+    { name: 'แดชบอร์ด', path: '/dashboard' },
+    { name: 'การจัดการเจ้าหน้าที่', path: '/management' },
   ]
 
   const handleLogout = async () => {
@@ -39,7 +39,7 @@ return (
           <li className="h-full " key={link.path}>
             <Link
               to={link.path}
-              className={`h-full flex items-center px-3 hover:bg-forest-100 hover:text-forest-700 ${location.pathname === link.path ? 'bg-forest-100 text-forest-700' : ''}`}
+              className={`h-full font-bold flex items-center px-3 hover:bg-forest-100 hover:text-forest-700 ${location.pathname === link.path ? 'bg-forest-100 text-forest-700' : ''}`}
             >
               {link.name}
             </Link>

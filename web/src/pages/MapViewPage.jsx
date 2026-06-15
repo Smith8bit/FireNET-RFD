@@ -154,7 +154,7 @@ export default function MapViewPage() {
                     onClick={() => changeSort(key)}
                     className={`px-2.5 py-1 rounded-full text-sm font-semibold transition-colors ${
                       sortBy === key
-                        ? 'bg-amber-500 text-white'
+                        ? 'bg-forest-500 text-white'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                     }`}
                   >

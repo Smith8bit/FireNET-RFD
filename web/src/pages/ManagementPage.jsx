@@ -115,7 +115,7 @@ export default function ManagementPage() {
   return (
     <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
       <div className='bg-white border-0 rounded-2xl p-6'>
-        <h2 className="text-lg font-semibold text-forest-700 mb-3">จัดการเจ้าหน้าที่ภาคสนาม</h2>
+        <h2 className="text-lg font-semibold text-forest-700 mb-3">การจัดการเจ้าหน้าที่ภาคสนาม</h2>
         <div className="flex gap-2 border-b border-gray-200">
           {tabs.map((tab) => (
             <button
@@ -132,7 +132,7 @@ export default function ManagementPage() {
           ))}
         </div>
       </div >
-      <div className='flex-1 bg-white border-0 rounded-2xl p-6'>
+      <div className='flex-1 bg-white border-0 rounded-2xl p-6 mb-1'>
         {selectedTab === 'Pending' && (
           <div>
             <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>

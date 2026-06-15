@@ -11,7 +11,7 @@ def fetch_live_fires() -> list[dict]:
     start = today - timedelta(days=settings.INGEST_LOOKBACK_DAYS)
     url = (
         f"{settings.WILDFIRE_API_URL}"
-        f"?snpp=on&nighttime=on&daytime=on"
+        f"?snpp=on&noaa20=on&noaa21=on&nighttime=on&daytime=on"
         f"&datestart={start:%Y-%m-%d}&dateend={today:%Y-%m-%d}"
         f"&province=ทุกจังหวัด"
         f"&nrf=on&alow=on&cmf=on&fio=on&dnp=on&alro=on&cp=on&sd=on&dol=on&td=on&other=on"
