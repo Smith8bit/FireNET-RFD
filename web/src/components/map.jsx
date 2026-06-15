@@ -46,7 +46,18 @@ function firePaint(activeId) {
     }
 }
 
-function makeOfficerEl(active, name) {
+// last-location timestamp shown under an officer's name on the map
+const LOC_TIME_FORMAT = new Intl.DateTimeFormat('th-TH', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+})
+
+function formatLocTime(value) {
+    if (!value) return ''
+    const d = new Date(value)
+    return isNaN(d) ? '' : `${LOC_TIME_FORMAT.format(d)} น.`
+}
+
+function makeOfficerEl(active, name, lastUpdated) {
     const wrapper = document.createElement('div')
     Object.assign(wrapper.style, {
         display: 'flex',
@@ -67,13 +78,29 @@ function makeOfficerEl(active, name) {
         whiteSpace: 'nowrap',
         boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
         lineHeight: '1.4',
+        textAlign: 'center',
     })
-    label.textContent = name ?? 'เจ้าหน้าที่'
+
+    const nameLine = document.createElement('div')
+    nameLine.textContent = name ?? 'เจ้าหน้าที่'
+    label.appendChild(nameLine)
+
+    const timeText = formatLocTime(lastUpdated)
+    if (timeText) {
+        const timeLine = document.createElement('div')
+        Object.assign(timeLine.style, {
+            fontSize: '10px',
+            fontWeight: '400',
+            color: '#6b7280',
+        })
+        timeLine.textContent = timeText
+        label.appendChild(timeLine)
+    }
 
     const circle = document.createElement('div')
     Object.assign(circle.style, {
-        width: '26px',
-        height: '26px',
+        width: '20px',
+        height: '20px',
         borderRadius: '50%',
         border: `2.5px solid ${active ? '#22c55e' : '#9ca3af'}`,
         background: 'white',
@@ -193,7 +220,7 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 8, 
         officers
             .filter((o) => o.location?.latitude != null && o.location?.longitude != null)
             .forEach((o) => {
-                const el = makeOfficerEl(o.active, o.name)
+                const el = makeOfficerEl(o.active, o.name, o.last_updated)
 
                 const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
                     .setLngLat([o.location.longitude, o.location.latitude])

@@ -24,7 +24,7 @@ export default function Card({ Title, Area, Date, Time, id, status, booked }) {
                 {label}
             </span>
             <div className="min-w-0 px-4 py-3">
-                <p className="text-black text-xl font-bold mb-1 truncate">{Title}</p>
+                <p className="text-black text-xl font-bold mb-1">{Title}</p>
                 <p className="text-gray-700 text-base truncate">
                     วันที่: {formatDate(Date, Time)}
                 </p>

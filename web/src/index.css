@@ -84,7 +84,7 @@
 
 body {
   margin: 0;
-  font-family: '  ', system-ui, sans-serif;
+  font-family: 'Sarabun', system-ui, sans-serif;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   -webkit-font-smoothing: antialiased;
