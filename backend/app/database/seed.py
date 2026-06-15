@@ -81,6 +81,7 @@ async def seed_provinces(session: AsyncSession) -> None:
 
 async def seed_superuser() -> None:
     settings = get_settings()
+    nat_name = json.loads(FIXTURE.read_text(encoding="utf-8"))["national"]["name_en"]
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
@@ -118,7 +119,7 @@ async def seed_regional_users() -> None:
     regional_specs = [
         {
             "email": f"{ro['code'].replace('-', '')}@forest.com",
-            "password": "1234",
+            "password": f"forest@{ro['name_en']}1234",
             "region_code": ro["code"],
             "name": ro["name_en"],
         }
