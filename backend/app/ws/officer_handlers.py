@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 
 from fastapi import WebSocket
@@ -15,6 +16,7 @@ from ..db_control.push import send_push
 from .manager import fanout, group_by_scope
 
 settings = get_settings()
+logger = logging.getLogger("tfms.officers")
 _password_helper = PasswordHelper()
 _MIN_PASSWORD_LEN = 8
 
@@ -123,7 +125,7 @@ async def handle_list_officers(ws: WebSocket, user: User) -> None:
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         officers = await _fetch_officers(session, user)
-    print(f"[officers] list_officers requested by {user.email}: {len(officers)} officers found")
+    logger.info("list_officers user=%s count=%d", user.id, len(officers))
     await ws.send_json({"type": "officers_in_region", "officers": officers})
 
 def _map_subset(officers: list[dict]) -> list[dict]:
@@ -148,20 +150,22 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
             return
         officers = await _fetch_officers(session, user)
     map_officers = _map_subset(officers)
-    print(f"[officers] list_officers_MAP requested by {user.email}: {len(map_officers)} officers found")
+    logger.info("list_officers_MAP user=%s count=%d", user.id, len(map_officers))
     await ws.send_json({"type": "officers_map", "officers": map_officers})
 
 
 async def broadcast_officers_update(active_connections) -> None:
     """Bucketed: one officer fetch per distinct scope, fanned out to its sockets."""
+    # every active ws connection is already an admin — non-admins are rejected at
+    # the handshake (router/ws.py) — so skip a per-socket role query each tick
+    admins = list(active_connections)
     async with async_session_maker() as session:
-        admins = [c for c in list(active_connections) if await _is_admin(c.user, session)]
         for scope, members in group_by_scope(admins).items():
             try:
                 officers = await _fetch_officers(session, members[0].user)
                 payload = json.dumps({"type": "officers_in_region", "officers": officers})
             except Exception as exc:
-                print(f"[broadcast] officer update failed for scope {scope}: {exc}")
+                logger.warning("officer update broadcast failed scope=%s: %s", scope, exc)
                 continue
             await fanout(members, payload)
 
@@ -172,8 +176,9 @@ async def broadcast_admin_refresh(active_connections, include_pending: bool = Fa
     Bucketed: the officer query runs once per distinct scope (not once per admin),
     and each scope's two payloads are serialized once and fanned out to every
     socket in that scope — same frames each admin received before, O(scopes) DB."""
+    # every active ws connection is already an admin (gated at the handshake)
+    admins = list(active_connections)
     async with async_session_maker() as session:
-        admins = [c for c in list(active_connections) if await _is_admin(c.user, session)]
         groups = group_by_scope(admins)
         for scope, members in groups.items():
             try:
@@ -181,7 +186,7 @@ async def broadcast_admin_refresh(active_connections, include_pending: bool = Fa
                 in_region = json.dumps({"type": "officers_in_region", "officers": officers})
                 officers_map = json.dumps({"type": "officers_map", "officers": _map_subset(officers)})
             except Exception as exc:
-                print(f"[broadcast] officer refresh failed for scope {scope}: {exc}")
+                logger.warning("officer refresh broadcast failed scope=%s: %s", scope, exc)
                 continue
             await fanout(members, in_region)
             await fanout(members, officers_map)
@@ -190,7 +195,7 @@ async def broadcast_admin_refresh(active_connections, include_pending: bool = Fa
             try:
                 await handle_list_pending(c.ws, c.user)
             except Exception as exc:
-                print(f"[broadcast] pending refresh failed for {c.user.email}: {exc}")
+                logger.warning("pending refresh failed user=%s: %s", c.user.id, exc)
 
 
 async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_connections) -> None:
@@ -232,16 +237,16 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
         ).scalar_one_or_none()
         if existing_fo is None:
             session.add(FieldOfficer(user_id=user_id, name=officer_name))
-            print(f"[verify] created FieldOfficer for {target.email}")
+            logger.info("created FieldOfficer user=%s", user_id)
         else:
-            print(f"[verify] FieldOfficer already exists for {target.email}")
+            logger.info("FieldOfficer already exists user=%s", user_id)
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
               detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
-    print(f"[verify] officer {target.email} verified by {admin.email}")
+    logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
     await broadcast_officers_update(active_connections)
 
@@ -368,7 +373,7 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
             return
 
     # keys only: values may hold Thai text / the new email, which we keep out of logs
-    print(f"[update] officer {user_id} updated by {admin.email}: {sorted(changes)}")
+    logger.info("officer updated user=%s by admin=%s changes=%s", user_id, admin.id, sorted(changes))
     await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
     await broadcast_admin_refresh(active_connections, include_pending=True)
 
@@ -422,7 +427,7 @@ async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_c
         await session.delete(target)
         await session.commit()
 
-    print(f"[delete] officer {user_id} removed by {admin.email}")
+    logger.info("officer deleted user=%s by admin=%s", user_id, admin.id)
     await ws.send_json({"type": "officer_deleted", "user_id": str(user_id)})
     await broadcast_admin_refresh(active_connections, include_pending=True)
 
@@ -527,6 +532,6 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
             )
             await session.commit()
 
-    print(f"[appoint] fire {fire_id} -> officer {officer_id} by {admin.email}")
+    logger.info("fire appointed fire=%s officer=%s by admin=%s", fire_id, officer_id, admin.id)
     await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
                         "officer_id": str(officer_id)})

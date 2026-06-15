@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..auth.ws_auth import get_user_from_ws
@@ -15,6 +17,7 @@ from ..ws.officer_handlers import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("tfms.ws")
 
 
 @router.websocket("/ws")
@@ -59,10 +62,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     # client detected a delta version gap: re-baseline its scope
                     await manager.send_snapshot(conn)
                 case _:
-                    print(f"[ws/{user.email}] unknown message: {data}")
+                    logger.warning("ws user=%s unknown message type=%s", user.id, data.get("type"))
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        print(f"[ws/{user.email}] error: {exc}")
+        logger.warning("ws user=%s error: %s", user.id, exc)
     finally:
         manager.disconnect(ws)

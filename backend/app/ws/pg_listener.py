@@ -10,6 +10,8 @@ settings = get_settings()
 CHANNEL = "tfms_changes"
 _DEBOUNCE_S = 0.5
 _RECONNECT_S = 5
+# must match main.BOOTSTRAP_LOCK_KEY (defined separately to avoid an import cycle)
+_BOOTSTRAP_LOCK_KEY = 845_173_001
 
 # Statement-level triggers: any committed change to these tables notifies the
 # channel (payload = trigger argument, falling back to the table name). Payload
@@ -78,7 +80,11 @@ class PgListener:
             try:
                 conn = await asyncpg.connect(dsn)
                 try:
-                    await conn.execute(_TRIGGER_SQL)
+                    # serialize trigger DDL with the same bootstrap lock main.py
+                    # uses, so concurrent workers don't race CREATE/DROP TRIGGER
+                    async with conn.transaction():
+                        await conn.execute("SELECT pg_advisory_xact_lock($1)", _BOOTSTRAP_LOCK_KEY)
+                        await conn.execute(_TRIGGER_SQL)
                     await conn.add_listener(CHANNEL, self._on_notify)
                     print(f"[pg_listener] listening on '{CHANNEL}'")
                     while not conn.is_closed():

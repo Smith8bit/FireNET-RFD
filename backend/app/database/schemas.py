@@ -36,8 +36,8 @@ class UserRegionAssign(BaseModel):
 
 
 class PointSchema(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
 
 
 class FirespotCreate(BaseModel):
@@ -74,8 +74,8 @@ class OfficerStatusUpdate(BaseModel):
     # coords are optional so an officer can go offline without a GPS fix.
     # active is optional too: a heartbeat sends coords only and must NOT change
     # the online flag (avoids an in-flight poll re-activating a just-toggled-off officer).
-    latitude: float | None = None
-    longitude: float | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     active: bool | None = None
 
 
@@ -111,9 +111,9 @@ class ProvinceRead(BaseModel):
 
 class OfficerRegister(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
-    province_code: str  # stable Region.code (e.g. "p50") so clients can ship a static list
-    name: str | None = None
+    password: str = Field(min_length=8, max_length=128)
+    province_code: str = Field(max_length=32)  # stable Region.code (e.g. "p50")
+    name: str | None = Field(default=None, max_length=120)
 
 class PendingOfficerRead(BaseModel):
     user_id: uuid.UUID
