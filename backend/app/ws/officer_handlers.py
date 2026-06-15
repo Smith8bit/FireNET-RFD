@@ -225,16 +225,16 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
         ).scalar_one_or_none()
         if existing_fo is None:
             session.add(FieldOfficer(user_id=user_id, name=officer_name))
-            print(f"[verify] created FieldOfficer for user {user_id}")
+            print(f"[verify] created FieldOfficer for {target.email}")
         else:
-            print(f"[verify] FieldOfficer already exists for user {user_id}")
+            print(f"[verify] FieldOfficer already exists for {target.email}")
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
               detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
-    print(f"[verify] officer {user_id} verified by {admin.email}")
+    print(f"[verify] officer {target.email} verified by {admin.email}")
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
     await broadcast_officers_update(active_connections)
 
