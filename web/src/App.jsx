@@ -4,6 +4,7 @@ import useWebSocket, { ReadyState } from 'react-use-websocket'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import Navbar from './components/navbar'
+import Toaster from './components/Toaster'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ManagementPage from './pages/ManagementPage'
@@ -88,6 +89,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <Toaster />
       <Routes>
         <Route path="/" element={<LoginPage />} />
         <Route element={<RequireAuth />}>

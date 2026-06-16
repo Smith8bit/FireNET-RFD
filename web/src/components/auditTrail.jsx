@@ -15,6 +15,9 @@ const ACTION_LABELS = {
   'officer.online': 'เข้าปฏิบัติงาน',
   'officer.offline': 'ออกปฏิบัติงาน',
   'officer.delete': 'ลบเจ้าหน้าที่',
+  'dispatcher.create': 'สร้างผู้ควบคุม',
+  'dispatcher.update': 'แก้ไขผู้ควบคุม',
+  'dispatcher.delete': 'ลบผู้ควบคุม',
   'auth.login': 'เข้าสู่ระบบ',
   'auth.register': 'สมัครบัญชี',
 }
@@ -22,6 +25,7 @@ const ACTION_LABELS = {
 const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
   officer: 'bg-blue-100 text-blue-700',
+  dispatcher: 'bg-purple-100 text-purple-700',
   auth: 'bg-gray-100 text-gray-600',
 }
 
@@ -46,7 +50,17 @@ function summarize(item, names = {}) {
       return d.name ?? ''
     case 'officer.verify':
     case 'officer.delete':
+    case 'dispatcher.create':
+    case 'dispatcher.delete':
       return [d.name, d.email].filter(Boolean).join(' · ')
+    case 'dispatcher.update': {
+      const parts = []
+      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
+      if (d.email) parts.push(`เปลี่ยนอีเมล: ${d.previous_email ? `${d.previous_email} → ` : ''}${d.email}`)
+      if (d.region_path) parts.push(`ย้ายพื้นที่: ${provName(names, d.region_path)}`)
+      if (d.password_changed) parts.push('รีเซ็ตรหัสผ่าน')
+      return parts.join('\n')
+    }
     case 'officer.update': {
       const parts = []
       if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
