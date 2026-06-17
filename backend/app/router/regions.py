@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import current_active_user, current_superuser
@@ -26,23 +26,12 @@ async def list_regions(
     paths = await user_region_paths(user, session)
     if not paths:
         return []
-    rows = await session.execute(
-        text(
-            "SELECT * FROM regions WHERE path <@ ANY(CAST(:paths AS ltree[])) ORDER BY path"
-        ).bindparams(paths=paths)
+    result = await session.execute(
+        select(Region)
+        .where(or_(*[Region.path.op("<@")(p) for p in paths]))
+        .order_by(Region.path)
     )
-    return [
-        RegionRead(
-            id=r.id,
-            code=r.code,
-            name_th=r.name_th,
-            name_en=r.name_en,
-            level=r.level,
-            path=r.path,
-            parent_id=r.parent_id,
-        )
-        for r in rows.mappings().all()
-    ]
+    return result.scalars().all()
 
 
 @router.post("/users/{user_id}/assign", status_code=status.HTTP_201_CREATED)

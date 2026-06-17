@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -139,7 +140,12 @@ async def lifespan(app: FastAPI):
         # resolve-with-evidence will 502 until storage is back; don't block startup
         logger.warning("storage bucket check failed (%s); is MinIO running?", exc)
     if settings.INGEST_ENABLED:
-        await _ingest_tick()
+        # fire-and-forget the boot ingest: a slow/unreachable feed (e.g. a
+        # colocated feed not yet up, or NAT-hairpin on its public hostname) must
+        # not block the app from accepting connections. When it lands, the
+        # firespots insert trigger drives a delta to connected clients anyway.
+        # ponytail: held on app.state so the task isn't GC'd mid-flight.
+        app.state.boot_ingest = asyncio.create_task(_ingest_tick())
         scheduler.add_job(_ingest_tick, "interval", minutes=settings.INGEST_INTERVAL_MINUTES)
         scheduler.add_job(_safe_sweep_orphans, "interval", hours=24)
         scheduler.start()

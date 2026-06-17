@@ -45,7 +45,14 @@ class Settings(BaseSettings):
     # turn on once to provision, distribute the CSV, then turn back off.
     SEED_REGIONAL_ACCOUNTS: bool = False
 
-    # Wildfire ingest
+    # Wildfire ingest.
+    # When the feed is COLOCATED on this same server, point this at the internal /
+    # loopback address (e.g. http://127.0.0.1:<port>/firemap/getdb.php) — a box
+    # fetching its own *public* hostname often fails on NAT hairpin and silently
+    # ingests nothing. Caveat: the fetch sends a browser UA + Referer to clear the
+    # feed's mod_security (see db_control/firefetch.py); switching to an internal
+    # URL changes the Host header, so if mod_security keys on Host/Referer it may
+    # block — keep https with a valid cert, or relax those rules for the loopback.
     WILDFIRE_API_URL: str = "https://wildfire.forest.go.th/firemap/getdb.php"
     INGEST_ENABLED: bool = True
     INGEST_INTERVAL_MINUTES: int = 60

@@ -69,7 +69,10 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             detected_at = None
             for fmt in ("%Y-%m-%d%H%M", "%y%m%d%H%M"):
                 try:
-                    detected_at = datetime.strptime(date_str + time_str, fmt).replace(tzinfo=_INGEST_TZ)
+                    # ponytail: feed time is already Thai wall-clock; label it UTC so the
+                    # exact numbers survive the timestamptz round-trip and the API returns
+                    # the original time. Now-comparisons below use the same convention.
+                    detected_at = datetime.strptime(date_str + time_str, fmt).replace(tzinfo=timezone.utc)
                     break
                 except ValueError:
                     continue
@@ -116,7 +119,7 @@ async def update_fires() -> None:
 
 async def expire_old_fires() -> None:
     """Mark fires unresolved after FIRE_EXPIRE_DAYS as expired and release their officers."""
-    cutoff = datetime.now(_INGEST_TZ) - timedelta(days=get_settings().FIRE_EXPIRE_DAYS)
+    cutoff = datetime.now(_INGEST_TZ).replace(tzinfo=timezone.utc) - timedelta(days=get_settings().FIRE_EXPIRE_DAYS)
     async with async_session_maker() as session:
         expired_ids = (
             await session.execute(
@@ -206,7 +209,7 @@ async def get_fires(
             # default view: fires detected within the last FIRE_DISPLAY_DAYS (Thai time),
             # inclusive of today (1 = today only)
             days = max(get_settings().FIRE_DISPLAY_DAYS, 1)
-            today_start = datetime.now(_INGEST_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start = datetime.now(_INGEST_TZ).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
             window_start = today_start - timedelta(days=days - 1)
             stmt = stmt.where(Firespot.detected_at >= window_start)
 

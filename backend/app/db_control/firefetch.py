@@ -1,4 +1,4 @@
-import requests
+import httpx
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -32,7 +32,7 @@ def fetch_live_fires() -> list[dict]:
         f"&nrf=on&alow=on&cmf=on&fio=on&dnp=on&alro=on&cp=on&sd=on&dol=on&td=on&other=on"
         f"&showMap=on"
     )
-    response = requests.get(url, headers=_FETCH_HEADERS, timeout=15)
+    response = httpx.get(url, headers=_FETCH_HEADERS, timeout=15)
     response.raise_for_status()
     data = response.json()
     if isinstance(data, dict):
