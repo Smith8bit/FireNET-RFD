@@ -21,6 +21,7 @@ export type Fire = {
   aumper: string | null
   province: string | null
   type: string | null
+  satellite: string | null
 }
 
 type FireState = {

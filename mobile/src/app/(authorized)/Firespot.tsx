@@ -180,6 +180,7 @@ export default function Firespot() {
         <Row label="ตำบล" value={reservedFire.tumboon} />
         <Row label="อำเภอ" value={reservedFire.aumper} />
         <Row label="จังหวัด" value={reservedFire.province} />
+        <Row label="ดาวเทียม" value={reservedFire.satellite} />
         <Row
           label="พิกัด"
           value={`${reservedFire.lat.toFixed(5)}, ${reservedFire.lng.toFixed(5)}`}

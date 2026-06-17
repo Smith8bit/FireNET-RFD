@@ -19,14 +19,15 @@ _FETCH_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+# The feed returns no per-hotspot satellite source, so we fetch each satellite
+# separately (one flag on at a time) and tag the records ourselves.
+_SATELLITES = {"snpp": "Suomi NPP", "noaa20": "NOAA-20", "noaa21": "NOAA-21"}
 
-def fetch_live_fires() -> list[dict]:
-    settings = get_settings()
-    today = datetime.now(ZoneInfo(settings.INGEST_TIMEZONE)).date()
-    start = today - timedelta(days=settings.INGEST_LOOKBACK_DAYS)
+
+def _fetch_one(sat: str, start, today, settings) -> list[dict]:
     url = (
         f"{settings.WILDFIRE_API_URL}"
-        f"?snpp=on&noaa20=on&noaa21=on&nighttime=on&daytime=on"
+        f"?{sat}=on&nighttime=on&daytime=on"
         f"&datestart={start:%Y-%m-%d}&dateend={today:%Y-%m-%d}"
         f"&province=ทุกจังหวัด"
         f"&nrf=on&alow=on&cmf=on&fio=on&dnp=on&alro=on&cp=on&sd=on&dol=on&td=on&other=on"
@@ -40,3 +41,17 @@ def fetch_live_fires() -> list[dict]:
     if isinstance(data, list):
         return data
     return []
+
+
+def fetch_live_fires() -> list[dict]:
+    settings = get_settings()
+    today = datetime.now(ZoneInfo(settings.INGEST_TIMEZONE)).date()
+    start = today - timedelta(days=settings.INGEST_LOOKBACK_DAYS)
+    fires: list[dict] = []
+    for sat, label in _SATELLITES.items():
+        for f in _fetch_one(sat, start, today, settings):
+            # ponytail: a point seen by two satellites at the same minute/coords
+            # collides on external_id, so only the first satellite's label is kept.
+            f["SATELLITE"] = label
+            fires.append(f)
+    return fires

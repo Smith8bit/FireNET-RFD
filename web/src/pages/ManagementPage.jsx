@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import AuditTrail from '../components/auditTrail'
+import AuditTrail from '../components/management/auditTrail'
+import HistoryTab from '../components/management/HistoryTab'
 import PendingTab from '../components/management/PendingTab'
 import OfficersTab from '../components/management/OfficersTab'
 import DispatchersTab from '../components/management/DispatchersTab'
@@ -12,13 +13,14 @@ export default function ManagementPage() {
 
   // dispatcher management + the audit endpoint are superuser-only (regional scoping deferred)
   const tabs = user?.is_superuser
-    ? ['Pending', 'Officers', 'Dispatchers', 'Audit']
-    : ['Pending', 'Officers']
+    ? ['Pending', 'Officers', 'Dispatchers', 'History', 'Audit']
+    : ['Pending', 'Officers', 'History']
 
   const TAB_LABELS = {
     Pending: `รอยืนยัน${pendingCount != null ? ` (${pendingCount})` : ''}`,
     Officers: 'เจ้าหน้าที่',
     Dispatchers: 'ผู้ควบคุม',
+    History: 'ประวัติการดับไฟ',
     Audit: 'บันทึกเหตุการณ์',
   }
 
@@ -46,6 +48,7 @@ export default function ManagementPage() {
         {selectedTab === 'Pending' && <PendingTab onCount={setPendingCount} />}
         {selectedTab === 'Officers' && <OfficersTab />}
         {selectedTab === 'Dispatchers' && user?.is_superuser && <DispatchersTab />}
+        {selectedTab === 'History' && <HistoryTab />}
         {selectedTab === 'Audit' && <AuditTrail />}
       </div>
     </div>

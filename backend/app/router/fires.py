@@ -8,7 +8,7 @@ from .. import storage
 from ..auth.authen import current_active_user
 from ..database import get_async_session
 from ..database.models import FieldOfficer, FireResolution, FireResolutionImage, Firespot, Region, User
-from ..db_control.fires import get_fires
+from ..db_control.fires import get_fires, get_resolution_history
 from ..db_control.permission import fire_visible
 
 router = APIRouter()
@@ -17,6 +17,11 @@ router = APIRouter()
 @router.get("")
 async def list_fires(user: User = Depends(current_active_user)):
     return await get_fires(user=user)
+
+
+@router.get("/resolutions")
+async def list_resolutions(user: User = Depends(current_active_user)):
+    return await get_resolution_history(user=user)
 
 
 async def _visible_fire_or_404(fire_id: uuid.UUID, user: User, session: AsyncSession) -> Firespot:

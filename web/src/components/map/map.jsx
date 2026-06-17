@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { UserCircleIcon } from '@heroicons/react/20/solid'
-import { useMapSelection } from '../functions/stateStore'
+import { useMapSelection } from '../../functions/stateStore'
 
 // Fires are drawn as a WebGL circle layer (one source, not one DOM marker per
 // fire) so the map stays smooth with thousands of points.
@@ -121,7 +121,7 @@ function makeOfficerEl(active, name, lastUpdated) {
     return wrapper
 }
 
-const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 8, points, officers = [] }, ref) {
+const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10, points, officers = [] }, ref) {
     const mapRef = useRef(null)
     const pointsRef = useRef(points)
     const activeIdRef = useRef(null)

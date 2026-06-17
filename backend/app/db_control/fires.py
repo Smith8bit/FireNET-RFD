@@ -55,7 +55,6 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
         path_to_id = {row.path: row.id for row in result}
 
         rows: list[dict] = []
-        tumboon_count: Counter[str] = Counter()
         for fire in fires:
             region_id = path_to_id.get(fire["path"])
             if region_id is None:
@@ -78,9 +77,11 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     continue
             if detected_at is None:
                 continue
-            tumboon = fire.get("TUMBON", "")
-            tumboon_count[tumboon] += 1
-            name = f"{tumboon} #{tumboon_count[tumboon]}"
+            tumboon = fire.get("TUMBON", "") or "ไม่ทราบตำบล"
+            # ponytail: name from the fire's own detection time — stable across ingest
+            # runs, unlike the old per-run counter that restarted at #1 and collided.
+            # Same tumbon + same minute still collide; rare enough to live with.
+            name = f"{tumboon} {detected_at:%d/%m %H:%M}"
             rows.append(
                 {
                     "name": name,
@@ -103,8 +104,10 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             )
             inserted = len((await session.execute(stmt)).scalars().all())
         # skipped = duplicates + rows dropped for missing region/coords/date
+        by_satellite = dict(Counter(f.get("SATELLITE", "?") for f in fires))
         audit(session, actor=None, action="fire.ingest", entity_type="fire",
-              detail={"fetched": len(fires), "inserted": inserted, "skipped": len(fires) - inserted})
+              detail={"fetched": len(fires), "inserted": inserted,
+                      "skipped": len(fires) - inserted, "by_satellite": by_satellite})
         await session.commit()
 
 async def update_fires() -> None:
@@ -247,6 +250,61 @@ async def get_fires(
                 "aumper": detail.get("AUMPER"),
                 "province": detail.get("PROVINCE"),
                 "type": detail.get("NAME"),
-
+                "satellite": detail.get("SATELLITE"),
             })
         return result
+
+
+async def get_resolution_history(user=None) -> list[dict]:
+    """Every resolved fire that has officer evidence, newest first, region-scoped.
+    Auto-expired fires have no resolution row, so they don't appear."""
+    from .permission import user_region_paths
+
+    async with async_session_maker() as session:
+        stmt = (
+            select(
+                Firespot.id,
+                Firespot.name,
+                Firespot.detail,
+                Firespot.detected_at,
+                Firespot.false_alarm,
+                FireResolution.id.label("resolution_id"),
+                FireResolution.note,
+                FireResolution.created_at.label("resolved_at"),
+                FieldOfficer.name.label("officer_name"),
+            )
+            .join(Region, Firespot.region_id == Region.id)
+            .join(FireResolution, FireResolution.fire_id == Firespot.id)
+            .outerjoin(FieldOfficer, FieldOfficer.id == FireResolution.officer_id)
+        )
+        if user is not None and not user.is_superuser:
+            paths = await user_region_paths(user, session)
+            if not paths:
+                return []
+            stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
+        rows = (await session.execute(stmt.order_by(FireResolution.created_at.desc()))).all()
+
+        # image ids per resolution, one query (avoids N+1)
+        imgs: dict = {}
+        res_ids = [r.resolution_id for r in rows]
+        if res_ids:
+            for img in (
+                await session.execute(
+                    select(FireResolutionImage.id, FireResolutionImage.resolution_id)
+                    .where(FireResolutionImage.resolution_id.in_(res_ids))
+                    .order_by(FireResolutionImage.created_at)
+                )
+            ).all():
+                imgs.setdefault(img.resolution_id, []).append(str(img.id))
+
+        return [{
+            "fire_id": str(r.id),
+            "name": r.name,
+            "province": (r.detail or {}).get("PROVINCE"),
+            "detected_at": r.detected_at.isoformat(),
+            "resolved_at": r.resolved_at.isoformat(),
+            "officer_name": r.officer_name,
+            "note": r.note,
+            "false_alarm": r.false_alarm,
+            "image_ids": imgs.get(r.resolution_id, []),
+        } for r in rows]

@@ -4,13 +4,13 @@ import { ArrowsPointingOutIcon, UserGroupIcon } from '@heroicons/react/20/solid'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
 import { useAuthStore } from '../functions/useAuthStore'
 import { useFireData } from '../functions/useFireData'
-import Map from '../components/map'
-import Card from '../components/card'
-import ExpandedCard from '../components/expandedCard'
+import Map from '../components/map/map'
+import Card from '../components/map/card'
+import ExpandedCard from '../components/map/expandedCard'
 
-import satelliteStyle from '../components/layers/satellite.json'
-import baseStyle from '../components/layers/base.json'
-import topoStyle from '../components/layers/topo.json'
+import satelliteStyle from '../components/map/layers/satellite.json'
+import baseStyle from '../components/map/layers/base.json'
+import topoStyle from '../components/map/layers/topo.json'
 
 const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
 // fallback view (all of Thailand) until the profile's per-region home arrives

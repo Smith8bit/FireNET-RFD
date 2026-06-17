@@ -74,8 +74,15 @@ async def revoke_user_region(
     await session.commit()
 
 @router.get("/provinces", response_model=list[ProvinceRead])
-async def list_provinces(session: AsyncSession = Depends(get_async_session)):
-    result = await session.execute(
-        select(Region).where(Region.level == "province").order_by(Region.name_th)
-    )
+async def list_provinces(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    stmt = select(Region).where(Region.level == "province")
+    if not user.is_superuser:
+        paths = await user_region_paths(user, session)
+        if not paths:
+            return []
+        stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
+    result = await session.execute(stmt.order_by(Region.name_th))
     return result.scalars().all()

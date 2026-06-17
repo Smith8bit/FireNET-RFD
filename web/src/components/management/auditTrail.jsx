@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { API_URL } from './management/shared'
+import { API_URL } from './shared'
 
 const PAGE_SIZE = 20
 
@@ -30,6 +30,14 @@ const ACTION_COLORS = {
   auth: 'bg-gray-100 text-gray-600',
 }
 
+// filter dropdown groups by category prefix instead of every single action
+const CATEGORY_LABELS = {
+  fire: 'จุดไฟ',
+  officer: 'เจ้าหน้าที่',
+  dispatcher: 'ผู้ควบคุม',
+  auth: 'บัญชีผู้ใช้',
+}
+
 const AT_FORMAT = new Intl.DateTimeFormat('th-TH', {
   day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
 })
@@ -40,8 +48,13 @@ const provName = (names, path) => (path ? (names[path] ?? path) : path)
 function summarize(item, names = {}) {
   const d = item.detail ?? {}
   switch (item.action) {
-    case 'fire.ingest':
-      return `ดึงข้อมูล ${d.fetched ?? 0} รายการ · เพิ่มใหม่ ${d.inserted ?? 0}`
+    case 'fire.ingest': {
+      const base = `ดึงข้อมูล ${d.fetched ?? 0} รายการ · เพิ่มใหม่ ${d.inserted ?? 0}`
+      const by = d.by_satellite
+      return by
+        ? `${base}\n${Object.entries(by).map(([s, n]) => `${s}: ${n}`).join(' · ')}`
+        : base
+    }
     case 'fire.expire':
       return `${d.count ?? 0} รายการ`
     case 'fire.reserve':
@@ -155,7 +168,7 @@ export default function AuditTrail() {
           className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700"
         >
           <option value="">ทุกเหตุการณ์</option>
-          {Object.entries(ACTION_LABELS).map(([value, label]) => (
+          {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>

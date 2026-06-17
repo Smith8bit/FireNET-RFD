@@ -29,7 +29,12 @@ async def list_audit(
     if actor:
         stmt = stmt.where(AuditLog.actor_email.ilike(f"%{actor}%"))
     if action:
-        stmt = stmt.where(AuditLog.action == action)
+        # a bare category ("fire") matches all of its actions; a full
+        # "fire.reserve" still matches exactly. ponytail: prefix filter
+        stmt = stmt.where(
+            AuditLog.action == action if "." in action
+            else AuditLog.action.like(f"{action}.%")
+        )
     if entity_type:
         stmt = stmt.where(AuditLog.entity_type == entity_type)
     if entity_id:
