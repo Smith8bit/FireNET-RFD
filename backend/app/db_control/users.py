@@ -12,7 +12,7 @@ from ..database import get_async_session
 from ..database.models import User
 from .audit import audit
 
-logger = logging.getLogger("tfms.users")
+logger = logging.getLogger("firenet.users")
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):

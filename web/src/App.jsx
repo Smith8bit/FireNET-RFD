@@ -34,7 +34,7 @@ function RequireAuth() {
     )
   }
   if (status === 'guest') {
-    return <Navigate to="/" replace state={{ from: location }} />
+    return <Navigate to="/login" replace state={{ from: location }} />
   }
   return <Outlet />
 }
@@ -88,14 +88,14 @@ function App() {
   }, [readyState, setReady])
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Toaster />
       <Routes>
-        <Route path="/" element={<LoginPage />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<NavbarLayout />}>
+            <Route path="/" element={<MapViewPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/map" element={<MapViewPage />} />
             <Route path="/management" element={<ManagementPage />} />
           </Route>
         </Route>

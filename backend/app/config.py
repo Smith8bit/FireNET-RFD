@@ -13,7 +13,7 @@ _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
-    DATABASE_URL: str = "postgresql+asyncpg://tfms:tfms@localhost:5432/tfms"
+    DATABASE_URL: str = "postgresql+asyncpg://firenet:firenet@localhost:5432/firenet"
 
     # Connection pool, per worker process (applied in database/db.py). To put
     # PgBouncer (transaction pooling) in front of Postgres, set DB_PGBOUNCER=true —
@@ -81,10 +81,10 @@ class Settings(BaseSettings):
 
     # Fire-resolution evidence storage (S3-compatible / MinIO)
     S3_ENDPOINT: str = "localhost:9000"
-    S3_ACCESS_KEY: str = "tfms"
+    S3_ACCESS_KEY: str = "firenet"
     # No default: object-storage credentials must come from the environment.
     S3_SECRET_KEY: str
-    S3_BUCKET: str = "tfms-fire-evidence"
+    S3_BUCKET: str = "firenet-fire-evidence"
     S3_SECURE: bool = False
     RESOLVE_MAX_IMAGES: int = 3
     RESOLVE_MAX_IMAGE_MB: int = 5

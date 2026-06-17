@@ -17,7 +17,8 @@ function normalize(raw) {
     lng: f.lng,
     tumboon: f.tumboon,
     aumper: f.aumper,
-    province: f.province
+    province: f.province,
+    satellite: f.satellite
   }))
 }
 

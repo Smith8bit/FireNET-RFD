@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useSocketStore } from '../functions/stateStore'
-import { toast } from '../functions/toastStore'
-import { useMessageEffect } from '../functions/useMessageEffect'
-import { formatDate, formatTime } from '../functions/datetime'
+import { useSocketStore } from '../../functions/stateStore'
+import { toast } from '../../functions/toastStore'
+import { useMessageEffect } from '../../functions/useMessageEffect'
+import { formatDate, formatTime } from '../../functions/datetime'
 
 const APPOINT_ERRORS = {
     out_of_scope: 'ไฟหรือเจ้าหน้าที่อยู่นอกพื้นที่ของคุณ',
@@ -80,6 +80,10 @@ export default function ExpandedCard({ fire, officers }) {
                         <dd className="text-gray-900 font-medium text-right">
                             {[fire.tumboon, fire.aumper, fire.province].filter(Boolean).join(' · ') || '-'}
                         </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                        <dt className="min-w-fit shrink-0 text-gray-500">ดาวเทียม</dt>
+                        <dd className="text-gray-900 font-medium text-right">{fire.satellite || '-'}</dd>
                     </div>
                     <div className="flex justify-between gap-2">
                         <dt className="min-w-fit shrink-0 text-gray-500">ผู้รับผิดชอบ</dt>

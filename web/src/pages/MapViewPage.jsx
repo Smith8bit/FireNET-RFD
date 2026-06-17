@@ -4,13 +4,13 @@ import { ArrowsPointingOutIcon, UserGroupIcon } from '@heroicons/react/20/solid'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
 import { useAuthStore } from '../functions/useAuthStore'
 import { useFireData } from '../functions/useFireData'
-import Map from '../components/map'
-import Card from '../components/card'
-import ExpandedCard from '../components/expandedCard'
+import Map from '../components/map/map'
+import Card from '../components/map/card'
+import ExpandedCard from '../components/map/expandedCard'
 
-import satelliteStyle from '../components/layers/satellite.json'
-import baseStyle from '../components/layers/base.json'
-import topoStyle from '../components/layers/topo.json'
+import satelliteStyle from '../components/map/layers/satellite.json'
+import baseStyle from '../components/map/layers/base.json'
+import topoStyle from '../components/map/layers/topo.json'
 
 const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
 // fallback view (all of Thailand) until the profile's per-region home arrives
@@ -65,6 +65,7 @@ export default function MapViewPage() {
   const [sortAsc, setSortAsc] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
   const [provinceFilter, setProvinceFilter] = useState('')
+  const [satelliteFilter, setSatelliteFilter] = useState('')
 
   const changeSort = (key) => {
     if (sortBy === key) {
@@ -83,14 +84,20 @@ export default function MapViewPage() {
     [fires],
   )
 
+  const satellites = useMemo(
+    () => [...new Set(fires.map((f) => f.satellite).filter(Boolean))].sort(),
+    [fires],
+  )
+
   const filteredFires = useMemo(() => {
     let result = fires
     if (statusFilter === 'free') result = result.filter((f) => !f.status && !f.booked)
     else if (statusFilter === 'booked') result = result.filter((f) => !f.status && f.booked)
     else if (statusFilter === 'resolved') result = result.filter((f) => f.status)
     if (provinceFilter) result = result.filter((f) => f.province === provinceFilter)
+    if (satelliteFilter) result = result.filter((f) => f.satellite === satelliteFilter)
     return result
-  }, [fires, statusFilter, provinceFilter])
+  }, [fires, statusFilter, provinceFilter, satelliteFilter])
 
   const listFires = useMemo(() => {
     const sorted = [...filteredFires]
@@ -176,27 +183,46 @@ export default function MapViewPage() {
                 ))}
               </div>
             </div>
-            <div className="flex gap-2">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="flex-1 min-w-0 text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
-              >
-                <option value="all">สถานะ: ทั้งหมด</option>
-                <option value="free">ลุกไหม้</option>
-                <option value="booked">ถูกจอง</option>
-                <option value="resolved">ดับแล้ว</option>
-              </select>
-              <select
-                value={provinceFilter}
-                onChange={(e) => setProvinceFilter(e.target.value)}
-                className="flex-1 min-w-0 text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
-              >
-                <option value="">จังหวัด: ทั้งหมด</option>
-                {provinces.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+            <div className="flex flex-wrap gap-2">
+              <label className="flex-1 min-w-0">
+                <span className="block text-xs text-gray-500 mb-0.5">สถานะ</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
+                >
+                  <option value="all">ทั้งหมด</option>
+                  <option value="free">ลุกไหม้</option>
+                  <option value="booked">ถูกจอง</option>
+                  <option value="resolved">ดับแล้ว</option>
+                </select>
+              </label>
+              <label className="flex-1 min-w-0">
+                <span className="block text-xs text-gray-500 mb-0.5">จังหวัด</span>
+                <select
+                  value={provinceFilter}
+                  onChange={(e) => setProvinceFilter(e.target.value)}
+                  className="w-full text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
+                >
+                  <option value="">ทั้งหมด</option>
+                  {provinces.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex-1 min-w-0">
+                <span className="block text-xs text-gray-500 mb-0.5">ดาวเทียม</span>
+                <select
+                  value={satelliteFilter}
+                  onChange={(e) => setSatelliteFilter(e.target.value)}
+                  className="w-full text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
+                >
+                  <option value="">ทั้งหมด</option>
+                  {satellites.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
           <div

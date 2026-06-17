@@ -16,7 +16,7 @@ settings = get_settings()
 
 # Web console: httpOnly cookie (browser-managed, CSRF-resistant via SameSite).
 cookie_transport = CookieTransport(
-    cookie_name="tfms_auth",
+    cookie_name="firenet_auth",
     cookie_max_age=settings.COOKIE_MAX_AGE,
     cookie_secure=settings.COOKIE_SECURE,
     cookie_httponly=True,

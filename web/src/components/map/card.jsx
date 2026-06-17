@@ -1,5 +1,5 @@
-import { useMapSelection } from '../functions/stateStore'
-import { formatDate, formatTime } from '../functions/datetime'
+import { useMapSelection } from '../../functions/stateStore'
+import { formatDate, formatTime } from '../../functions/datetime'
 
 export default function Card({ Title, Area, Date, Time, id, status, booked }) {
     const setHovered = useMapSelection((s) => s.setHovered)

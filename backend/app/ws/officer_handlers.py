@@ -16,7 +16,7 @@ from ..db_control.push import send_push
 from .manager import fanout, group_by_scope
 
 settings = get_settings()
-logger = logging.getLogger("tfms.officers")
+logger = logging.getLogger("firenet.officers")
 _password_helper = PasswordHelper()
 _MIN_PASSWORD_LEN = 8
 

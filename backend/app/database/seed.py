@@ -18,7 +18,7 @@ from ..db_control.users import UserManager
 FIXTURE = Path(__file__).parent / "seedbag" / "regions_info.json"
 
 # Generated regional/province credentials are written here once (repo root), then
-# the file is gitignored. seed.py -> database -> app -> backend -> tfms/
+# the file is gitignored. seed.py -> database -> app -> backend -> firenet/
 _ACCOUNTS_CSV = Path(__file__).resolve().parents[3] / "seeded_accounts.csv"
 
 
