@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-const API_URL = import.meta.env.VITE_API_URL ?? ''
+import { API_URL } from './management/shared'
+
 const PAGE_SIZE = 20
 
 const ACTION_LABELS = {

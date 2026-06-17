@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-const API_URL = import.meta.env.VITE_API_URL ?? ''
+import { API_URL } from '../components/management/shared'
 
 async function api(path, init = {}) {
   return fetch(`${API_URL}${path}`, { credentials: 'include', ...init })

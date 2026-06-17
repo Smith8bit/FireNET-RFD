@@ -224,6 +224,7 @@ async def get_fires(
         result = []
         for row in rows:
             pt = to_shape(row.location)
+            detail = row.detail or {}
             result.append({
                 "id": str(row.id),
                 "name": row.name,
@@ -239,10 +240,10 @@ async def get_fires(
                 # ltree region path — lets the ws layer route per-fire deltas to the
                 # scopes that can see this fire (see permission.filter_fires)
                 "path": row.region_path,
-                "tumboon": row.detail.get("TUMBON") if hasattr(row, "detail") else None,
-                "aumper": row.detail.get("AUMPER") if hasattr(row, "detail") else None,
-                "province": row.detail.get("PROVINCE") if hasattr(row, "detail") else None,
-                "type": row.detail.get("NAME") if hasattr(row, "detail") else None,
+                "tumboon": detail.get("TUMBON"),
+                "aumper": detail.get("AUMPER"),
+                "province": detail.get("PROVINCE"),
+                "type": detail.get("NAME"),
 
             })
         return result
