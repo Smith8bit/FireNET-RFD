@@ -19,16 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sitarthon.tfmsmobile",
-      "config": {
-        "googleMaps": {
-          "apiKey": ""
-        }
-      }
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "package": "com.sitarthon.tfmsmobile"
     },
     "plugins": [
       "expo-router",

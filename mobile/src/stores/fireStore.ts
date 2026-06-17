@@ -91,13 +91,11 @@ export const useFireStore = create<FireState>((set, get) => ({
     photos.forEach((p, i) => {
       form.append('images', { uri: p.uri, name: `photo-${i}.jpg`, type: 'image/jpeg' } as any)
     })
-    let resolved: Fire | null = null
     try {
-      const res = await api.post<Fire>('/officers/me/fire/resolve', form, {
+      await api.post<Fire>('/officers/me/fire/resolve', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000, // photo upload on a field network
       })
-      resolved = res.data
     } catch (e) {
       if (
         axios.isAxiosError(e) &&
@@ -108,19 +106,17 @@ export const useFireStore = create<FireState>((set, get) => ({
       }
       throw new Error('ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     }
-    // keep showing the fire, now marked as resolved (status=true, booked=false)
-    set({ reservedFire: resolved })
+    // fire is resolved → clear it so Firespot drops back to the no-fire state
+    set({ reservedFire: null })
     get().loadFires() // fire status changed → refresh the map list
   },
 
   // close a reserved fire as a false detection — no photo evidence required
   reportFalseFire: async (note) => {
-    let resolved: Fire | null = null
     try {
-      const res = await api.post<Fire>('/officers/me/fire/false-report', {
+      await api.post<Fire>('/officers/me/fire/false-report', {
         note: note.trim() || undefined,
       })
-      resolved = res.data
     } catch (e) {
       if (
         axios.isAxiosError(e) &&
@@ -131,7 +127,7 @@ export const useFireStore = create<FireState>((set, get) => ({
       }
       throw new Error('ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง')
     }
-    set({ reservedFire: resolved })
+    set({ reservedFire: null })
     get().loadFires() // fire status changed → refresh the map list
   },
 
