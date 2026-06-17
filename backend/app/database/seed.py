@@ -117,6 +117,7 @@ async def seed_provinces(session: AsyncSession) -> None:
 
 async def seed_superuser() -> None:
     settings = get_settings()
+    nat_name = json.loads(FIXTURE.read_text(encoding="utf-8"))["national"]["name_en"]
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
@@ -201,6 +202,7 @@ async def seed_province_users() -> list[dict]:
             await session.execute(select(Region).where(Region.level == "province"))
         ).scalars().all()
 
+        settings = get_settings()
         for region in province_regions:
             email = f"{_email_local(region.name_en)}@province.go.th"
             password = _new_password()

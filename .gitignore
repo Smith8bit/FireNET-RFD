@@ -199,3 +199,4 @@ mobile/google-services.json
 # Seeded account credentials (plaintext passwords) — never commit
 seeded_accounts.csv
 backend/tfms-fcm-firebase-adminsdk-fbsvc-8bd030a43a.json
+docker-compose.yml
