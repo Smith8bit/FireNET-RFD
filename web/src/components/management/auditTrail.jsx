@@ -207,7 +207,7 @@ export default function AuditTrail() {
       )}
 
       {items !== null && !error && items.length > 0 && (
-        <div className="overflow-y-auto max-h-96 no-scrollbar">
+        <div className="overflow-y-auto min-h-96 max-h-96 no-scrollbar">
           <table className="w-full text-sm border-collapse table-fixed">
             <colgroup>
               <col className="w-40" />
@@ -247,27 +247,47 @@ export default function AuditTrail() {
         </div>
       )}
 
-      {total > PAGE_SIZE && (
+      {items?.length > 0 && (
         <div className="flex items-center justify-between pt-3 text-sm text-gray-600">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(p - 1, 0))}
-            disabled={page === 0}
-            className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
-          >
-            ก่อนหน้า
-          </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setPage(0)}
+              disabled={page === 0}
+              className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
+            >
+              หน้าแรก
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(p - 1, 0))}
+              disabled={page === 0}
+              className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
+            >
+              ก่อนหน้า
+            </button>
+          </div>
           <span>
             {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} จาก {total}
           </span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
-            disabled={page >= lastPage}
-            className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
-          >
-            ถัดไป
-          </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
+              disabled={page >= lastPage}
+              className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
+            >
+              ถัดไป
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage(lastPage)}
+              disabled={page >= lastPage}
+              className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
+            >
+              หน้าสุดท้าย
+            </button>
+          </div>
         </div>
       )}
     </div>

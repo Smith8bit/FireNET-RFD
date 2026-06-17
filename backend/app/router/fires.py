@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,8 +21,18 @@ async def list_fires(user: User = Depends(current_active_user)):
 
 
 @router.get("/resolutions")
-async def list_resolutions(user: User = Depends(current_active_user)):
-    return await get_resolution_history(user=user)
+async def list_resolutions(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    false_alarm: bool | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    user: User = Depends(current_active_user),
+):
+    return await get_resolution_history(
+        user=user, limit=limit, offset=offset,
+        false_alarm=false_alarm, since=since, until=until,
+    )
 
 
 async def _visible_fire_or_404(fire_id: uuid.UUID, user: User, session: AsyncSession) -> Firespot:

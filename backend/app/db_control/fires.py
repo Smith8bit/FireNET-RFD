@@ -55,6 +55,7 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
         path_to_id = {row.path: row.id for row in result}
 
         rows: list[dict] = []
+        tumboon_count: Counter[str] = Counter()
         for fire in fires:
             region_id = path_to_id.get(fire["path"])
             if region_id is None:
@@ -78,10 +79,10 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             if detected_at is None:
                 continue
             tumboon = fire.get("TUMBON", "") or "ไม่ทราบตำบล"
-            # ponytail: name from the fire's own detection time — stable across ingest
-            # runs, unlike the old per-run counter that restarted at #1 and collided.
-            # Same tumbon + same minute still collide; rare enough to live with.
-            name = f"{tumboon} {detected_at:%d/%m %H:%M}"
+            tumboon_count[tumboon] += 1
+            # ponytail: per-run counter restarts at #1 each ingest, so names repeat
+            # across runs. Seed the counter from the DB max per tumbon if that bites.
+            name = f"{tumboon} #{tumboon_count[tumboon]} {detected_at:%d/%m}"
             rows.append(
                 {
                     "name": name,
@@ -255,8 +256,12 @@ async def get_fires(
         return result
 
 
-async def get_resolution_history(user=None) -> list[dict]:
-    """Every resolved fire that has officer evidence, newest first, region-scoped.
+async def get_resolution_history(
+    user=None, limit: int = 20, offset: int = 0,
+    false_alarm: bool | None = None,
+    since: datetime | None = None, until: datetime | None = None,
+) -> dict:
+    """Resolved fires that have officer evidence, newest first, region-scoped, paged.
     Auto-expired fires have no resolution row, so they don't appear."""
     from .permission import user_region_paths
 
@@ -280,9 +285,19 @@ async def get_resolution_history(user=None) -> list[dict]:
         if user is not None and not user.is_superuser:
             paths = await user_region_paths(user, session)
             if not paths:
-                return []
+                return {"items": [], "total": 0}
             stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
-        rows = (await session.execute(stmt.order_by(FireResolution.created_at.desc()))).all()
+        if false_alarm is not None:
+            stmt = stmt.where(Firespot.false_alarm == false_alarm)
+        if since is not None:
+            stmt = stmt.where(FireResolution.created_at >= since)
+        if until is not None:
+            stmt = stmt.where(FireResolution.created_at < until)
+
+        total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+        rows = (await session.execute(
+            stmt.order_by(FireResolution.created_at.desc()).limit(limit).offset(offset)
+        )).all()
 
         # image ids per resolution, one query (avoids N+1)
         imgs: dict = {}
@@ -297,9 +312,11 @@ async def get_resolution_history(user=None) -> list[dict]:
             ).all():
                 imgs.setdefault(img.resolution_id, []).append(str(img.id))
 
-        return [{
+        return {"total": total, "items": [{
             "fire_id": str(r.id),
             "name": r.name,
+            "tumboon": (r.detail or {}).get("TUMBON"),
+            "aumper": (r.detail or {}).get("AUMPER"),
             "province": (r.detail or {}).get("PROVINCE"),
             "detected_at": r.detected_at.isoformat(),
             "resolved_at": r.resolved_at.isoformat(),
@@ -307,4 +324,4 @@ async def get_resolution_history(user=None) -> list[dict]:
             "note": r.note,
             "false_alarm": r.false_alarm,
             "image_ids": imgs.get(r.resolution_id, []),
-        } for r in rows]
+        } for r in rows]}
