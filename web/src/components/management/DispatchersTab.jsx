@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ChevronDownIcon, PlusIcon } from '@heroicons/react/20/solid'
 import { useSocketStore } from '../../functions/stateStore'
 import { toast } from '../../functions/toastStore'
 import { useMessageEffect } from '../../functions/useMessageEffect'
@@ -19,7 +20,8 @@ export default function DispatchersTab() {
   const [dispatchers, setDispatchers] = useState(null) // null = loading
   const [regions, setRegions] = useState(null) // assignment options
 
-  // create form
+  // create form (collapsed behind a toggle until the superuser wants to add one)
+  const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newName, setNewName] = useState('')
@@ -44,6 +46,7 @@ export default function DispatchersTab() {
 
   useMessageEffect(createdMsg, () => {
     setCreating(false)
+    setShowCreate(false)
     setNewEmail(''); setNewName(''); setNewPassword(''); setNewRegion('')
     toast.success('สร้างผู้ควบคุมสำเร็จ')
   })
@@ -119,8 +122,21 @@ export default function DispatchersTab() {
     <div>
       <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">ผู้ควบคุมประจำพื้นที่ (สร้าง แก้ไข และลบบัญชี)</p>
 
+      <button
+        type="button"
+        onClick={() => setShowCreate((v) => !v)}
+        aria-expanded={showCreate}
+        className="w-full flex items-center justify-between gap-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg px-4 py-2.5 mb-2 text-sm font-medium text-gray-700"
+      >
+        <span className="flex items-center gap-1.5">
+          <PlusIcon className="w-4 h-4" />
+          สร้างผู้ควบคุมใหม่
+        </span>
+        <ChevronDownIcon className={`w-4 h-4 transition-transform ${showCreate ? 'rotate-180' : ''}`} />
+      </button>
+
+      {showCreate && (
       <form onSubmit={createDispatcher} className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 space-y-2">
-        <p className="text-sm font-medium text-gray-700">สร้างผู้ควบคุมใหม่</p>
         <input
           type="email"
           value={newEmail}
@@ -167,6 +183,7 @@ export default function DispatchersTab() {
           </button>
         </div>
       </form>
+      )}
 
       {dispatchers === null
         ? <p className="text-gray-500">กำลังโหลด…</p>
