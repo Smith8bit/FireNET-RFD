@@ -12,11 +12,26 @@ async def user_roles(user: User, session: AsyncSession) -> list[str]:
     return [row[0] for row in result.all()]
 
 
+# Roles permitted on the web console. Both may manage officers (scoped by region);
+# there is no read-only role. "field_officer" is mobile-only and never appears here.
+MANAGE_ROLES = frozenset({"admin", "dispatcher"})
+
+
 async def is_admin_user(user: User, session: AsyncSession) -> bool:
-    """Web side: superuser, or any non-field-officer role (dispatcher/admin/viewer)."""
+    """Web side (console access): superuser, or any non-field-officer role
+    (admin/dispatcher). Field officers belong to the mobile app."""
     if user.is_superuser:
         return True
     return any(r != "field_officer" for r in await user_roles(user, session))
+
+
+async def can_manage_officers(user: User, session: AsyncSession) -> bool:
+    """Authority to mutate officer records (verify/appoint/edit/delete).
+    Superuser always; otherwise an explicit management role. Kept separate from
+    is_admin_user so a read-only role can be reintroduced without reopening writes."""
+    if user.is_superuser:
+        return True
+    return any(r in MANAGE_ROLES for r in await user_roles(user, session))
 
 
 async def is_field_officer(user: User, session: AsyncSession) -> bool:

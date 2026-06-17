@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { List } from 'react-window'
-import { ArrowsPointingOutIcon } from '@heroicons/react/20/solid'
+import { ArrowsPointingOutIcon, UserGroupIcon } from '@heroicons/react/20/solid'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
 import { useAuthStore } from '../functions/useAuthStore'
 import { useFireData } from '../functions/useFireData'
@@ -43,6 +43,7 @@ export default function MapViewPage() {
   const startPoint = { lat: home.lat, lng: home.lng }
 
   const [officers, setOfficers] = useState([])
+  const [showOfficers, setShowOfficers] = useState(true)
   const send = useSocketStore((s) => s.send)
   const ready = useSocketStore((s) => s.ready)
   const officersMsg = useSocketStore((s) => s.byType?.officers_map)
@@ -115,7 +116,7 @@ export default function MapViewPage() {
   return (
     <div className="flex flex-1 w-full overflow-hidden">
       <div className="relative w-3/4 h-full">
-        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={officers} />
+        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={showOfficers ? officers : []} />
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
           <div
             id="layers"
@@ -137,6 +138,14 @@ export default function MapViewPage() {
             onClick={() => mapRef.current?.resetView()}
           >
             <ArrowsPointingOutIcon className="w-5 h-5" />
+          </button>
+          <button
+            title={showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
+            aria-pressed={showOfficers}
+            className={`flex items-center justify-center rounded-lg shadow-md p-1.5 hover:bg-forest-500 hover:text-primary-foreground ${showOfficers ? 'bg-forest-500 text-primary-foreground' : 'bg-white'}`}
+            onClick={() => setShowOfficers((v) => !v)}
+          >
+            <UserGroupIcon className="w-5 h-5" />
           </button>
         </div>
       </div>

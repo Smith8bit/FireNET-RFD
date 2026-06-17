@@ -188,6 +188,25 @@ async def reserve_fire(
     return _fire_detail(fire) if fire is not None else None
 
 
+async def _read_capped(upload: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks, aborting the moment it exceeds max_bytes.
+
+    A client must not be able to force an arbitrarily large body fully into
+    memory before the size check runs; this bounds peak memory to roughly
+    max_bytes + one chunk per file."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "photo too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _sniff_image(data: bytes) -> str | None:
     """Identify the image type from magic bytes (headers can lie)."""
     if data.startswith(b"\xff\xd8\xff"):
@@ -218,7 +237,16 @@ def _parse_image_gps(image_gps: str | None, count: int) -> list[dict | None]:
     out: list[dict | None] = []
     for item in parsed:
         if isinstance(item, dict) and "latitude" in item and "longitude" in item:
-            out.append({"latitude": float(item["latitude"]), "longitude": float(item["longitude"])})
+            try:
+                lat = float(item["latitude"])
+                lng = float(item["longitude"])
+            except (TypeError, ValueError):
+                out.append(None)  # malformed coords are dropped, not a 500
+                continue
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                out.append({"latitude": lat, "longitude": lng})
+            else:
+                out.append(None)  # out-of-range coords are dropped too
         else:
             out.append(None)
     return out
@@ -275,9 +303,7 @@ async def resolve_my_fire(
     prepared: list[tuple[str, bytes, str]] = []  # (key, data, content_type)
     day = f"{datetime.now(timezone.utc):%Y%m%d}"
     for upload in images:
-        data = await upload.read()
-        if len(data) > max_bytes:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "photo too large")
+        data = await _read_capped(upload, max_bytes)
         content_type = _sniff_image(data)
         if content_type is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported image type")

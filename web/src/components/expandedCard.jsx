@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useSocketStore } from '../functions/stateStore'
+import { toast } from '../functions/toastStore'
+import { useMessageEffect } from '../functions/useMessageEffect'
 import { formatDate, formatTime } from '../functions/datetime'
 
 const APPOINT_ERRORS = {
@@ -15,7 +17,6 @@ const APPOINT_ERRORS = {
 export default function ExpandedCard({ fire, officers }) {
     const [selectedOfficer, setSelectedOfficer] = useState('')
     const [pending, setPending] = useState(false)
-    const [message, setMessage] = useState(null) // { text, ok }
     const send = useSocketStore((s) => s.send)
     const appointedMsg = useSocketStore((s) => s.byType?.officer_appointed)
     const errorMsg = useSocketStore((s) => s.byType?.error)
@@ -28,25 +29,22 @@ export default function ExpandedCard({ fire, officers }) {
     // or another admin) — disarm the action so we don't fire a doomed appoint
     const selectedBusy = officers.some((o) => o.field_officer_id === selectedOfficer && o.busy)
 
-    // resolve the outcome of an appoint we initiated (ignores stale store messages)
-    useEffect(() => {
-        if (!pending || !appointedMsg) return
-        if (appointedMsg.fire_id === fire.id) {
-            setPending(false)
-            setMessage({ text: 'มอบหมายเจ้าหน้าที่สำเร็จ', ok: true })
-        }
-    }, [appointedMsg, pending, fire.id])
-
-    useEffect(() => {
-        if (!pending || !errorMsg) return
+    // resolve the outcome of an appoint we initiated (only acts on our own request)
+    useMessageEffect(appointedMsg, (m) => {
+        if (!pending || m.fire_id !== fire.id) return
         setPending(false)
-        setMessage({ text: APPOINT_ERRORS[errorMsg.code] ?? 'มอบหมายไม่สำเร็จ', ok: false })
-    }, [errorMsg, pending])
+        toast.success('มอบหมายเจ้าหน้าที่สำเร็จ')
+    })
+
+    useMessageEffect(errorMsg, (m) => {
+        if (!pending) return
+        setPending(false)
+        toast.error(APPOINT_ERRORS[m.code] ?? 'มอบหมายไม่สำเร็จ')
+    })
 
     const appoint = () => {
         if (!selectedOfficer || selectedBusy) return
         setPending(true)
-        setMessage(null)
         send({ type: 'appoint_officer', fire_id: fire.id, officer_id: selectedOfficer })
     }
 
@@ -126,12 +124,6 @@ export default function ExpandedCard({ fire, officers }) {
                     ))
                 )}
             </div>
-
-            {message && (
-                <p className={`px-1 pt-2 text-sm font-medium ${message.ok ? 'text-forest-700' : 'text-red-600'}`}>
-                    {message.text}
-                </p>
-            )}
 
             <div id="actions" className="py-2 flex gap-2">
                 <button

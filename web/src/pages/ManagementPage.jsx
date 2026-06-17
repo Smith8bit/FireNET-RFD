@@ -1,139 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import AuditTrail from '../components/auditTrail'
-import { useSocketStore } from '../functions/stateStore'
+import PendingTab from '../components/management/PendingTab'
+import OfficersTab from '../components/management/OfficersTab'
+import DispatchersTab from '../components/management/DispatchersTab'
 import { useAuthStore } from '../functions/useAuthStore'
 
-const API_URL = import.meta.env.VITE_API_URL ?? ''
-
-const ERROR_MESSAGES = {
-  email_taken: 'อีเมลนี้ถูกใช้งานแล้ว',
-  invalid_email: 'รูปแบบอีเมลไม่ถูกต้อง',
-  weak_password: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร',
-  out_of_scope: 'อยู่นอกพื้นที่รับผิดชอบของคุณ',
-  nothing_to_update: 'ไม่มีการเปลี่ยนแปลง',
-}
-
 export default function ManagementPage() {
-  const send = useSocketStore((s) => s.send)
   const user = useAuthStore((s) => s.user)
-  const pendingMsg = useSocketStore((s) => s.byType?.pending_officers)
-  const verifiedMsg = useSocketStore((s) => s.byType?.officer_verified)
-  const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
-  const updatedMsg = useSocketStore((s) => s.byType?.officer_updated)
-  const deletedMsg = useSocketStore((s) => s.byType?.officer_deleted)
-  const errorMsg = useSocketStore((s) => s.byType?.error)
+  const [selectedTab, setSelectedTab] = useState('Pending')
+  const [pendingCount, setPendingCount] = useState(null)
 
-  const [selectedTab, setSelectedTab] = useState("Pending")
-  const [officers, setOfficers] = useState(null) // null = loading
-  const [regionOfficers, setRegionOfficers] = useState([])
-  const [error, setError] = useState(null)
-  const [busyId, setBusyId] = useState(null)
-  const [provinces, setProvinces] = useState(null) // null = not loaded yet
-  const [editingId, setEditingId] = useState(null) // user_id being edited
-  const [editName, setEditName] = useState('')
-  const [editProvince, setEditProvince] = useState('') // Region.code
-  const [editEmail, setEditEmail] = useState('')
-  const [editPassword, setEditPassword] = useState('') // blank = keep current
-  const [savingId, setSavingId] = useState(null)
-  const [deletingId, setDeletingId] = useState(null)
+  // dispatcher management + the audit endpoint are superuser-only (regional scoping deferred)
+  const tabs = user?.is_superuser
+    ? ['Pending', 'Officers', 'Dispatchers', 'Audit']
+    : ['Pending', 'Officers']
 
-  useEffect(() => {
-    send({ type: 'list_pending_officers' })
-    send({ type: 'list_officers' })
-  }, [send])
-
-  useEffect(() => {
-    if (!pendingMsg) return
-    setOfficers(pendingMsg.officers ?? [])
-    setError(null)
-  }, [pendingMsg])
-
-  useEffect(() => {
-    if (!verifiedMsg) return
-    setOfficers((prev) => prev ? prev.filter((o) => o.user_id !== verifiedMsg.user_id) : prev)
-    setBusyId(null)
-  }, [verifiedMsg])
-
-  useEffect(() => {
-    if (!officersMsg) return
-    setRegionOfficers(officersMsg.officers ?? [])
-  }, [officersMsg])
-
-  useEffect(() => {
-    if (!updatedMsg) return
-    setEditingId(null)
-    setSavingId(null)
-  }, [updatedMsg])
-
-  useEffect(() => {
-    if (!deletedMsg) return
-    setRegionOfficers((prev) => prev.filter((o) => o.user_id !== deletedMsg.user_id))
-    setEditingId(null)
-    setDeletingId(null)
-  }, [deletedMsg])
-
-  useEffect(() => {
-    if (!errorMsg) return
-    console.warn('[ManagementPage] error received:', errorMsg)
-    setError(ERROR_MESSAGES[errorMsg.code] ?? ('เกิดข้อผิดพลาด: ' + (errorMsg.code ?? 'unknown')))
-    setBusyId(null)
-    setSavingId(null)
-    setDeletingId(null)
-  }, [errorMsg])
-
-  // provinces for the edit form, loaded once when the Officers tab is opened
-  useEffect(() => {
-    if (selectedTab !== 'Officers' || provinces !== null) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch(`${API_URL}/regions/provinces`, { credentials: 'include' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (!cancelled) setProvinces(data)
-      } catch (e) {
-        console.warn('[ManagementPage] provinces load failed:', e)
-        if (!cancelled) setProvinces([])
-      }
-    })()
-    return () => { cancelled = true }
-  }, [selectedTab, provinces])
-
-  const verify = (id) => {
-    setBusyId(id)
-    setError(null)
-    send({ type: 'verify_officer', user_id: id })
+  const TAB_LABELS = {
+    Pending: `รอยืนยัน${pendingCount != null ? ` (${pendingCount})` : ''}`,
+    Officers: 'เจ้าหน้าที่',
+    Dispatchers: 'ผู้ควบคุม',
+    Audit: 'บันทึกเหตุการณ์',
   }
-
-  const startEdit = (o) => {
-    setEditingId(o.user_id)
-    setEditName(o.name ?? '')
-    setEditProvince((provinces ?? []).find((p) => p.path === o.province_path)?.code ?? '')
-    setEditEmail(o.email ?? '')
-    setEditPassword('')
-    setError(null)
-  }
-
-  const saveEdit = (o) => {
-    setSavingId(o.user_id)
-    setError(null)
-    const payload = { type: 'update_officer', user_id: o.user_id, name: editName, email: editEmail }
-    if (editProvince) payload.province_code = editProvince
-    if (editPassword) payload.password = editPassword
-    send(payload)
-  }
-
-  const removeOfficer = (o) => {
-    if (!window.confirm(`ลบเจ้าหน้าที่ ${o.name ?? o.email}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
-    setDeletingId(o.user_id)
-    setError(null)
-    send({ type: 'delete_officer', user_id: o.user_id })
-  }
-
-  const loading = officers === null
-
-  // the audit endpoint is superuser-only (regional scoping deferred)
-  const tabs = user?.is_superuser ? ['Pending', 'Officers', 'Audit'] : ['Pending', 'Officers']
 
   return (
     <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
@@ -150,149 +37,15 @@ export default function ManagementPage() {
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              {tab === 'Pending' ? `รอยืนยัน${officers ? ` (${officers.length})` : ''}` : tab === 'Officers' ? 'เจ้าหน้าที่' : 'บันทึกเหตุการณ์'}
+              {TAB_LABELS[tab] ?? tab}
             </button>
           ))}
         </div>
-      </div >
+      </div>
       <div className='flex-1 bg-white border-0 rounded-2xl p-6 mb-1'>
-        {selectedTab === 'Pending' && (
-          <div>
-            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>
-
-            {loading && <p className="text-gray-500">กำลังโหลด…</p>}
-            {error && <p className="text-red-600">{error}</p>}
-            {!loading && officers.length === 0 && <p className="text-gray-500">ไม่มีบัญชีที่รอการยืนยัน</p>}
-
-            <div className='overflow-y-auto max-h-96 no-scrollbar'>
-              <ul className="space-y-2">
-                {(officers ?? []).map((o) => (
-                  <li key={o.user_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
-                    <div>
-                      <p className="font-medium">{o.name ?? o.email}</p>
-                      <p className="text-sm text-gray-500">{o.email}</p>
-                      <p className="text-sm text-gray-500">{o.province_name_th}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => verify(o.user_id)}
-                      disabled={busyId === o.user_id}
-                      className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
-                    >
-                      {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {selectedTab === 'Officers' && (
-          <div>
-            <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">เจ้าหน้าที่ที่ได้รับการยืนยันแล้วในเขตของคุณ</p>
-
-            {error && <p className="text-red-600 mb-2">{error}</p>}
-            {regionOfficers.length === 0
-              ? <p className="text-gray-500">ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</p>
-              : (
-                <div className='overflow-y-auto max-h-96 no-scrollbar'>
-                  <ul className="space-y-2">
-                    {regionOfficers.map((o) => (
-                      <li key={o.field_officer_id} className="bg-white border border-gray-200 rounded-lg px-4 py-3">
-                        {editingId === o.user_id ? (
-                          <div className="space-y-2">
-                            <input
-                              type="email"
-                              value={editEmail}
-                              onChange={(e) => setEditEmail(e.target.value)}
-                              placeholder="อีเมล"
-                              autoComplete="off"
-                              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
-                            />
-                            <input
-                              type="text"
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              placeholder="ชื่อเจ้าหน้าที่"
-                              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
-                            />
-                            <select
-                              value={editProvince}
-                              onChange={(e) => setEditProvince(e.target.value)}
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700"
-                            >
-                              <option value="">— จังหวัดเดิม —</option>
-                              {(provinces ?? []).map((p) => (
-                                <option key={p.code} value={p.code}>{p.name_th}</option>
-                              ))}
-                            </select>
-                            <input
-                              type="password"
-                              value={editPassword}
-                              onChange={(e) => setEditPassword(e.target.value)}
-                              placeholder="ตั้งรหัสผ่านใหม่ (เว้นว่างหากไม่เปลี่ยน)"
-                              autoComplete="new-password"
-                              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
-                            />
-                            <div className="flex items-center justify-between gap-2">
-                              <button
-                                type="button"
-                                onClick={() => removeOfficer(o)}
-                                disabled={deletingId === o.user_id}
-                                className="text-sm text-red-600 hover:text-red-700 border border-red-200 hover:border-red-300 rounded-full px-3 py-1.5 disabled:opacity-50"
-                              >
-                                {deletingId === o.user_id ? 'กำลังลบ…' : 'ลบเจ้าหน้าที่'}
-                              </button>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingId(null)}
-                                  className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5"
-                                >
-                                  ยกเลิก
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => saveEdit(o)}
-                                  disabled={savingId === o.user_id}
-                                  className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
-                                >
-                                  {savingId === o.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">{o.name ?? o.email}</p>
-                              <p className="text-sm text-gray-500">{o.email}</p>
-                              <p className="text-sm text-gray-500">{o.province_name_th}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                {o.active ? 'ออนไลน์' : 'ออฟไลน์'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => startEdit(o)}
-                                className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
-                              >
-                                แก้ไข
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            }
-          </div>
-        )}
-
+        {selectedTab === 'Pending' && <PendingTab onCount={setPendingCount} />}
+        {selectedTab === 'Officers' && <OfficersTab />}
+        {selectedTab === 'Dispatchers' && user?.is_superuser && <DispatchersTab />}
         {selectedTab === 'Audit' && <AuditTrail />}
       </div>
     </div>

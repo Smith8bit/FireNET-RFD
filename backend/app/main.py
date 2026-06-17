@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -5,8 +6,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from .auth.authen import auth_backend, fastapi_users
+from .auth.authen import auth_backend, bearer_backend, fastapi_users
 from .config import get_settings
+from .middleware import install_rate_limiting
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from . import storage
@@ -23,7 +25,23 @@ from .ws.pg_listener import pg_listener
 
 settings = get_settings()
 
+# App logs go through the stdlib logging module (levels, no PII): request-time
+# code logs ids, never raw emails — emails belong only in the audit_log.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("tfms")
+
 scheduler = AsyncIOScheduler(timezone=settings.INGEST_TIMEZONE)
+
+# A fixed key for the bootstrap advisory lock. Workers/replicas starting at once
+# would otherwise race the idempotent DDL below (CREATE INDEX, triggers,
+# create_all) into a deadlock; a transaction-level advisory lock serializes them
+# and is released automatically when the bootstrap transaction commits. The same
+# key is reused by the pg_listener trigger setup. (Until migrations exist — see
+# audit M5 — this is the in-stack, zero-dependency guard.)
+BOOTSTRAP_LOCK_KEY = 845_173_001
 
 # upgrade a pre-existing non-unique index to unique (first-come-first-served จอง);
 # no-op once the unique index is in place
@@ -81,23 +99,27 @@ async def _ingest_tick() -> None:
     try:
         await update_fires()
     except Exception as exc:
-        print(f"[ingest] fetch failed (will retry on schedule): {exc}")
+        logger.warning("ingest fetch failed (will retry on schedule): %s", exc)
     try:
         await expire_old_fires()
     except Exception as exc:
-        print(f"[ingest] expiry failed (will retry on schedule): {exc}")
+        logger.warning("ingest expiry failed (will retry on schedule): %s", exc)
 
 
 async def _safe_sweep_orphans() -> None:
     try:
         await sweep_orphan_images()
     except Exception as exc:
-        print(f"[sweep] orphan sweep failed (will retry tomorrow): {exc}")
+        logger.warning("orphan sweep failed (will retry tomorrow): %s", exc)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
+        # serialize bootstrap DDL across workers (auto-released on commit)
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(:k)").bindparams(k=BOOTSTRAP_LOCK_KEY)
+        )
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS ltree"))
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text(_UNIQUE_FIRE_INDEX_SQL))
@@ -115,7 +137,7 @@ async def lifespan(app: FastAPI):
         await storage.ensure_bucket()
     except Exception as exc:
         # resolve-with-evidence will 502 until storage is back; don't block startup
-        print(f"[storage] bucket check failed ({exc}); is MinIO running?")
+        logger.warning("storage bucket check failed (%s); is MinIO running?", exc)
     if settings.INGEST_ENABLED:
         await _ingest_tick()
         scheduler.add_job(_ingest_tick, "interval", minutes=settings.INGEST_INTERVAL_MINUTES)
@@ -131,7 +153,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="TFMS API", lifespan=lifespan)
+app = FastAPI(title="TFMS API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -141,9 +163,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Throttle credential brute force / registration abuse on the auth endpoints.
+install_rate_limiting(app)
+
 app.include_router(
     fastapi_users.get_auth_router(auth_backend),
     prefix="/auth/cookie",
+    tags=["auth"],
+)
+# mobile bearer-token login (returns {access_token, token_type})
+app.include_router(
+    fastapi_users.get_auth_router(bearer_backend),
+    prefix="/auth/jwt",
     tags=["auth"],
 )
 app.include_router(

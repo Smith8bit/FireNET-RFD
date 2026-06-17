@@ -1,8 +1,6 @@
-import uuid
 from typing import Optional
 
 from fastapi import WebSocket
-from fastapi_users.exceptions import UserNotExists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authen import get_jwt_strategy

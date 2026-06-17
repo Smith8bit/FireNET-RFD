@@ -1,39 +1,29 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../functions/useAuthStore'
-import Toast from '../components/toast'
-
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+import { toast } from '../functions/toastStore'
 
 export default function LoginPage() {
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [toast, setToast] = useState({ message: '', type: 'success' })
 
   const login = useAuthStore((s) => s.login)
   const navigate = useNavigate()
   const location = useLocation()
   const from = location.state?.from?.pathname || '/map'
 
-  const showToast = (message, type = 'success') => setToast({ message, type })
-  const closeToast = () => setToast({ message: '', type: 'success' })
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
 
-    const body = new URLSearchParams({ username: identifier, password })
-
     try {
-      await login(identifier,password)
-      showToast('เข้าสู่ระบบสำเร็จ')
+      await login(identifier, password)
+      toast.success('เข้าสู่ระบบสำเร็จ')
       setTimeout(() => navigate(from, { replace: true }), 800)
     } catch (err) {
-      showToast(err.message === 'login failed'
-        ? 'เข้าสู่ระบบไม่สำเร็จ'
-        : err.message, 'error')
+      toast.error(err.message === 'login failed' ? 'เข้าสู่ระบบไม่สำเร็จ' : err.message)
     } finally {
       setLoading(false)
     }
@@ -106,7 +96,6 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
-      <Toast message={toast.message} type={toast.type} onClose={closeToast} />
     </div>
   )
 }

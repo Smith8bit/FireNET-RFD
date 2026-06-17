@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 
+// Presentational toast card. Positioning + stacking are owned by <Toaster>;
+// this just renders one message and self-dismisses after `duration`.
 export default function Toast({ message, type = 'success', onClose, duration = 3000 }) {
   useEffect(() => {
     if (!message) return
@@ -19,24 +21,22 @@ export default function Toast({ message, type = 'success', onClose, duration = 3
   const ariaLive = type === 'error' ? 'assertive' : 'polite'
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-in-top">
-      <div
-        role={role}
-        aria-live={ariaLive}
-        aria-atomic="true"
-        className={`border rounded-lg shadow-lg px-4 py-3 max-w-sm ${styles[type]}`}
-      >
-        <div className="flex items-start gap-3">
-          <span className="font-medium text-sm flex-1">{message}</span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="ปิดการแจ้งเตือน"
-            className="text-gray-400 hover:text-gray-600 text-lg leading-none inline-flex items-center justify-center min-w-[24px] min-h-[24px]"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
+    <div
+      role={role}
+      aria-live={ariaLive}
+      aria-atomic="true"
+      className={`animate-slide-in-top border rounded-lg shadow-lg px-4 py-3 max-w-sm pointer-events-auto ${styles[type]}`}
+    >
+      <div className="flex items-start gap-3">
+        <span className="font-medium text-sm flex-1">{message}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="ปิดการแจ้งเตือน"
+          className="text-gray-400 hover:text-gray-600 text-lg leading-none inline-flex items-center justify-center min-w-6 min-h-6"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
       </div>
     </div>
   )

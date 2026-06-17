@@ -1,6 +1,6 @@
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
-import { api, setOnUnauthorized } from '@/lib/api'
+import { api, setOnUnauthorized, loadToken, setToken, clearToken } from '@/lib/api'
 import { registerPushToken, unregisterPushToken } from '@/lib/push'
 
 export type AuthUser = {
@@ -59,16 +59,18 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // expired/invalid session on any API call → clear state and return to Login
+    // expired/invalid session on any API call → drop the token, return to Login
     setOnUnauthorized(() => {
+      clearToken()
       setUser(null)
       router.replace('/Login')
     })
     ;(async () => {
+      await loadToken() // restore the saved bearer token before the first request
       const me = await fetchMe()
       // a non-officer account (admin/dispatcher) doesn't belong in the mobile app
       if (me && !me.is_field_officer) {
-        await api.post('/auth/cookie/logout', null).catch(() => {})
+        await clearToken()
         setUser(null)
       } else {
         setUser(me)
@@ -81,16 +83,17 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const signIn = useCallback(async (email: string, password: string) => {
     const body = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
     try {
-      await api.post('/auth/cookie/login', body, {
+      const res = await api.post<{ access_token: string }>('/auth/jwt/login', body, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
+      await setToken(res.data.access_token)
     } catch {
       throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
     }
     const me = await fetchMe()
     if (me && !me.is_field_officer) {
       // logged in fine, but this is an admin/dispatcher account — block mobile access
-      await api.post('/auth/cookie/logout', null).catch(() => {})
+      await clearToken()
       setUser(null)
       throw new Error('บัญชีนี้เป็นผู้ดูแลระบบ กรุณาใช้งานผ่านเว็บ')
     }
@@ -112,11 +115,10 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   }, [])
 
   const signOut = useCallback(async () => {
-    // drop this device's push token first, while the session cookie is still valid
+    // drop this device's push token first, while the token is still valid
     await unregisterPushToken()
-    try {
-      await api.post('/auth/cookie/logout', null)
-    } catch {}
+    // bearer tokens are stateless — no server logout; just discard it locally
+    await clearToken()
     setUser(null)
     router.replace('/Login')
   }, [])

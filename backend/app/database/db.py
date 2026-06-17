@@ -1,4 +1,5 @@
 from typing import AsyncGenerator
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -7,7 +8,27 @@ from ..config import get_settings
 
 settings = get_settings()
 
-engine = create_async_engine(settings.DATABASE_URL, future=True)
+# When PgBouncer (transaction pooling) sits in front of Postgres, server-side
+# prepared statements break: disable SQLAlchemy's prepared-statement cache and
+# give each statement a unique name so it can't collide across pooled sessions.
+# (Canonical asyncpg-dialect recipe — see SQLAlchemy asyncpg docs.)
+_connect_args: dict = {}
+if settings.DB_PGBOUNCER:
+    _connect_args = {
+        "prepared_statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
+    }
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    future=True,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    pool_pre_ping=True,  # drop dead connections instead of erroring on first use
+    connect_args=_connect_args,
+)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 

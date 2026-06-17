@@ -1,9 +1,17 @@
+import logging
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..auth.ws_auth import get_user_from_ws
 from ..database import async_session_maker
 from ..db_control.permission import is_admin_user, user_region_paths
 from ..ws.manager import manager
+from ..ws.dispatcher_handlers import (
+    handle_create_dispatcher,
+    handle_delete_dispatcher,
+    handle_list_dispatchers,
+    handle_update_dispatcher,
+)
 from ..ws.officer_handlers import (
     handle_appoint_officer,
     handle_delete_officer,
@@ -15,6 +23,7 @@ from ..ws.officer_handlers import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("tfms.ws")
 
 
 @router.websocket("/ws")
@@ -51,6 +60,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_delete_officer(ws, user, data, manager.active)
                 case "appoint_officer":
                     await handle_appoint_officer(ws, user, data, manager.active)
+                case "list_dispatchers":
+                    await handle_list_dispatchers(ws, user)
+                case "create_dispatcher":
+                    await handle_create_dispatcher(ws, user, data)
+                case "update_dispatcher":
+                    await handle_update_dispatcher(ws, user, data)
+                case "delete_dispatcher":
+                    await handle_delete_dispatcher(ws, user, data)
                 case "list_officers":
                     await handle_list_officers(ws, user)
                 case "list_officers_MAP":
@@ -59,10 +76,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     # client detected a delta version gap: re-baseline its scope
                     await manager.send_snapshot(conn)
                 case _:
-                    print(f"[ws/{user.email}] unknown message: {data}")
+                    logger.warning("ws user=%s unknown message type=%s", user.id, data.get("type"))
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        print(f"[ws/{user.email}] error: {exc}")
+        logger.warning("ws user=%s error: %s", user.id, exc)
     finally:
         manager.disconnect(ws)
