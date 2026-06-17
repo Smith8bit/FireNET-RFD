@@ -45,7 +45,8 @@ USER appuser
 COPY . .
 
 # Expose the port that the application listens on.
-EXPOSE 5173
+EXPOSE 8000
 
-# Run the application.
-CMD fastapi dev main.py
+# Run the application. Single worker: the realtime layer + pg_listener + ingest
+# keep state in-process and assume one authority (see DEPLOYMENT.md).
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -23,7 +23,7 @@ from ..ws.officer_handlers import (
 )
 
 router = APIRouter()
-logger = logging.getLogger("tfms.ws")
+logger = logging.getLogger("firenet.ws")
 
 
 @router.websocket("/ws")

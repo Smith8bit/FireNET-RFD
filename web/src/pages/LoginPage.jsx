@@ -12,7 +12,7 @@ export default function LoginPage() {
   const login = useAuthStore((s) => s.login)
   const navigate = useNavigate()
   const location = useLocation()
-  const from = location.state?.from?.pathname || '/map'
+  const from = location.state?.from?.pathname || '/'
 
   const handleSubmit = async (e) => {
     e.preventDefault()

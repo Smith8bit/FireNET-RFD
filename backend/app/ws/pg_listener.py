@@ -7,7 +7,7 @@ from ..config import get_settings
 
 settings = get_settings()
 
-CHANNEL = "tfms_changes"
+CHANNEL = "firenet_changes"
 _DEBOUNCE_S = 0.5
 _RECONNECT_S = 5
 # must match main.BOOTSTRAP_LOCK_KEY (defined separately to avoid an import cycle)
@@ -22,33 +22,33 @@ _BOOTSTRAP_LOCK_KEY = 845_173_001
 # change any fire's booked flag) only refresh the admin officer lists, while
 # booking changes (fire_id) also refresh every client's fire list.
 _TRIGGER_SQL = """
-CREATE OR REPLACE FUNCTION tfms_notify_change() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION firenet_notify_change() RETURNS trigger AS $$
 BEGIN
-    PERFORM pg_notify('tfms_changes', COALESCE(TG_ARGV[0], TG_TABLE_NAME));
+    PERFORM pg_notify('firenet_changes', COALESCE(TG_ARGV[0], TG_TABLE_NAME));
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS tfms_notify_firespots ON firespots;
-CREATE TRIGGER tfms_notify_firespots
+DROP TRIGGER IF EXISTS firenet_notify_firespots ON firespots;
+CREATE TRIGGER firenet_notify_firespots
     AFTER INSERT OR UPDATE OR DELETE ON firespots
-    FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change();
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change();
 
-DROP TRIGGER IF EXISTS tfms_notify_field_officers ON field_officers;
-DROP TRIGGER IF EXISTS tfms_notify_fo_booking ON field_officers;
-CREATE TRIGGER tfms_notify_fo_booking
+DROP TRIGGER IF EXISTS firenet_notify_field_officers ON field_officers;
+DROP TRIGGER IF EXISTS firenet_notify_fo_booking ON field_officers;
+CREATE TRIGGER firenet_notify_fo_booking
     AFTER INSERT OR DELETE OR UPDATE OF fire_id ON field_officers
-    FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change('field_officers_booking');
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change('field_officers_booking');
 
-DROP TRIGGER IF EXISTS tfms_notify_fo_status ON field_officers;
-CREATE TRIGGER tfms_notify_fo_status
+DROP TRIGGER IF EXISTS firenet_notify_fo_status ON field_officers;
+CREATE TRIGGER firenet_notify_fo_status
     AFTER UPDATE ON field_officers
-    FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change();
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change();
 
-DROP TRIGGER IF EXISTS tfms_notify_user ON "user";
-CREATE TRIGGER tfms_notify_user
+DROP TRIGGER IF EXISTS firenet_notify_user ON "user";
+CREATE TRIGGER firenet_notify_user
     AFTER INSERT OR UPDATE OR DELETE ON "user"
-    FOR EACH STATEMENT EXECUTE FUNCTION tfms_notify_change();
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change();
 """
 
 

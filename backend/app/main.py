@@ -32,7 +32,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-logger = logging.getLogger("tfms")
+logger = logging.getLogger("firenet")
 
 scheduler = AsyncIOScheduler(timezone=settings.INGEST_TIMEZONE)
 
@@ -122,6 +122,10 @@ async def lifespan(app: FastAPI):
             text("SELECT pg_advisory_xact_lock(:k)").bindparams(k=BOOTSTRAP_LOCK_KEY)
         )
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS ltree"))
+        # Geography columns (firespots/field_officers) need PostGIS. The postgis
+        # image enables it on first volume init, but create it here too so a fresh
+        # or externally-managed DB can't fail create_all. Idempotent.
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text(_UNIQUE_FIRE_INDEX_SQL))
         # pre-existing tables don't get new model columns from create_all
@@ -203,4 +207,4 @@ app.include_router(ws_router, tags=["ws"])
 
 @app.get("/")
 def read_root():
-    return {"service": "tfms", "status": "ok"}
+    return {"service": "firenet", "status": "ok"}

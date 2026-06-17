@@ -9,14 +9,14 @@ export default function Navbar() {
   const logout = useAuthStore((s) => s.logout)
 
   const links = [
-    { name: 'แผนที่', path: '/map' },
+    { name: 'แผนที่', path: '/' },
     { name: 'แดชบอร์ด', path: '/dashboard' },
     { name: 'การจัดการเจ้าหน้าที่', path: '/management' },
   ]
 
   const handleLogout = async () => {
     await logout()
-    navigate('/', {replace: true})
+    navigate('/login', {replace: true})
   }
 
 return (

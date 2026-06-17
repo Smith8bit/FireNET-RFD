@@ -14,7 +14,7 @@ from ..database.schemas import UserCreate
 from ..db_control.audit import audit
 from ..db_control.users import UserManager
 
-logger = logging.getLogger("tfms.dispatchers")
+logger = logging.getLogger("firenet.dispatchers")
 _password_helper = PasswordHelper()
 _MIN_PASSWORD_LEN = 8
 
