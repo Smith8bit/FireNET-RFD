@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 export default defineConfig({
   // served under https://<host>/firenet/ — assets resolve relative to this
-  base: '/firenet/',
+  base: '/firenet',
 
   plugins: [
     react(),

@@ -82,7 +82,7 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             tumboon_count[tumboon] += 1
             # ponytail: per-run counter restarts at #1 each ingest, so names repeat
             # across runs. Seed the counter from the DB max per tumbon if that bites.
-            name = f"{tumboon} #{tumboon_count[tumboon]} {detected_at:%d/%m}"
+            name = f"{tumboon} #{tumboon_count[tumboon]}"
             rows.append(
                 {
                     "name": name,
