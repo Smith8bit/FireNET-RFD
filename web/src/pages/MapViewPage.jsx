@@ -12,7 +12,7 @@ import satelliteStyle from '../components/map/layers/satellite.json'
 import baseStyle from '../components/map/layers/base.json'
 import topoStyle from '../components/map/layers/topo.json'
 
-const LAYERS = { Base: baseStyle, Satellite: satelliteStyle, Topo: topoStyle }
+const LAYERS = { 'ค่าเริ่มต้น': baseStyle, 'ดาวเทียม': satelliteStyle, 'ภูมิประเทศ': topoStyle }
 // fallback view (all of Thailand) until the profile's per-region home arrives
 const DEFAULT_HOME = { lat: 13.05, lng: 101.45, zoom: 5.5 }
 const CARD_HEIGHT = 135 // px — must match Card's rendered height (py-3 + 3 text lines + border)
@@ -35,7 +35,7 @@ function FireRow({ index, style, fires }) {
 }
 
 export default function MapViewPage() {
-  const [selectedLayer, setSelectedLayer] = useState(LAYERS.Base)
+  const [selectedLayer, setSelectedLayer] = useState(LAYERS['ค่าเริ่มต้น'])
   const mapRef = useRef(null)
 
   // per-user opening view: center + zoom of the region this admin is assigned to
@@ -124,7 +124,7 @@ export default function MapViewPage() {
     <div className="flex flex-1 w-full overflow-hidden">
       <div className="relative w-3/4 h-full">
         <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={showOfficers ? officers : []} />
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+        <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-2">
           <div
             id="layers"
             className="flex rounded-lg overflow-hidden shadow-md divide-x divide-gray-300"
@@ -141,18 +141,20 @@ export default function MapViewPage() {
           </div>
           <button
             title="กลับไปจุดเริ่มต้น"
-            className="flex items-center justify-center bg-white rounded-lg shadow-md p-1.5 hover:bg-forest-500 hover:text-primary-foreground"
+            className="flex items-center gap-1.5 bg-white rounded-lg shadow-md px-3 py-1.5 text-sm font-medium hover:bg-forest-500 hover:text-primary-foreground"
             onClick={() => mapRef.current?.resetView()}
           >
             <ArrowsPointingOutIcon className="w-5 h-5" />
+            กลับไปจุดเริ่มต้น
           </button>
           <button
             title={showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
             aria-pressed={showOfficers}
-            className={`flex items-center justify-center rounded-lg shadow-md p-1.5 hover:bg-forest-500 hover:text-primary-foreground ${showOfficers ? 'bg-forest-500 text-primary-foreground' : 'bg-white'}`}
+            className={`flex items-center gap-1.5 rounded-lg shadow-md px-3 py-1.5 text-sm font-medium hover:bg-forest-500 hover:text-primary-foreground ${showOfficers ? 'bg-forest-500 text-primary-foreground' : 'bg-white'}`}
             onClick={() => setShowOfficers((v) => !v)}
           >
             <UserGroupIcon className="w-5 h-5" />
+            {showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
           </button>
         </div>
       </div>

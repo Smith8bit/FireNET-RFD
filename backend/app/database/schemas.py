@@ -67,6 +67,14 @@ class OfficerRegister(BaseModel):
     name: str | None = Field(default=None, max_length=120)
 
 
+class OfficerProfileUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class RegionChangeCreate(BaseModel):
+    province_code: str = Field(max_length=32)  # stable Region.code (e.g. "p50")
+
+
 class PushTokenRegister(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
     platform: str | None = None  # "android" | "ios" | "web"

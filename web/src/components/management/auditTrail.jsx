@@ -19,6 +19,9 @@ const ACTION_LABELS = {
   'dispatcher.create': 'สร้างผู้ควบคุม',
   'dispatcher.update': 'แก้ไขผู้ควบคุม',
   'dispatcher.delete': 'ลบผู้ควบคุม',
+  'region_change.request': 'ขอย้ายพื้นที่',
+  'region_change.approved': 'อนุมัติย้ายพื้นที่',
+  'region_change.rejected': 'ปฏิเสธย้ายพื้นที่',
   'auth.login': 'เข้าสู่ระบบ',
   'auth.register': 'สมัครบัญชี',
 }
@@ -27,6 +30,7 @@ const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
   officer: 'bg-blue-100 text-blue-700',
   dispatcher: 'bg-purple-100 text-purple-700',
+  region_change: 'bg-teal-100 text-teal-700',
   auth: 'bg-gray-100 text-gray-600',
 }
 
@@ -35,6 +39,7 @@ const CATEGORY_LABELS = {
   fire: 'จุดไฟ',
   officer: 'เจ้าหน้าที่',
   dispatcher: 'ผู้ควบคุม',
+  region_change: 'คำขอย้ายพื้นที่',
   auth: 'บัญชีผู้ใช้',
 }
 
@@ -62,6 +67,10 @@ function summarize(item, names = {}) {
     case 'fire.false_report':
     case 'fire.appoint':
       return d.name ?? ''
+    case 'region_change.request':
+    case 'region_change.approved':
+    case 'region_change.rejected':
+      return provName(names, d.province_path)
     case 'officer.verify':
     case 'officer.delete':
     case 'dispatcher.create':
@@ -106,7 +115,10 @@ export default function AuditTrail() {
   useEffect(() => {
     if (provincesLoaded.current) return
     const needsProvince = (items ?? []).some(
-      (it) => it.action === 'officer.update' && it.detail?.province_path
+      (it) =>
+        (it.action === 'officer.update' && it.detail?.province_path) ||
+        (it.action === 'dispatcher.update' && it.detail?.region_path) ||
+        (it.action.startsWith('region_change.') && it.detail?.province_path)
     )
     if (!needsProvince) return
     provincesLoaded.current = true

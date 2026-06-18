@@ -1,15 +1,24 @@
 import json
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import WebSocket
 from fastapi_users.password import PasswordHelper
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 
 from ..config import get_settings
 from ..database import async_session_maker
-from ..database.models import FieldOfficer, Firespot, Region, User, UserRegion
+from ..database.models import (
+    FieldOfficer,
+    Firespot,
+    Region,
+    RegionChangeRequest,
+    User,
+    UserRegion,
+)
 from ..db_control.audit import audit
 from ..db_control.permission import can_manage_officers, is_admin_user, user_region_paths
 from ..db_control.push import send_push
@@ -117,6 +126,138 @@ async def handle_list_pending(ws: WebSocket, user: User) -> None:
             for m in rows.mappings().all()
         ]
     await ws.send_json({"type": "pending_officers", "officers": officers})
+
+
+async def _fetch_region_requests(session, user: User) -> list[dict]:
+    """Pending officer move requests, scoped to the dispatcher's destination area:
+    a dispatcher approves officers asking to join a province they cover."""
+    dest = aliased(Region)
+    cur = aliased(Region)
+    stmt = (
+        select(
+            RegionChangeRequest.id,
+            RegionChangeRequest.user_id,
+            RegionChangeRequest.created_at,
+            UserRegion.name.label("officer_name"),
+            User.email,
+            cur.name_th.label("current_province"),
+            dest.name_th.label("requested_province"),
+        )
+        .join(dest, dest.id == RegionChangeRequest.requested_region_id)
+        .join(User, User.id == RegionChangeRequest.user_id)
+        .join(
+            UserRegion,
+            (UserRegion.user_id == RegionChangeRequest.user_id)
+            & (UserRegion.role == "field_officer"),
+        )
+        .join(cur, cur.id == UserRegion.region_id)
+        .where(RegionChangeRequest.status == "pending")
+        .order_by(RegionChangeRequest.created_at)
+    )
+    if not user.is_superuser:
+        paths = await user_region_paths(user, session)
+        if not paths:
+            return []
+        stmt = stmt.where(or_(*[dest.path.op("<@")(p) for p in paths]))
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "request_id": str(r.id),
+            "user_id": str(r.user_id),
+            "officer_name": r.officer_name,
+            "email": r.email,
+            "current_province": r.current_province,
+            "requested_province": r.requested_province,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+async def handle_list_region_requests(ws: WebSocket, user: User) -> None:
+    async with async_session_maker() as session:
+        if not await _is_admin(user, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+        requests = await _fetch_region_requests(session, user)
+    await ws.send_json({"type": "region_change_requests", "requests": requests})
+
+
+async def handle_decide_region_request(
+    ws: WebSocket, admin: User, data: dict, active_connections
+) -> None:
+    """Approve (move the officer's province) or reject a region-change request."""
+    try:
+        request_id = uuid.UUID(data["request_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_request"})
+        return
+    action = data.get("action")
+    if action not in ("approve", "reject"):
+        await ws.send_json({"type": "error", "code": "invalid_action"})
+        return
+
+    async with async_session_maker() as session:
+        if not await _can_manage(admin, session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+
+        req = await session.get(RegionChangeRequest, request_id)
+        if req is None or req.status != "pending":
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
+
+        dest = await session.get(Region, req.requested_region_id)
+        if dest is None:
+            await ws.send_json({"type": "error", "code": "invalid_region"})
+            return
+        # dispatcher must cover the destination province (they accept the officer)
+        if not await _admin_covers_path(admin, dest.path, session):
+            await ws.send_json({"type": "error", "code": "out_of_scope"})
+            return
+
+        if action == "approve":
+            ur = (
+                await session.execute(
+                    select(UserRegion).where(
+                        UserRegion.user_id == req.user_id,
+                        UserRegion.role == "field_officer",
+                    )
+                )
+            ).scalar_one_or_none()
+            if ur is None:
+                await ws.send_json({"type": "error", "code": "not_found"})
+                return
+            # region_id is part of the composite PK — move via UPDATE, not ORM identity
+            old_region_id = ur.region_id
+            session.expunge(ur)
+            await session.execute(
+                update(UserRegion)
+                .where(
+                    UserRegion.user_id == req.user_id,
+                    UserRegion.region_id == old_region_id,
+                )
+                .values(region_id=dest.id)
+            )
+
+        req.status = "approved" if action == "approve" else "rejected"
+        req.decided_at = datetime.now(timezone.utc)
+        req.decided_by = admin.id
+        audit(session, actor=admin, action=f"region_change.{req.status}", entity_type="user",
+              entity_id=str(req.user_id), detail={"request_id": str(req.id), "province_path": str(dest.path)})
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await ws.send_json({"type": "error", "code": "conflict"})
+            return
+
+    logger.info("region request %s %s by admin=%s", request_id, req.status, admin.id)
+    await ws.send_json({"type": "region_request_decided", "request_id": str(request_id), "status": req.status})
+    await handle_list_region_requests(ws, admin)
+    if action == "approve":
+        # the officer's province changed — refresh officer/pending lists for admins
+        await broadcast_admin_refresh(active_connections, include_pending=True)
 
 
 async def handle_list_officers(ws: WebSocket, user: User) -> None:

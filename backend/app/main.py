@@ -137,6 +137,11 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(text(_AUDIT_BLOCK_FN_SQL))
         await conn.execute(text(_AUDIT_BLOCK_TRIGGER_SQL))
+        # at most one open region-change request per officer
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_region_change_one_pending "
+            "ON region_change_requests (user_id) WHERE status = 'pending'"
+        ))
     await run_seed()
     try:
         await storage.ensure_bucket()

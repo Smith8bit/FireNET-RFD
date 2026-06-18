@@ -94,7 +94,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
           <Route element={<NavbarLayout />}>
-            <Route path="/" element={<MapViewPage />} />
+            <Route path="" element={<MapViewPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/management" element={<ManagementPage />} />
           </Route>

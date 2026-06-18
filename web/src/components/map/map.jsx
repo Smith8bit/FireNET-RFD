@@ -34,13 +34,15 @@ function firePaint(activeId) {
     return {
         'circle-color': [
             'case',
+            isActive,
+            '#FFBF00', // selected/focused spot
             ['==', ['get', 'status'], true],
             FIRE_COLORS.resolved,
             ['==', ['get', 'booked'], true],
             FIRE_COLORS.booked,
             FIRE_COLORS.free,
         ],
-        'circle-radius': ['case', isActive, 10, 6],
+        'circle-radius': ['case', isActive, 8, 4.5],
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': ['case', isActive, 2.5, 1.5],
     }
@@ -151,7 +153,7 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         map.setRenderWorldCopies(false)
         map.dragRotate.disable()
         map.doubleClickZoom.disable()
-        map.addControl(new maplibregl.NavigationControl(), 'top-left')
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
 
         // setStyle() wipes custom sources, so re-add fires after every style load
         map.on('style.load', () => {
@@ -204,6 +206,7 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         const map = mapRef.current
         if (!map?.getLayer(FIRES_LAYER)) return
         const paint = firePaint(activeId)
+        map.setPaintProperty(FIRES_LAYER, 'circle-color', paint['circle-color'])
         map.setPaintProperty(FIRES_LAYER, 'circle-radius', paint['circle-radius'])
         map.setPaintProperty(FIRES_LAYER, 'circle-stroke-width', paint['circle-stroke-width'])
     }, [hoveredId, focusedId])

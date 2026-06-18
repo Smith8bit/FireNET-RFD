@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Redirect, Tabs, router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import { ActivityIndicator, View } from 'react-native'
+import { ActivityIndicator, Pressable, View } from 'react-native'
 import * as Location from 'expo-location'
 import { useAuthSession } from '@/providers/AuthProvider'
 import { useFireStore } from '@/stores/fireStore'
@@ -61,8 +61,22 @@ export default function AuthorizedLayout() {
   if (!user) return <Redirect href="/Login" />
   if (!user.is_verified) return <Redirect href="/Pending" />
 
+  // hidden detail screens (reached from Setting) get a header + back button; the
+  // tab bar is suppressed so they read as pushed pages, not tabs.
+  const detailOptions = (title: string) => ({
+    href: null as null,
+    headerShown: true,
+    title,
+    tabBarStyle: { display: 'none' as const },
+    headerLeft: () => (
+      <Pressable onPress={() => router.back()} style={{ paddingHorizontal: 16 }}>
+        <Ionicons name="chevron-back" size={24} color="#111827" />
+      </Pressable>
+    ),
+  })
+
   return (
-    <Tabs screenOptions={{ headerShown: false }}>
+    <Tabs backBehavior="history" screenOptions={{ headerShown: false }}>
       <Tabs.Screen
         name="MapView"
         options={{
@@ -84,6 +98,9 @@ export default function AuthorizedLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen name="Account" options={detailOptions('บัญชีของฉัน')} />
+      <Tabs.Screen name="History" options={detailOptions('ประวัติการดับไฟ')} />
+      <Tabs.Screen name="Leaderboard" options={detailOptions('อันดับประจำเดือน')} />
     </Tabs>
   )
 }

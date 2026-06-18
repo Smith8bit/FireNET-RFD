@@ -82,7 +82,7 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
             tumboon_count[tumboon] += 1
             # ponytail: per-run counter restarts at #1 each ingest, so names repeat
             # across runs. Seed the counter from the DB max per tumbon if that bites.
-            name = f"{tumboon} #{tumboon_count[tumboon]} {detected_at:%d/%m}"
+            name = f"{tumboon} #{tumboon_count[tumboon]}"
             rows.append(
                 {
                     "name": name,
@@ -260,6 +260,7 @@ async def get_resolution_history(
     user=None, limit: int = 20, offset: int = 0,
     false_alarm: bool | None = None,
     since: datetime | None = None, until: datetime | None = None,
+    officer_id=None,
 ) -> dict:
     """Resolved fires that have officer evidence, newest first, region-scoped, paged.
     Auto-expired fires have no resolution row, so they don't appear."""
@@ -282,13 +283,17 @@ async def get_resolution_history(
             .join(FireResolution, FireResolution.fire_id == Firespot.id)
             .outerjoin(FieldOfficer, FieldOfficer.id == FireResolution.officer_id)
         )
-        if user is not None and not user.is_superuser:
+        # an officer viewing their own history (officer_id set) sees every one of
+        # their resolutions; region scope would drop fires from a previous posting
+        if user is not None and not user.is_superuser and officer_id is None:
             paths = await user_region_paths(user, session)
             if not paths:
                 return {"items": [], "total": 0}
             stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
         if false_alarm is not None:
             stmt = stmt.where(Firespot.false_alarm == false_alarm)
+        if officer_id is not None:
+            stmt = stmt.where(FireResolution.officer_id == officer_id)
         if since is not None:
             stmt = stmt.where(FireResolution.created_at >= since)
         if until is not None:

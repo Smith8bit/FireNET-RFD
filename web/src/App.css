@@ -33,8 +33,13 @@
   }
 }
 
-/* push the maplibre zoom controls below the layer buttons (top-3 + ~32px tall) */
-.maplibregl-ctrl-top-left {
-  top: 48px;
+/* push the maplibre zoom control below the stacked map controls
+   (layer switcher + reset-view + officer toggle), top-right */
+.maplibregl-ctrl-top-right {
+  top: 132px;
+}
+/* align the zoom control's right edge with the custom buttons (right-3 = 12px) */
+.maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin-right: 12px;
 }
     

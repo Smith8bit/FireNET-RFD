@@ -70,6 +70,24 @@ async function presentLocal(m: RemoteMessage): Promise<void> {
   }
 }
 
+/**
+ * Ask for the OS notification permission up front — independent of FCM and of
+ * login state — so the dialog appears at app launch rather than only after a
+ * verified field officer signs in. Safe to call on every launch: the OS shows
+ * the dialog only the first time and resolves immediately thereafter.
+ */
+export async function requestNotificationPermission(): Promise<boolean> {
+  try {
+    await ensureAndroidChannel()
+    const current = await Notifications.getPermissionsAsync()
+    if (current.granted) return true
+    const requested = await Notifications.requestPermissionsAsync()
+    return requested.granted
+  } catch {
+    return false
+  }
+}
+
 let _fcm: Fcm | null | undefined // undefined = not yet attempted
 let _messaging: Messaging | null
 

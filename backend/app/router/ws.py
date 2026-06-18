@@ -14,9 +14,11 @@ from ..ws.dispatcher_handlers import (
 )
 from ..ws.officer_handlers import (
     handle_appoint_officer,
+    handle_decide_region_request,
     handle_delete_officer,
     handle_list_officers,
     handle_list_pending,
+    handle_list_region_requests,
     handle_update_officer,
     handle_verify_officer,
     handle_list_officers_MAP
@@ -54,6 +56,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_list_pending(ws, user)
                 case "verify_officer":
                     await handle_verify_officer(ws, user, data, manager.active)
+                case "list_region_requests":
+                    await handle_list_region_requests(ws, user)
+                case "decide_region_request":
+                    await handle_decide_region_request(ws, user, data, manager.active)
                 case "update_officer":
                     await handle_update_officer(ws, user, data, manager.active)
                 case "delete_officer":
