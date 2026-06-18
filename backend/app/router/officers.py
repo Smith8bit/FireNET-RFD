@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi_users.exceptions import UserAlreadyExists, InvalidPasswordException
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,21 +22,25 @@ from ..database.models import (
     FireResolutionImage,
     Firespot,
     Region,
+    RegionChangeRequest,
     User,
     UserRegion,
 )
 from ..database.schemas import (
     FireAssign,
     FireFalseReport,
+    OfficerProfileUpdate,
     OfficerRegister,
     OfficerStatusUpdate,
     PushTokenDelete,
     PushTokenRegister,
+    RegionChangeCreate,
     UserCreate,
     UserRead,
 )
 from ..db_control.audit import audit
-from ..db_control.permission import fire_visible
+from ..db_control.fires import get_resolution_history
+from ..db_control.permission import fire_visible, user_region_paths
 from ..db_control.users import get_user_manager, UserManager
 
 settings = get_settings()
@@ -119,6 +123,7 @@ def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
         "aumper": detail.get("AUMPER"),
         "province": detail.get("PROVINCE"),
         "type": detail.get("NAME"),
+        "satellite": detail.get("SATELLITE"),
     }
 
 
@@ -468,3 +473,153 @@ async def delete_push_token(
         )
     )
     await session.commit()
+
+
+# ---- field officer: update own display name ----
+@router.patch("/me/profile", status_code=status.HTTP_200_OK)
+async def update_my_profile(
+    body: OfficerProfileUpdate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "name required")
+    # name lives on both the region assignment (source of truth) and the officer row
+    ur = (
+        await session.execute(
+            select(UserRegion).where(
+                UserRegion.user_id == user.id, UserRegion.role == "field_officer"
+            )
+        )
+    ).scalar_one_or_none()
+    if ur is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
+    ur.name = name
+    await session.execute(
+        update(FieldOfficer).where(FieldOfficer.user_id == user.id).values(name=name)
+    )
+    await session.commit()
+    return {"name": name}
+
+
+# ---- field officer: request a move to another province (dispatcher approves) ----
+@router.post("/me/region-change", status_code=status.HTTP_201_CREATED)
+async def request_region_change(
+    body: RegionChangeCreate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    province = (
+        await session.execute(
+            select(Region).where(Region.code == body.province_code, Region.level == "province")
+        )
+    ).scalar_one_or_none()
+    if province is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid province")
+
+    ur = (
+        await session.execute(
+            select(UserRegion).where(
+                UserRegion.user_id == user.id, UserRegion.role == "field_officer"
+            )
+        )
+    ).scalar_one_or_none()
+    if ur is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
+    if ur.region_id == province.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "already in this province")
+
+    req = RegionChangeRequest(user_id=user.id, requested_region_id=province.id)
+    session.add(req)
+    audit(session, actor=user, action="region_change.request", entity_type="user",
+          entity_id=str(user.id), detail={"province_code": province.code, "province_path": str(province.path)})
+    try:
+        await session.commit()
+    except IntegrityError:  # partial unique index: one open request per officer
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "a request is already pending")
+    return {"id": str(req.id), "status": req.status, "province": province.name_th}
+
+
+# ---- field officer: own latest region-change request (null if never asked) ----
+@router.get("/me/region-change")
+async def my_region_change(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    row = (
+        await session.execute(
+            select(RegionChangeRequest, Region.name_th)
+            .join(Region, Region.id == RegionChangeRequest.requested_region_id)
+            .where(RegionChangeRequest.user_id == user.id)
+            .order_by(RegionChangeRequest.created_at.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None
+    req, province = row
+    return {
+        "id": str(req.id),
+        "status": req.status,
+        "province": province,
+        "created_at": req.created_at.isoformat(),
+        "decided_at": req.decided_at.isoformat() if req.decided_at else None,
+    }
+
+
+# ---- field officer: own resolution history (newest first, paged) ----
+@router.get("/me/resolutions")
+async def my_resolutions(
+    limit: int = 20,
+    offset: int = 0,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    fo = await _my_field_officer(user, session)
+    return await get_resolution_history(user=user, limit=limit, offset=offset, officer_id=fo.id)
+
+
+# ---- field officer: monthly leaderboard (real fires resolved this month, region-scoped) ----
+@router.get("/me/leaderboard")
+async def my_leaderboard(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    fo = await _my_field_officer(user, session)
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    stmt = (
+        select(
+            FieldOfficer.id,
+            FieldOfficer.name,
+            func.count(FireResolution.id).label("cnt"),
+        )
+        .join(FireResolution, FireResolution.officer_id == FieldOfficer.id)
+        .join(Firespot, Firespot.id == FireResolution.fire_id)
+        # rank by the officer's *current* region, not the fire's — a reassigned
+        # officer moves to their new province's board, carrying past resolutions
+        .join(
+            UserRegion,
+            (UserRegion.user_id == FieldOfficer.user_id) & (UserRegion.role == "field_officer"),
+        )
+        .join(Region, Region.id == UserRegion.region_id)
+        .where(Firespot.false_alarm.is_(False), FireResolution.created_at >= month_start)
+        .group_by(FieldOfficer.id, FieldOfficer.name)
+        .order_by(func.count(FireResolution.id).desc())
+        .limit(50)
+    )
+    if not user.is_superuser:
+        paths = await user_region_paths(user, session)
+        if not paths:
+            return {"month": month_start.date().isoformat(), "items": []}
+        stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
+    rows = (await session.execute(stmt)).all()
+    return {
+        "month": month_start.date().isoformat(),
+        "items": [
+            {"rank": i + 1, "name": name or "—", "count": cnt, "is_me": fid == fo.id}
+            for i, (fid, name, cnt) in enumerate(rows)
+        ],
+    }

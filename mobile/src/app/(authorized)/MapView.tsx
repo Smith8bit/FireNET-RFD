@@ -8,6 +8,7 @@ import BottomSheet, { BottomSheetFlatList, type BottomSheetFlatListMethods } fro
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useFireStore, type Fire } from '@/stores/fireStore';
+import { useAuthSession } from '@/providers/AuthProvider';
 import { formatDetectedAt } from '@/utils/format';
 
 const MAP_STYLE = base as unknown as StyleSpecification
@@ -108,6 +109,14 @@ export default function MapView() {
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
   const online = useFireStore((s) => s.online)
   const setOnline = useFireStore((s) => s.setOnline)
+  const { refresh } = useAuthSession()
+
+  // reload covers all three tabs: fire list (map), reserved fire (Firespot), profile (Setting)
+  const reloadAll = useCallback(() => {
+    loadFires()
+    loadReservedFire()
+    refresh()
+  }, [loadFires, loadReservedFire, refresh])
   const [toggling, setToggling] = useState(false)
   const [sortBy, setSortBy] = useState<'time' | 'name'>('time')
   const [sortAsc, setSortAsc] = useState(false)
@@ -312,7 +321,7 @@ export default function MapView() {
           />
         </GeoJSONSource>
       </Map>
-      <TouchableOpacity style={styles.reloadButton} onPress={loadFires}>
+      <TouchableOpacity style={styles.reloadButton} onPress={reloadAll}>
         <Ionicons name="refresh" size={20} color="#000000" />
       </TouchableOpacity>
       <View style={styles.onlineToggle}>
