@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "tfms-mobile",
+    "name": "FireNet",
     "slug": "tfms-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -26,7 +26,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#FF4000",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
@@ -54,7 +54,8 @@
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       "expo-notifications",
-      "expo-build-properties"
+      "expo-build-properties",
+      "./plugins/withGradleMemory"
     ],
     "experiments": {
       "typedRoutes": true,
