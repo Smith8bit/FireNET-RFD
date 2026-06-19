@@ -32,7 +32,8 @@ async def get_my_profile(
 
     return {
         "id": str(user.id),
-        "email": user.email,
+        "username": user.email,
+        "division": user.division,
         "is_active": user.is_active,
         "is_superuser": user.is_superuser,
         "is_verified": user.is_verified,

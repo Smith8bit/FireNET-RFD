@@ -32,7 +32,7 @@ return (
         </p>
       </div>
       <span className="w-fit flex text-lg  justify-center font-light italic bg-primary-foreground border-2 border-gray-300 rounded-full px-4 py-1">
-        {user.name ?? user.email}
+        {user.name ?? user.username}{user.division ? ` · ${user.division}` : ''}
       </span>
       <ul className="flex h-full">
         {links.map((link) => (

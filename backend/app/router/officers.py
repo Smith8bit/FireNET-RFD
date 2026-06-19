@@ -64,7 +64,7 @@ async def register_officer(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid province")
     try:
         user = await manager.create(
-            UserCreate(email=body.email, password=body.password),
+            UserCreate(email=body.username, password=body.password, division=body.division),
             safe=True,  # forces is_verified=False and is_superuser=False
         )
     except UserAlreadyExists:
@@ -499,8 +499,11 @@ async def update_my_profile(
     await session.execute(
         update(FieldOfficer).where(FieldOfficer.user_id == user.id).values(name=name)
     )
+    # division (สังกัด) is optional; only overwrite when the client sends it
+    if body.division is not None:
+        user.division = body.division.strip() or None
     await session.commit()
-    return {"name": name}
+    return {"name": name, "division": user.division}
 
 
 # ---- field officer: request a move to another province (dispatcher approves) ----

@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database import async_session_maker
 from ..database.models import Region, User, UserRegion
-from ..database.schemas import UserCreate
+from ..database.schemas import UserCreate, valid_username
 from ..db_control.audit import audit
 from ..db_control.users import UserManager
 
@@ -23,7 +23,7 @@ _MIN_PASSWORD_LEN = 8
 # not be able to create peers or escalate. Superusers carry role 'admin' on the
 # national region, so filtering on role = 'dispatcher' already excludes them.
 _DISPATCHERS_SQL = """
-    SELECT u.id AS user_id, u.email AS email, ur.name AS name,
+    SELECT u.id AS user_id, u.email AS username, ur.name AS name, u.division AS division,
            r.id AS region_id, r.code AS region_code, r.name_th AS region_name_th,
            r.level AS region_level, r.path::text AS region_path
     FROM "user" u
@@ -34,17 +34,14 @@ _DISPATCHERS_SQL = """
 """
 
 
-def _valid_email(email: str) -> bool:
-    return "@" in email and "." in email
-
-
 async def _fetch_dispatchers(session) -> list[dict]:
     rows = await session.execute(text(_DISPATCHERS_SQL))
     return [
         {
             "user_id": str(m["user_id"]),
-            "email": m["email"],
+            "username": m["username"],
             "name": m["name"],
+            "division": m["division"],
             "region_id": str(m["region_id"]),
             "region_code": m["region_code"],
             "region_name_th": m["region_name_th"],
@@ -76,13 +73,14 @@ async def handle_create_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         await ws.send_json({"type": "error", "code": "forbidden"})
         return
 
-    email = (data.get("email") or "").strip().lower()
+    username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     name = (data.get("name") or "").strip() or None
+    division = (data.get("division") or "").strip() or None
     region_id_raw = data.get("region_id")
 
-    if not _valid_email(email):
-        await ws.send_json({"type": "error", "code": "invalid_email"})
+    if not valid_username(username):
+        await ws.send_json({"type": "error", "code": "invalid_username"})
         return
     if len(password) < _MIN_PASSWORD_LEN:
         await ws.send_json({"type": "error", "code": "weak_password"})
@@ -103,11 +101,12 @@ async def handle_create_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         manager = UserManager(user_db)
         try:
             new_user = await manager.create(
-                UserCreate(email=email, password=password, is_superuser=False, is_verified=True),
+                UserCreate(email=username, password=password, is_superuser=False,
+                           is_verified=True, division=division),
                 safe=False,
             )
         except UserAlreadyExists:
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
         except InvalidPasswordException:
             await ws.send_json({"type": "error", "code": "weak_password"})
@@ -118,12 +117,13 @@ async def handle_create_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         )
         audit(session, actor=actor, action="dispatcher.create", entity_type="user",
               entity_id=str(new_user.id),
-              detail={"email": email, "name": name, "region_path": str(region.path)})
+              detail={"username": username, "name": name, "division": division,
+                      "region_path": str(region.path)})
         try:
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
 
     logger.info("dispatcher created user=%s by superuser=%s", new_user.id, actor.id)
@@ -143,7 +143,8 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         return
 
     new_name = (data.get("name") or "").strip() or None if "name" in data else None
-    new_email = ((data.get("email") or "").strip().lower() or None) if "email" in data else None
+    new_username = ((data.get("username") or "").strip() or None) if "username" in data else None
+    new_division = ((data.get("division") or "").strip() or None) if "division" in data else None
     new_password = data.get("password") or None
     region_id_raw = data.get("region_id")
     new_region_id = None
@@ -154,11 +155,12 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
             await ws.send_json({"type": "error", "code": "invalid_region"})
             return
 
-    if new_name is None and new_email is None and new_password is None and new_region_id is None:
+    if (new_name is None and new_username is None and new_password is None
+            and new_region_id is None and "division" not in data):
         await ws.send_json({"type": "error", "code": "nothing_to_update"})
         return
-    if new_email is not None and not _valid_email(new_email):
-        await ws.send_json({"type": "error", "code": "invalid_email"})
+    if new_username is not None and not valid_username(new_username):
+        await ws.send_json({"type": "error", "code": "invalid_username"})
         return
     if new_password is not None and len(new_password) < _MIN_PASSWORD_LEN:
         await ws.send_json({"type": "error", "code": "weak_password"})
@@ -193,10 +195,13 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
                 return
             changes["region_path"] = str(new_region.path)
 
-        if new_email is not None and new_email != target.email:
-            changes["email"] = new_email
-            changes["previous_email"] = target.email
-            target.email = new_email
+        if new_username is not None and new_username != target.email:
+            changes["username"] = new_username
+            changes["previous_username"] = target.email
+            target.email = new_username
+        if "division" in data and new_division != target.division:
+            changes["division"] = new_division
+            target.division = new_division
         if new_password is not None:
             # record only that a reset happened — never the secret itself
             target.hashed_password = _password_helper.hash(new_password)
@@ -225,7 +230,7 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
 
     logger.info("dispatcher updated user=%s by superuser=%s changes=%s",
@@ -268,7 +273,7 @@ async def handle_delete_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
 
         audit(session, actor=actor, action="dispatcher.delete", entity_type="user",
               entity_id=str(user_id),
-              detail={"email": target.email, "name": user_region.name,
+              detail={"username": target.email, "name": user_region.name,
                       "region_path": str(region_path)})
         await session.delete(target)
         await session.commit()

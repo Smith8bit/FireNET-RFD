@@ -23,15 +23,17 @@ export default function DispatchersTab() {
   // create form (collapsed behind a toggle until the superuser wants to add one)
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [newEmail, setNewEmail] = useState('')
+  const [newUsername, setNewUsername] = useState('')
   const [newName, setNewName] = useState('')
+  const [newDivision, setNewDivision] = useState('') // สังกัด
   const [newPassword, setNewPassword] = useState('')
   const [newRegion, setNewRegion] = useState('') // Region.id
 
   // inline edit
   const [editingId, setEditingId] = useState(null) // dispatcher user_id
   const [editName, setEditName] = useState('')
-  const [editEmail, setEditEmail] = useState('')
+  const [editDivision, setEditDivision] = useState('') // สังกัด
+  const [editUsername, setEditUsername] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editRegion, setEditRegion] = useState('')
   const [savingId, setSavingId] = useState(null)
@@ -47,7 +49,7 @@ export default function DispatchersTab() {
   useMessageEffect(createdMsg, () => {
     setCreating(false)
     setShowCreate(false)
-    setNewEmail(''); setNewName(''); setNewPassword(''); setNewRegion('')
+    setNewUsername(''); setNewName(''); setNewDivision(''); setNewPassword(''); setNewRegion('')
     toast.success('สร้างผู้ควบคุมสำเร็จ')
   })
 
@@ -93,27 +95,28 @@ export default function DispatchersTab() {
     e.preventDefault()
     if (!newRegion) { toast.error(ERROR_MESSAGES.invalid_region); return }
     setCreating(true)
-    send({ type: 'create_dispatcher', email: newEmail, password: newPassword, name: newName, region_id: newRegion })
+    send({ type: 'create_dispatcher', username: newUsername, password: newPassword, name: newName, division: newDivision, region_id: newRegion })
   }
 
   const startEdit = (d) => {
     setEditingId(d.user_id)
     setEditName(d.name ?? '')
-    setEditEmail(d.email ?? '')
+    setEditDivision(d.division ?? '')
+    setEditUsername(d.username ?? '')
     setEditPassword('')
     setEditRegion(d.region_id ?? '')
   }
 
   const saveEdit = (d) => {
     setSavingId(d.user_id)
-    const payload = { type: 'update_dispatcher', user_id: d.user_id, name: editName, email: editEmail }
+    const payload = { type: 'update_dispatcher', user_id: d.user_id, name: editName, username: editUsername, division: editDivision }
     if (editRegion) payload.region_id = editRegion
     if (editPassword) payload.password = editPassword
     send(payload)
   }
 
   const removeDispatcher = (d) => {
-    if (!window.confirm(`ลบผู้ควบคุม ${d.name ?? d.email}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
+    if (!window.confirm(`ลบผู้ควบคุม ${d.name ?? d.username}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
     setDeletingId(d.user_id)
     send({ type: 'delete_dispatcher', user_id: d.user_id })
   }
@@ -138,10 +141,10 @@ export default function DispatchersTab() {
       {showCreate && (
       <form onSubmit={createDispatcher} className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 space-y-2">
         <input
-          type="email"
-          value={newEmail}
-          onChange={(e) => setNewEmail(e.target.value)}
-          placeholder="อีเมล"
+          type="text"
+          value={newUsername}
+          onChange={(e) => setNewUsername(e.target.value)}
+          placeholder="ชื่อผู้ใช้"
           autoComplete="off"
           required
           className={INPUT_CLS}
@@ -151,6 +154,13 @@ export default function DispatchersTab() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="ชื่อผู้ควบคุม"
+          className={INPUT_CLS}
+        />
+        <input
+          type="text"
+          value={newDivision}
+          onChange={(e) => setNewDivision(e.target.value)}
+          placeholder="สังกัด"
           className={INPUT_CLS}
         />
         <select
@@ -197,10 +207,10 @@ export default function DispatchersTab() {
                     {editingId === d.user_id ? (
                       <div className="space-y-2">
                         <input
-                          type="email"
-                          value={editEmail}
-                          onChange={(e) => setEditEmail(e.target.value)}
-                          placeholder="อีเมล"
+                          type="text"
+                          value={editUsername}
+                          onChange={(e) => setEditUsername(e.target.value)}
+                          placeholder="ชื่อผู้ใช้"
                           autoComplete="off"
                           className={INPUT_CLS}
                         />
@@ -209,6 +219,13 @@ export default function DispatchersTab() {
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           placeholder="ชื่อผู้ควบคุม"
+                          className={INPUT_CLS}
+                        />
+                        <input
+                          type="text"
+                          value={editDivision}
+                          onChange={(e) => setEditDivision(e.target.value)}
+                          placeholder="สังกัด"
                           className={INPUT_CLS}
                         />
                         <select
@@ -259,8 +276,9 @@ export default function DispatchersTab() {
                     ) : (
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-medium">{d.name ?? d.email}</p>
-                          <p className="text-sm text-gray-500">{d.email}</p>
+                          <p className="font-medium">{d.name ?? d.username}</p>
+                          <p className="text-sm text-gray-500">{d.username}</p>
+                          {d.division && <p className="text-sm text-gray-500">สังกัด: {d.division}</p>}
                           <p className="text-sm text-gray-500">{d.region_name_th} ({REGION_LEVEL_TH[d.region_level] ?? d.region_level})</p>
                         </div>
                         <button

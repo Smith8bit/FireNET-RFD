@@ -22,6 +22,7 @@ from ..database.models import (
 from ..db_control.audit import audit
 from ..db_control.permission import can_manage_officers, is_admin_user, user_region_paths
 from ..db_control.push import send_push
+from ..database.schemas import valid_username
 from .manager import fanout, group_by_scope
 
 settings = get_settings()
@@ -30,7 +31,7 @@ _password_helper = PasswordHelper()
 _MIN_PASSWORD_LEN = 8
 
 _PENDING_SQL = """
-    SELECT u.id AS user_id, u.email AS email, ur.name AS name,
+    SELECT u.id AS user_id, u.email AS username, ur.name AS name, u.division AS division,
            r.name_th AS province_name_th, r.path::text AS province_path
     FROM "user" u
     JOIN user_regions ur ON ur.user_id = u.id AND ur.role = 'field_officer'
@@ -39,7 +40,7 @@ _PENDING_SQL = """
 """
 
 _OFFICERS_SQL = """
-    SELECT fo.id AS field_officer_id, fo.user_id, fo.name, u.email,
+    SELECT fo.id AS field_officer_id, fo.user_id, fo.name, u.email AS username, u.division AS division,
            (fo.active AND fo.last_updated > now() - make_interval(mins => :ttl)) AS active,
            fo.fire_id::text AS fire_id,
            fo.last_updated::text AS last_updated,
@@ -87,7 +88,8 @@ async def _fetch_officers(session, user: User, *, limit: int | None = None) -> l
             "field_officer_id": str(m["field_officer_id"]),
             "user_id": str(m["user_id"]),
             "name": m["name"],
-            "email": m["email"],
+            "username": m["username"],
+            "division": m["division"],
             "active": m["active"],
             "fire_id": m["fire_id"],
             "last_updated": m["last_updated"],
@@ -118,8 +120,9 @@ async def handle_list_pending(ws: WebSocket, user: User) -> None:
         officers = [
             {
                 "user_id": str(m["user_id"]),
-                "email": m["email"],
+                "username": m["username"],
                 "name": m["name"],
+                "division": m["division"],
                 "province_name_th": m["province_name_th"],
                 "province_path": m["province_path"],
             }
@@ -139,7 +142,7 @@ async def _fetch_region_requests(session, user: User) -> list[dict]:
             RegionChangeRequest.user_id,
             RegionChangeRequest.created_at,
             UserRegion.name.label("officer_name"),
-            User.email,
+            User.email.label("username"),
             cur.name_th.label("current_province"),
             dest.name_th.label("requested_province"),
         )
@@ -165,7 +168,7 @@ async def _fetch_region_requests(session, user: User) -> list[dict]:
             "request_id": str(r.id),
             "user_id": str(r.user_id),
             "officer_name": r.officer_name,
-            "email": r.email,
+            "username": r.username,
             "current_province": r.current_province,
             "requested_province": r.requested_province,
             "created_at": r.created_at.isoformat(),
@@ -384,7 +387,7 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
-              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
     logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
@@ -413,13 +416,15 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
         return
     new_name = (data.get("name") or "").strip() or None if "name" in data else None
     province_code = (data.get("province_code") or "").strip() or None
-    new_email = ((data.get("email") or "").strip().lower() or None) if "email" in data else None
+    new_username = ((data.get("username") or "").strip() or None) if "username" in data else None
     new_password = data.get("password") or None
-    if new_name is None and province_code is None and new_email is None and new_password is None:
+    new_division = ((data.get("division") or "").strip() or None) if "division" in data else None
+    if (new_name is None and province_code is None and new_username is None
+            and new_password is None and "division" not in data):
         await ws.send_json({"type": "error", "code": "nothing_to_update"})
         return
-    if new_email is not None and ("@" not in new_email or "." not in new_email):
-        await ws.send_json({"type": "error", "code": "invalid_email"})
+    if new_username is not None and not valid_username(new_username):
+        await ws.send_json({"type": "error", "code": "invalid_username"})
         return
     if new_password is not None and len(new_password) < _MIN_PASSWORD_LEN:
         await ws.send_json({"type": "error", "code": "weak_password"})
@@ -476,10 +481,13 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
                 ur_values["region_id"] = province.id
 
         # login credentials live on the user row, not the region assignment
-        if new_email is not None and new_email != target.email:
-            changes["email"] = new_email
-            changes["previous_email"] = target.email
-            target.email = new_email
+        if new_username is not None and new_username != target.email:
+            changes["username"] = new_username
+            changes["previous_username"] = target.email
+            target.email = new_username
+        if "division" in data and new_division != target.division:
+            changes["division"] = new_division
+            target.division = new_division
         if new_password is not None:
             # never record the secret itself — only that a reset happened, and whose
             target.hashed_password = _password_helper.hash(new_password)
@@ -510,10 +518,10 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
 
-    # keys only: values may hold Thai text / the new email, which we keep out of logs
+    # keys only: values may hold Thai text / the new username, which we keep out of logs
     logger.info("officer updated user=%s by admin=%s changes=%s", user_id, admin.id, sorted(changes))
     await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
     await broadcast_admin_refresh(active_connections, include_pending=True)
@@ -562,7 +570,7 @@ async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_c
         # capture attribution before the rows are gone
         audit(session, actor=admin, action="officer.delete", entity_type="officer",
               entity_id=str(user_id),
-              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
         # FieldOfficer must go before the user (NOT NULL user_id with SET NULL FK)
         await session.execute(delete(FieldOfficer).where(FieldOfficer.user_id == user_id))
         await session.delete(target)

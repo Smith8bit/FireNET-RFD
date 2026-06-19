@@ -1,18 +1,34 @@
+import re
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi_users import schemas
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+# Login identity is a free-form username, not an email. fastapi-users hardwires the
+# identity column/field name to `email`, so we keep that name internally (it never
+# surfaces to users) but accept a plain username: letters + digits, 3–32 chars.
+Username = Annotated[str, StringConstraints(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9]+$")]
+
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9]{3,32}$")
+
+
+def valid_username(value: str | None) -> bool:
+    """Same rule as the Username type, for hand-rolled WS validation (no pydantic there)."""
+    return bool(_USERNAME_RE.match(value or ""))
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
-    pass
+    email: str  # username value; relax BaseUser's EmailStr so non-emails read back
+    division: str | None = None  # สังกัด
 
 class UserCreate(schemas.BaseUserCreate):
-    pass
+    email: Username
+    division: str | None = None
 
 class UserUpdate(schemas.BaseUserUpdate):
-    pass
+    email: Username | None = None
+    division: str | None = None
 
 
 class RegionRead(BaseModel):
@@ -61,14 +77,16 @@ class ProvinceRead(BaseModel):
         from_attributes = True
 
 class OfficerRegister(BaseModel):
-    email: EmailStr
+    username: Username
     password: str = Field(min_length=8, max_length=128)
     province_code: str = Field(max_length=32)  # stable Region.code (e.g. "p50")
     name: str | None = Field(default=None, max_length=120)
+    division: str | None = Field(default=None, max_length=120)  # สังกัด
 
 
 class OfficerProfileUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    division: str | None = Field(default=None, max_length=120)  # สังกัด
 
 
 class RegionChangeCreate(BaseModel):

@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     COOKIE_MAX_AGE: int = 86400
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-    INITIAL_SUPERUSER_EMAIL: str = "admin@forest.com"
+    INITIAL_SUPERUSER_USERNAME: str = "adminRFD"
     # No default: the bootstrap superuser password must come from the environment.
     INITIAL_SUPERUSER_PASSWORD: str
     # Provision a real dispatcher account per regional office / province at startup

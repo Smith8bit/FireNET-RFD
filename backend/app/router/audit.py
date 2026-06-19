@@ -14,7 +14,7 @@ router = APIRouter()
 # regional scoping deferred — the trail is superuser-only for now
 @router.get("")
 async def list_audit(
-    actor: str | None = Query(None, description="actor email substring"),
+    actor: str | None = Query(None, description="actor username substring"),
     action: str | None = None,
     entity_type: str | None = None,
     entity_id: str | None = None,
@@ -59,7 +59,7 @@ async def list_audit(
                 "id": str(r.id),
                 "at": r.at.isoformat(),
                 "actor_id": str(r.actor_id) if r.actor_id else None,
-                "actor_email": r.actor_email,
+                "actor_username": r.actor_email,
                 "action": r.action,
                 "entity_type": r.entity_type,
                 "entity_id": r.entity_id,

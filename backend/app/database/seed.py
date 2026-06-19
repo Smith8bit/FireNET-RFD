@@ -22,9 +22,9 @@ FIXTURE = Path(__file__).parent / "seedbag" / "regions_info.json"
 _ACCOUNTS_CSV = Path(__file__).resolve().parents[3] / "seeded_accounts.csv"
 
 
-def _email_local(value: str) -> str:
-    """Local-part from a code or name: lowercased, alphanumeric only (drops
-    spaces and any special characters so the address is always valid)."""
+def _username_from(value: str) -> str:
+    """Username from a code or name: lowercased, letters+digits only (drops
+    spaces and any special characters so it always passes username validation)."""
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
@@ -42,7 +42,7 @@ def _write_accounts_csv(accounts: list[dict]) -> None:
     if not accounts:
         print("[seed] no new accounts created; credentials CSV left unchanged")
         return
-    fields = ["email", "password", "role", "scope", "name"]
+    fields = ["username", "password", "role", "scope", "name"]
     with _ACCOUNTS_CSV.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
@@ -124,16 +124,17 @@ async def seed_superuser() -> None:
         try:
             user = await manager.create(
                 UserCreate(
-                    email=settings.INITIAL_SUPERUSER_EMAIL,
+                    email=settings.INITIAL_SUPERUSER_USERNAME,
                     password=settings.INITIAL_SUPERUSER_PASSWORD,
                     is_superuser=True,
                     is_verified=True,
+                    division="กรมป่าไม้",
                 ),
                 safe=False,
             )
-            print(f"[seed] created superuser {settings.INITIAL_SUPERUSER_EMAIL}")
+            print(f"[seed] created superuser {settings.INITIAL_SUPERUSER_USERNAME}")
         except UserAlreadyExists:
-            result = await session.execute(select(User).where(User.email == settings.INITIAL_SUPERUSER_EMAIL))
+            result = await session.execute(select(User).where(User.email == settings.INITIAL_SUPERUSER_USERNAME))
             user = result.scalar_one()
 
         national = (
@@ -152,7 +153,7 @@ async def seed_superuser() -> None:
 
 async def seed_regional_users() -> list[dict]:
     """Provision one real dispatcher account per regional office.
-    Email: {code without special chars}@regional.go.th, random password.
+    Username: {code without special chars}, random password.
     Returns the newly created accounts (with plaintext passwords) for the CSV."""
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     created: list[dict] = []
@@ -160,18 +161,18 @@ async def seed_regional_users() -> list[dict]:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
         for ro in data["regional"]:
-            email = f"{_email_local(ro['code'])}@regional.go.th"
+            username = _username_from(ro['code'])
             password = _new_password()
             try:
                 user = await manager.create(
-                    UserCreate(email=email, password=password, is_superuser=False, is_verified=True),
+                    UserCreate(email=username, password=password, is_superuser=False, is_verified=True),
                     safe=False,
                 )
-                created.append({"email": email, "password": password, "role": "dispatcher",
+                created.append({"username": username, "password": password, "role": "dispatcher",
                                 "scope": ro["code"], "name": ro["name_en"]})
-                print(f"[seed] created regional user {email}")
+                print(f"[seed] created regional user {username}")
             except UserAlreadyExists:
-                result = await session.execute(select(User).where(User.email == email))
+                result = await session.execute(select(User).where(User.email == username))
                 user = result.scalar_one()
 
             region = (
@@ -185,13 +186,13 @@ async def seed_regional_users() -> list[dict]:
             if not existing:
                 session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher", name=ro["name_en"]))
                 await session.commit()
-                print(f"[seed] assigned {email} → {ro['code']}")
+                print(f"[seed] assigned {username} → {ro['code']}")
     return created
 
 
 async def seed_province_users() -> list[dict]:
     """Provision one real dispatcher account per province.
-    Email: {name_en without spaces}@province.go.th, random password.
+    Username: {name_en without spaces/special chars}, random password.
     Returns the newly created accounts (with plaintext passwords) for the CSV."""
     created: list[dict] = []
     async with async_session_maker() as session:
@@ -204,26 +205,26 @@ async def seed_province_users() -> list[dict]:
 
         settings = get_settings()
         for region in province_regions:
-            email = f"{_email_local(region.name_en)}@province.go.th"
+            username = _username_from(region.name_en)
             password = _new_password()
 
             try:
                 user = await manager.create(
-                    UserCreate(email=email, password=password, is_superuser=False, is_verified=True),
+                    UserCreate(email=username, password=password, is_superuser=False, is_verified=True),
                     safe=False,
                 )
-                created.append({"email": email, "password": password, "role": "dispatcher",
+                created.append({"username": username, "password": password, "role": "dispatcher",
                                 "scope": region.code, "name": region.name_en})
-                print(f"[seed] created province user {email}")
+                print(f"[seed] created province user {username}")
             except UserAlreadyExists:
-                result = await session.execute(select(User).where(User.email == email))
+                result = await session.execute(select(User).where(User.email == username))
                 user = result.scalar_one()
 
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
                 session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher", name=region.name_en))
                 await session.commit()
-                print(f"[seed] assigned {email} → {region.code}")
+                print(f"[seed] assigned {username} → {region.code}")
     return created
 
 

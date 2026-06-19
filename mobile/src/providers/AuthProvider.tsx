@@ -5,7 +5,8 @@ import { registerPushToken, unregisterPushToken } from '@/lib/push'
 
 export type AuthUser = {
   id: string
-  email: string
+  username: string
+  division: string | null
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
@@ -18,8 +19,8 @@ export type Province = { id: string; code: string; name_th: string; name_en: str
 type AuthContextType = {
   user: AuthUser | null
   isLoading: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, provinceId: string, name: string) => Promise<void>
+  signIn: (username: string, password: string) => Promise<void>
+  signUp: (username: string, password: string, provinceId: string, name: string, division: string) => Promise<void>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -80,15 +81,15 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     })()
   }, [])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const body = `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
+  const signIn = useCallback(async (username: string, password: string) => {
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
     try {
       const res = await api.post<{ access_token: string }>('/auth/jwt/login', body, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
       await setToken(res.data.access_token)
     } catch {
-      throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+      throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
     }
     const me = await fetchMe()
     if (me && !me.is_field_officer) {
@@ -102,13 +103,13 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     router.replace('/') // guard sends unverified users to /Pending
   }, [])
 
-  const signUp = useCallback(async (email: string, password: string, provinceCode: string, name: string) => {
+  const signUp = useCallback(async (username: string, password: string, provinceCode: string, name: string, division: string) => {
     try {
-      await api.post('/officers/register', { email, password, province_code: provinceCode, name })
+      await api.post('/officers/register', { username, password, province_code: provinceCode, name, division })
     } catch (e: any) {
       let detail = 'สมัครสมาชิกไม่สำเร็จ'
       const d = e?.response?.data
-      if (d?.detail === 'REGISTER_USER_ALREADY_EXISTS') detail = 'อีเมลนี้ถูกใช้งานแล้ว'
+      if (d?.detail === 'REGISTER_USER_ALREADY_EXISTS') detail = 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว'
       else if (typeof d?.detail === 'string') detail = d.detail
       throw new Error(detail)
     }

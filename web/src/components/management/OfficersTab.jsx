@@ -5,7 +5,7 @@ import { useMessageEffect } from '../../functions/useMessageEffect'
 import { API_URL, INPUT_CLS, SELECT_CLS, errorText } from './shared'
 
 // Verified field officers within the admin's scope, with inline edit (name,
-// province, login email/password) and delete.
+// province, login username/password) and delete.
 export default function OfficersTab() {
   const send = useSocketStore((s) => s.send)
   const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
@@ -17,8 +17,9 @@ export default function OfficersTab() {
   const [provinces, setProvinces] = useState(null) // null = not loaded yet
   const [editingId, setEditingId] = useState(null) // user_id being edited
   const [editName, setEditName] = useState('')
+  const [editDivision, setEditDivision] = useState('') // สังกัด
   const [editProvince, setEditProvince] = useState('') // Region.code
-  const [editEmail, setEditEmail] = useState('')
+  const [editUsername, setEditUsername] = useState('')
   const [editPassword, setEditPassword] = useState('') // blank = keep current
   const [savingId, setSavingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
@@ -70,21 +71,22 @@ export default function OfficersTab() {
   const startEdit = (o) => {
     setEditingId(o.user_id)
     setEditName(o.name ?? '')
+    setEditDivision(o.division ?? '')
     setEditProvince((provinces ?? []).find((p) => p.path === o.province_path)?.code ?? '')
-    setEditEmail(o.email ?? '')
+    setEditUsername(o.username ?? '')
     setEditPassword('')
   }
 
   const saveEdit = (o) => {
     setSavingId(o.user_id)
-    const payload = { type: 'update_officer', user_id: o.user_id, name: editName, email: editEmail }
+    const payload = { type: 'update_officer', user_id: o.user_id, name: editName, username: editUsername, division: editDivision }
     if (editProvince) payload.province_code = editProvince
     if (editPassword) payload.password = editPassword
     send(payload)
   }
 
   const removeOfficer = (o) => {
-    if (!window.confirm(`ลบเจ้าหน้าที่ ${o.name ?? o.email}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
+    if (!window.confirm(`ลบเจ้าหน้าที่ ${o.name ?? o.username}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
     setDeletingId(o.user_id)
     send({ type: 'delete_officer', user_id: o.user_id })
   }
@@ -103,10 +105,10 @@ export default function OfficersTab() {
                   {editingId === o.user_id ? (
                     <div className="space-y-2">
                       <input
-                        type="email"
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        placeholder="อีเมล"
+                        type="text"
+                        value={editUsername}
+                        onChange={(e) => setEditUsername(e.target.value)}
+                        placeholder="ชื่อผู้ใช้"
                         autoComplete="off"
                         className={INPUT_CLS}
                       />
@@ -115,6 +117,13 @@ export default function OfficersTab() {
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         placeholder="ชื่อเจ้าหน้าที่"
+                        className={INPUT_CLS}
+                      />
+                      <input
+                        type="text"
+                        value={editDivision}
+                        onChange={(e) => setEditDivision(e.target.value)}
+                        placeholder="สังกัด"
                         className={INPUT_CLS}
                       />
                       <select
@@ -166,8 +175,9 @@ export default function OfficersTab() {
                   ) : (
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium">{o.name ?? o.email}</p>
-                        <p className="text-sm text-gray-500">{o.email}</p>
+                        <p className="font-medium">{o.name ?? o.username}</p>
+                        <p className="text-sm text-gray-500">{o.username}</p>
+                        {o.division && <p className="text-sm text-gray-500">สังกัด: {o.division}</p>}
                         <p className="text-sm text-gray-500">{o.province_name_th}</p>
                       </div>
                       <div className="flex items-center gap-2">

@@ -75,11 +75,12 @@ function summarize(item, names = {}) {
     case 'officer.delete':
     case 'dispatcher.create':
     case 'dispatcher.delete':
-      return [d.name, d.email].filter(Boolean).join(' · ')
+      return [d.name, d.username, d.division].filter(Boolean).join(' · ')
     case 'dispatcher.update': {
       const parts = []
       if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
-      if (d.email) parts.push(`เปลี่ยนอีเมล: ${d.previous_email ? `${d.previous_email} → ` : ''}${d.email}`)
+      if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
+      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.division ?? '—'}`)
       if (d.region_path) parts.push(`ย้ายพื้นที่: ${provName(names, d.region_path)}`)
       if (d.password_changed) parts.push('รีเซ็ตรหัสผ่าน')
       return parts.join('\n')
@@ -87,7 +88,8 @@ function summarize(item, names = {}) {
     case 'officer.update': {
       const parts = []
       if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
-      if (d.email) parts.push(`เปลี่ยนอีเมล: ${d.previous_email ? `${d.previous_email} → ` : ''}${d.email}`)
+      if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
+      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.division ?? '—'}`)
       if (d.province_path) parts.push(`ย้ายไป: ${d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''}${provName(names, d.province_path)}`)
       if (d.password_changed) parts.push(`รีเซ็ตรหัสผ่าน${d.officer_name ? `: ${d.officer_name}` : ''}`)
       return parts.join('\n')
@@ -199,7 +201,7 @@ export default function AuditTrail() {
             value={actorInput}
             onChange={(e) => setActorInput(e.target.value)}
             onBlur={() => { setActor(actorInput.trim()); setPage(0) }}
-            placeholder="ค้นหาด้วยอีเมลผู้กระทำ…"
+            placeholder="ค้นหาด้วยชื่อผู้ใช้ผู้กระทำ…"
             className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
           />
         </form>
@@ -244,7 +246,7 @@ export default function AuditTrail() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 align-top text-gray-600 break-all">
-                    {item.actor_email === 'system' ? 'ระบบ' : item.actor_email}
+                    {item.actor_username === 'system' ? 'ระบบ' : item.actor_username}
                   </td>
                   <td className="px-3 py-2.5 align-top text-gray-700 whitespace-pre-line wrap-break-word">
                     {summarize(item, provinceNames) || '—'}

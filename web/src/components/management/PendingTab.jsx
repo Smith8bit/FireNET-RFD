@@ -82,8 +82,9 @@ export default function PendingTab({ onCount }) {
             {(officers ?? []).map((o) => (
               <li key={o.user_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
                 <div>
-                  <p className="font-medium">{o.name ?? o.email}</p>
-                  <p className="text-sm text-gray-500">{o.email}</p>
+                  <p className="font-medium">{o.name ?? o.username}</p>
+                  <p className="text-sm text-gray-500">{o.username}</p>
+                  {o.division && <p className="text-sm text-gray-500">สังกัด: {o.division}</p>}
                   <p className="text-sm text-gray-500">{o.province_name_th}</p>
                 </div>
                 <button
@@ -111,8 +112,8 @@ export default function PendingTab({ onCount }) {
             {(requests ?? []).map((r) => (
               <li key={r.request_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
                 <div>
-                  <p className="font-medium">{r.officer_name ?? r.email}</p>
-                  <p className="text-sm text-gray-500">{r.email}</p>
+                  <p className="font-medium">{r.officer_name ?? r.username}</p>
+                  <p className="text-sm text-gray-500">{r.username}</p>
                   <p className="text-sm text-gray-500">{r.current_province} → {r.requested_province}</p>
                 </div>
                 <div className="flex gap-2">
