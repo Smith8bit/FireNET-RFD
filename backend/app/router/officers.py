@@ -326,7 +326,7 @@ async def resolve_my_fire(
         print(f"[resolve] evidence upload failed: {exc}")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "evidence storage unavailable")
 
-    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, note=note or None)
+    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None)
     session.add(resolution)
     await session.flush()
     for (key, data, content_type), point in zip(prepared, gps):
@@ -396,7 +396,7 @@ async def false_report_my_fire(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
 
     # records who reported it false and why; no images, unlike a real resolution
-    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, note=note or None)
+    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None)
     session.add(resolution)
     await session.flush()
     fo.fire_id = None

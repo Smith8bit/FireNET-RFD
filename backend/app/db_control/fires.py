@@ -189,12 +189,14 @@ async def get_fires(
             Firespot.detected_at,
             Firespot.status,
             Firespot.expired,
+            Firespot.false_alarm,
             Firespot.resolve_time,
             Firespot.location,
             Region.path.label("region_path"),
             FieldOfficer.id.label("holder_id"),
             FieldOfficer.name.label("holder_name"),
             ResolverOfficer.name.label("resolver_name"),
+            FireResolution.officer_name.label("resolution_officer_name"),
         ).join(Region, Firespot.region_id == Region.id).outerjoin(
             FieldOfficer, FieldOfficer.fire_id == Firespot.id
         ).outerjoin(
@@ -238,10 +240,12 @@ async def get_fires(
                 "detected_at": row.detected_at.isoformat(),
                 "status": row.status,
                 "expired": row.expired,
+                "false_alarm": row.false_alarm,
                 "booked": row.holder_id is not None,
                 "holder_id": str(row.holder_id) if row.holder_id else None,
                 # live holder (booked) or, for a resolved fire, whoever resolved it
-                "holder_name": row.holder_name or row.resolver_name,
+                # (resolution_officer_name keeps attribution after the officer is deleted)
+                "holder_name": row.holder_name or row.resolver_name or row.resolution_officer_name,
                 "lat": pt.y,
                 "lng": pt.x,
                 # ltree region path — lets the ws layer route per-fire deltas to the
@@ -277,7 +281,8 @@ async def get_resolution_history(
                 FireResolution.id.label("resolution_id"),
                 FireResolution.note,
                 FireResolution.created_at.label("resolved_at"),
-                FieldOfficer.name.label("officer_name"),
+                # live name for an existing officer; denormalized snapshot once deleted
+                func.coalesce(FieldOfficer.name, FireResolution.officer_name).label("officer_name"),
             )
             .join(Region, Firespot.region_id == Region.id)
             .join(FireResolution, FireResolution.fire_id == Firespot.id)
