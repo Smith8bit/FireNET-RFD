@@ -16,6 +16,7 @@ export type Fire = {
   expired?: boolean // status was set by auto-expiry, not an officer
   false_alarm?: boolean // closed as a false detection (no real fire), no photo evidence
   booked: boolean
+  appointed?: boolean // dispatcher-assigned (vs self-reserved); officer can't self-cancel
   detected_at: string
   tumboon: string | null
   aumper: string | null
@@ -33,6 +34,7 @@ type FireState = {
   loadFires: () => Promise<void>
   selectFire: (id: string | null) => void
   reserveFire: (fire: Fire) => Promise<void>
+  cancelReservation: () => Promise<void>
   resolveFire: (note: string, photos: ResolvePhoto[]) => Promise<void>
   reportFalseFire: (note: string) => Promise<void>
   loadReservedFire: () => Promise<void>
@@ -82,6 +84,21 @@ export const useFireStore = create<FireState>((set, get) => ({
         throw new Error('ไฟนี้ถูกเจ้าหน้าที่ท่านอื่นจองแล้ว')
       }
       throw new Error('ไม่สามารถจองไฟนี้ได้ กรุณาลองใหม่อีกครั้ง')
+    }
+  },
+
+  // release a self-reserved fire (จอง → ยกเลิก). A dispatcher-appointed fire is
+  // rejected by the backend (403) — only a dispatcher can cancel that.
+  cancelReservation: async () => {
+    try {
+      await api.patch('/officers/me/fire', { fire_id: null })
+      set({ reservedFire: null })
+      get().loadFires() // refresh booked flags for the list
+    } catch (e) {
+      if (axios.isAxiosError(e) && e.response?.status === 403) {
+        throw new Error('ไฟนี้ผู้ควบคุมเป็นผู้มอบหมาย ต้องให้ผู้ควบคุมยกเลิกเท่านั้น')
+      }
+      throw new Error('ไม่สามารถยกเลิกการจองได้ กรุณาลองใหม่อีกครั้ง')
     }
   },
 

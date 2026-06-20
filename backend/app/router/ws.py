@@ -14,6 +14,7 @@ from ..ws.dispatcher_handlers import (
 )
 from ..ws.officer_handlers import (
     handle_appoint_officer,
+    handle_cancel_booking,
     handle_decide_region_request,
     handle_delete_officer,
     handle_list_officers,
@@ -67,6 +68,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     await handle_delete_officer(ws, user, data, manager.active)
                 case "appoint_officer":
                     await handle_appoint_officer(ws, user, data, manager.active)
+                case "cancel_booking":
+                    await handle_cancel_booking(ws, user, data, manager.active)
                 case "list_dispatchers":
                     await handle_list_dispatchers(ws, user)
                 case "create_dispatcher":

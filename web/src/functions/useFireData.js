@@ -4,7 +4,7 @@ import { useSocketStore } from './stateStore'
 function normalize(raw) {
   return raw.map((f) => ({
     id: f.id,
-    name: `${f.name} ${f.detected_at?.split('T')[0] ?? ''}`.trim(),
+    name: f.name,
     detected_at: f.detected_at,
     date: f.detected_at?.split('T')[0] ?? '',
     time: f.detected_at?.split('T')[1]?.split('+')[0]?.slice(0, 5) ?? '',
@@ -13,6 +13,7 @@ function normalize(raw) {
     expired: f.expired,
     false_alarm: f.false_alarm,
     booked: f.booked,
+    appointed: f.appointed,
     holder_id: f.holder_id,
     holder_name: f.holder_name,
     lat: f.lat,

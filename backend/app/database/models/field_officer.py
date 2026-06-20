@@ -18,6 +18,9 @@ class FieldOfficer(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("user.id", ondelete="SET NULL"), nullable=False)
     fire_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("firespots.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # how the current fire_id was booked: True = a dispatcher appointed it,
+    # False = the officer self-reserved. Drives who may cancel the booking.
+    appointed: Mapped[bool] = mapped_column(default=False, server_default="false")
     active: Mapped[bool] = mapped_column(default=False)
     last_location: Mapped[WKBElement | None] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

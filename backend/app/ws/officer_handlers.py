@@ -22,6 +22,7 @@ from ..database.models import (
 from ..db_control.audit import audit
 from ..db_control.permission import (
     can_manage_officers,
+    has_perm,
     has_perm_anywhere,
     is_admin_user,
     user_region_paths,
@@ -263,6 +264,21 @@ async def handle_decide_region_request(
             await session.rollback()
             await ws.send_json({"type": "error", "code": "conflict"})
             return
+        notify_user_id = req.user_id
+        decided_status = req.status
+        province_name = dest.name_th
+
+    # tell the officer the outcome (best-effort, outside the decision transaction)
+    approved = decided_status == "approved"
+    async with async_session_maker() as session:
+        await send_push(
+            session, notify_user_id,
+            title="อนุมัติคำขอย้ายพื้นที่" if approved else "ปฏิเสธคำขอย้ายพื้นที่",
+            body=(f"คำขอย้ายไปยัง {province_name} ได้รับการอนุมัติแล้ว" if approved
+                  else f"คำขอย้ายไปยัง {province_name} ถูกปฏิเสธ"),
+            data={"type": "region_change", "status": decided_status},
+        )
+        await session.commit()
 
     logger.info("region request %s %s by admin=%s", request_id, req.status, admin.id)
     await ws.send_json({"type": "region_request_decided", "request_id": str(request_id), "status": req.status})
@@ -665,6 +681,7 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
                 return
 
         officer.fire_id = fire_id
+        officer.appointed = True  # dispatcher-assigned (vs. self-reserved)
         audit(session, actor=admin, action="fire.appoint", entity_type="fire",
               entity_id=str(fire_id),
               detail={"officer_id": str(officer_id), "officer_user_id": str(officer.user_id),
@@ -693,3 +710,68 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
     logger.info("fire appointed fire=%s officer=%s by admin=%s", fire_id, officer_id, admin.id)
     await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
                         "officer_id": str(officer_id)})
+
+
+async def handle_cancel_booking(ws: WebSocket, user: User, data: dict, active_connections) -> None:
+    """Release a held (booked, not yet resolved) fire from its officer.
+
+    Who may cancel depends on how it was booked:
+      - self-reserved (officer picked it themselves): any console user.
+      - dispatcher-appointed: only fire.appoint, scoped to the fire's region
+        (the same authority that made the appointment).
+    The pg_listener booking trigger refreshes every client's fire/officer lists;
+    the officer is notified by push."""
+    try:
+        fire_id = uuid.UUID(data["fire_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_request"})
+        return
+
+    notify_user_id = None
+    fire_name = None
+    async with async_session_maker() as session:
+        officer = (
+            await session.execute(select(FieldOfficer).where(FieldOfficer.fire_id == fire_id))
+        ).scalar_one_or_none()
+        if officer is None:
+            await ws.send_json({"type": "error", "code": "not_booked"})
+            return
+
+        fire = await session.get(Firespot, fire_id)
+        fire_name = fire.name if fire is not None else None
+
+        if officer.appointed:
+            # dispatcher-appointed: needs fire.appoint within the fire's region
+            fire_path = None if fire is None else (
+                await session.execute(select(Region.path).where(Region.id == fire.region_id))
+            ).scalar_one_or_none()
+            if fire_path is None or not await has_perm(user, "fire.appoint", fire_path, session):
+                await ws.send_json({"type": "error", "code": "forbidden"})
+                return
+        else:
+            # self-reserved: anyone with console access may cancel
+            if not await is_admin_user(user, session):
+                await ws.send_json({"type": "error", "code": "forbidden"})
+                return
+
+        notify_user_id = officer.user_id
+        officer.fire_id = None
+        officer.appointed = False
+        audit(session, actor=user, action="fire.cancel_booking", entity_type="fire",
+              entity_id=str(fire_id),
+              detail={"officer_id": str(officer.id), "officer_user_id": str(officer.user_id),
+                      "name": fire_name})
+        await session.commit()
+
+    if notify_user_id is not None:
+        async with async_session_maker() as session:
+            await send_push(
+                session, notify_user_id,
+                title="ยกเลิกการมอบหมายงาน",
+                body=f"การมอบหมายไฟ {fire_name} ถูกยกเลิกแล้ว" if fire_name else "การมอบหมายงานถูกยกเลิกแล้ว",
+                data={"type": "fire_cancelled", "fire_id": str(fire_id)},
+            )
+            await session.commit()
+
+    logger.info("fire booking cancelled fire=%s by user=%s", fire_id, user.id)
+    await ws.send_json({"type": "booking_cancelled", "fire_id": str(fire_id)})

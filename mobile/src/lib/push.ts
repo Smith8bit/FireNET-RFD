@@ -63,7 +63,10 @@ async function presentLocal(m: RemoteMessage): Promise<void> {
         body: m.notification?.body ?? '',
         data: m.data ?? {},
       },
-      trigger: null, // null = deliver immediately
+      // deliver immediately; on Android route to the HIGH-importance channel so a
+      // heads-up banner shows over the open app (trigger:null uses the default
+      // channel, which has no heads-up — that's why foreground looked broken)
+      trigger: Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : null,
     })
   } catch {
     // display is best-effort; the in-app refresh still happens via onAppointment
@@ -167,28 +170,37 @@ export async function unregisterPushToken(): Promise<void> {
 export type AppointmentHandler = (fireId: string | null) => void
 
 /**
- * Wire foreground + tap handlers. `onAppointment(fireId)` fires when a
- * fire-appointment notification is received in the foreground or tapped to
- * open the app. Returns an unsubscribe function.
+ * Wire foreground + tap handlers.
+ *  - `onAppointment(fireId)` fires for a fire-appointment notification.
+ *  - `onCancellation(fireId)` fires when a booking is cancelled (dispatcher
+ *    released the fire), so the app can reset the Firespot screen to its default
+ *    (no reserved fire) state.
+ * Both fire whether the message arrives in the foreground or is tapped to open
+ * the app. Returns an unsubscribe function.
  */
-export function setupNotificationHandlers(onAppointment: AppointmentHandler): () => void {
+export function setupNotificationHandlers(
+  onAppointment: AppointmentHandler,
+  onCancellation?: AppointmentHandler,
+): () => void {
   const ctx = getFcm()
   if (!ctx) return () => {}
   const { fcm, messaging } = ctx
 
   void ensureAndroidChannel()
 
-  const isAppointment = (m: RemoteMessage | null | undefined) =>
-    m?.data?.type === 'fire_appointment'
+  const route = (m: RemoteMessage | null | undefined) => {
+    const type = m?.data?.type
+    const fireId = m?.data?.fire_id ?? null
+    if (type === 'fire_appointment') onAppointment(fireId)
+    else if (type === 'fire_cancelled') onCancellation?.(fireId)
+  }
 
   const unsubMessage = fcm.onMessage(messaging, async (m: RemoteMessage) => {
     // foreground: FCM won't show a banner itself, so present one locally
     await presentLocal(m)
-    if (isAppointment(m)) onAppointment(m.data?.fire_id ?? null)
+    route(m)
   })
-  const unsubOpened = fcm.onNotificationOpenedApp(messaging, (m: RemoteMessage) => {
-    if (isAppointment(m)) onAppointment(m.data?.fire_id ?? null)
-  })
+  const unsubOpened = fcm.onNotificationOpenedApp(messaging, (m: RemoteMessage) => route(m))
   const unsubRefresh = fcm.onTokenRefresh(messaging, (token: string) => {
     api.put('/officers/me/push-token', { token, platform: Platform.OS }).catch(() => {})
   })
@@ -196,9 +208,7 @@ export function setupNotificationHandlers(onAppointment: AppointmentHandler): ()
   // app opened from a quit state by tapping the notification
   fcm
     .getInitialNotification(messaging)
-    .then((m: RemoteMessage | null) => {
-      if (isAppointment(m)) onAppointment(m?.data?.fire_id ?? null)
-    })
+    .then((m: RemoteMessage | null) => route(m))
     .catch(() => {})
 
   return () => {

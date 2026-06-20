@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
@@ -49,13 +49,30 @@ def _path_for(feature: dict) -> str:
     province_th = (feature.get("PROVINCE") or "").strip()
     return _PROVINCE_PATH.get(province_th, "th")
 
+def number_new_fires(parsed: list[dict], existing_ext: set[str],
+                     seed_counts: dict[tuple[str, str], int]) -> list[dict]:
+    """Assign '<tumbon> #N' names to fires not already stored, continuing the
+    per-(tumbon, day) count from seed_counts (the day's existing total). Already
+    stored fires (by external_id) are dropped — they keep their original name."""
+    counter: Counter[tuple[str, str]] = Counter(seed_counts)
+    out: list[dict] = []
+    for p in parsed:
+        if p["external_id"] in existing_ext:
+            continue
+        key = (p["tumboon"], p["day"])
+        counter[key] += 1
+        out.append({**p, "name": f"{p['tumboon']} #{counter[key]}"})
+    return out
+
+
 async def _store_fires_to_db(fires: list[dict]) -> None:
     async with async_session_maker() as session:
         result = await session.execute(select(Region.path, Region.id))
         path_to_id = {row.path: row.id for row in result}
 
-        rows: list[dict] = []
-        tumboon_count: Counter[str] = Counter()
+        # First pass: parse + validate. Names are numbered per (tumbon, day) so the
+        # counter continues across the day's ingest runs instead of restarting at #1.
+        parsed: list[dict] = []
         for fire in fires:
             region_id = path_to_id.get(fire["path"])
             if region_id is None:
@@ -78,23 +95,48 @@ async def _store_fires_to_db(fires: list[dict]) -> None:
                     continue
             if detected_at is None:
                 continue
-            tumboon = fire.get("TUMBON", "") or "ไม่ทราบตำบล"
-            tumboon_count[tumboon] += 1
-            # ponytail: per-run counter restarts at #1 each ingest, so names repeat
-            # across runs. Seed the counter from the DB max per tumbon if that bites.
-            name = f"{tumboon} #{tumboon_count[tumboon]}"
-            rows.append(
-                {
-                    "name": name,
-                    "detail": {k: fire[k] for k in ("SATELLITE", "TUMBON", "AUMPER", "PROVINCE", "TYPE", "NAME", "FOREST", "OWN") if k in fire},
-                    "external_id": f"{fire.get('YYMMDD','')}-{fire.get('TIME','')}-{fire.get('LAT','')}-{fire.get('LONG','')}",
-                    "region_id": region_id,
-                    "detected_at": detected_at,
-                    "location": from_shape(Point(float(lng), float(lat)), srid=4326),
-                    "status": False,
-                    "resolve_time": None,
-                }
-            )
+            parsed.append({
+                "tumboon": fire.get("TUMBON", "") or "ไม่ทราบตำบล",
+                "day": detected_at.date().isoformat(),
+                "detected_at": detected_at,
+                "region_id": region_id,
+                "lat": lat, "lng": lng,
+                "detail": {k: fire[k] for k in ("SATELLITE", "TUMBON", "AUMPER", "PROVINCE", "TYPE", "NAME", "FOREST", "OWN") if k in fire},
+                "external_id": f"{fire.get('YYMMDD','')}-{fire.get('TIME','')}-{fire.get('LAT','')}-{fire.get('LONG','')}",
+            })
+
+        # Skip fires already stored (kept their original name) and seed the per
+        # (tumbon, day) counter from how many are already on record for that day, so
+        # a new fire is numbered #(n+1) rather than colliding back at #1.
+        ext_ids = [p["external_id"] for p in parsed]
+        existing_ext = set((await session.execute(
+            select(Firespot.external_id).where(Firespot.external_id.in_(ext_ids))
+        )).scalars().all()) if ext_ids else set()
+
+        seed_counts: dict[tuple[str, str], int] = {}
+        if parsed:
+            min_day = min(p["day"] for p in parsed)
+            seed = await session.execute(text(
+                "SELECT COALESCE(NULLIF(detail->>'TUMBON',''),'ไม่ทราบตำบล') AS tumbon, "
+                "(detected_at AT TIME ZONE 'UTC')::date::text AS d, count(*) AS c "
+                "FROM firespots WHERE (detected_at AT TIME ZONE 'UTC')::date >= CAST(:min_day AS date) "
+                "GROUP BY 1, 2"
+            ).bindparams(min_day=min_day))
+            seed_counts = {(r.tumbon, r.d): r.c for r in seed}
+
+        rows = [
+            {
+                "name": p["name"],
+                "detail": p["detail"],
+                "external_id": p["external_id"],
+                "region_id": p["region_id"],
+                "detected_at": p["detected_at"],
+                "location": from_shape(Point(float(p["lng"]), float(p["lat"])), srid=4326),
+                "status": False,
+                "resolve_time": None,
+            }
+            for p in number_new_fires(parsed, existing_ext, seed_counts)
+        ]
         inserted = 0
         if rows:
             stmt = (
@@ -195,6 +237,7 @@ async def get_fires(
             Region.path.label("region_path"),
             FieldOfficer.id.label("holder_id"),
             FieldOfficer.name.label("holder_name"),
+            FieldOfficer.appointed.label("holder_appointed"),
             ResolverOfficer.name.label("resolver_name"),
             FireResolution.officer_name.label("resolution_officer_name"),
         ).join(Region, Firespot.region_id == Region.id).outerjoin(
@@ -221,9 +264,19 @@ async def get_fires(
 
         if user is not None and not user.is_superuser:
             paths = await user_region_paths(user, session)
-            if not paths:
+            conds = [Region.path.op("<@")(p) for p in paths]
+            # a field officer can be appointed a fire OUTSIDE their region — always
+            # include the fire they currently hold so it still shows on their map/list
+            held = (await session.execute(
+                select(FieldOfficer.fire_id).where(
+                    FieldOfficer.user_id == user.id, FieldOfficer.fire_id.isnot(None)
+                )
+            )).scalar_one_or_none()
+            if held is not None:
+                conds.append(Firespot.id == held)
+            if not conds:
                 return []
-            stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
+            stmt = stmt.where(or_(*conds))
 
         stmt = stmt.order_by(Firespot.detected_at.desc())
         rows = await session.execute(stmt)
@@ -242,6 +295,7 @@ async def get_fires(
                 "expired": row.expired,
                 "false_alarm": row.false_alarm,
                 "booked": row.holder_id is not None,
+                "appointed": bool(row.holder_appointed),  # dispatcher-assigned vs self-reserved
                 "holder_id": str(row.holder_id) if row.holder_id else None,
                 # live holder (booked) or, for a resolved fire, whoever resolved it
                 # (resolution_officer_name keeps attribution after the officer is deleted)

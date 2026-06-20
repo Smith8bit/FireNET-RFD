@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useFocusEffect } from 'expo-router'
 import { Dropdown } from 'react-native-element-dropdown'
 import { api } from '@/lib/api'
 import { useAuthSession } from '@/providers/AuthProvider'
@@ -33,12 +34,15 @@ export default function Account() {
   const [pending, setPending] = useState<{ status: string; province: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
-  // current/last region-change request, so a pending one disables resubmitting
-  useEffect(() => {
-    api.get('/officers/me/region-change').then((r) => {
-      if (r.data?.status === 'pending') setPending(r.data)
-    }).catch(() => {})
-  }, [])
+  // refresh on every focus so the section resets to the default dropdown once a
+  // request is decided (approved/rejected) — a still-pending one keeps disabling resubmit
+  useFocusEffect(
+    useCallback(() => {
+      api.get('/officers/me/region-change').then((r) => {
+        setPending(r.data?.status === 'pending' ? r.data : null)
+      }).catch(() => {})
+    }, []),
+  )
 
   const saveProfile = async () => {
     if (!name.trim()) return Alert.alert('กรุณากรอกชื่อ')

@@ -106,7 +106,7 @@ async def update_my_location(
     return {"active": fo.active, "last_updated": fo.last_updated.isoformat()}
 
 
-def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
+def _fire_detail(fire: Firespot, booked: bool = True, appointed: bool = False) -> dict:
     pt = to_shape(fire.location)
     detail = fire.detail or {}
     return {
@@ -117,6 +117,7 @@ def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
         "expired": fire.expired,
         "false_alarm": fire.false_alarm,
         "booked": booked,
+        "appointed": appointed,  # dispatcher-assigned → officer can't self-cancel
         "lat": pt.y,
         "lng": pt.x,
         "tumboon": detail.get("TUMBON"),
@@ -148,6 +149,10 @@ async def reserve_fire(
 ):
     fo = await _my_field_officer(user, session)
     fire = None
+    # releasing a reservation: a dispatcher-appointed fire can only be cancelled by
+    # a dispatcher (web console), not by the officer themselves
+    if body.fire_id is None and fo.fire_id is not None and fo.appointed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "appointed fire, dispatcher-only cancel")
     if body.fire_id is not None:
         if not fo.active:
             raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
@@ -178,6 +183,7 @@ async def reserve_fire(
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already reserved")
     previous_fire_id = fo.fire_id
     fo.fire_id = body.fire_id
+    fo.appointed = False  # self-reserve (or clear) is never a dispatcher appointment
     if body.fire_id is not None:
         if body.fire_id != previous_fire_id:
             audit(session, actor=user, action="fire.reserve", entity_type="fire",
@@ -436,7 +442,7 @@ async def my_reserved_fire(
     if fo.fire_id is None:
         return None
     fire = await session.get(Firespot, fo.fire_id)
-    return _fire_detail(fire) if fire is not None else None
+    return _fire_detail(fire, appointed=fo.appointed) if fire is not None else None
 
 
 # ---- field officer: register / remove this device's FCM push token ----

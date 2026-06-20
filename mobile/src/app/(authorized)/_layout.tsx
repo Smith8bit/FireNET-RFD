@@ -26,11 +26,19 @@ export default function AuthorizedLayout() {
   // surface it. Mobile is REST-only, so the push is how an officer learns of a
   // new appointment; the Firespot tab then shows the fetched fire.
   useEffect(() => {
-    const unsubscribe = setupNotificationHandlers(() => {
-      loadReservedFire()
-      loadFires()
-      router.navigate('/(authorized)/Firespot')
-    })
+    const unsubscribe = setupNotificationHandlers(
+      () => {
+        loadReservedFire()
+        loadFires()
+        router.navigate('/(authorized)/Firespot')
+      },
+      // cancellation: the booking was released — re-fetch (now returns no fire) so
+      // the Firespot screen falls back to its default "no reserved fire" state
+      () => {
+        loadReservedFire()
+        loadFires()
+      },
+    )
     return unsubscribe
   }, [loadReservedFire, loadFires])
 
