@@ -167,7 +167,7 @@ export default function OfficersTab() {
                             type="button"
                             onClick={() => saveEdit(o)}
                             disabled={savingId === o.user_id}
-                            className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
+                            className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
                           >
                             {savingId === o.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
                           </button>
@@ -190,7 +190,7 @@ export default function OfficersTab() {
                           <button
                             type="button"
                             onClick={() => startEdit(o)}
-                            className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
+                            className="text-sm text-brand hover:text-brand border border-orange-200 hover:border-orange-300 rounded-full px-3 py-1"
                           >
                             แก้ไข
                           </button>

@@ -76,7 +76,7 @@ function groupRows(items, keyFn, factory, update) {
 
 function MetricCard({ icon: Icon, title, value, detail, tone = 'forest' }) {
   const tones = {
-    forest: 'border-forest-200 bg-forest-50 text-forest-700',
+    forest: 'border-orange-200 bg-orange-50 text-brand',
     red: 'border-red-200 bg-red-50 text-red-700',
     amber: 'border-amber-200 bg-amber-50 text-amber-700',
     blue: 'border-blue-200 bg-blue-50 text-blue-700',
@@ -129,7 +129,7 @@ function StatusBadge({ children, tone = 'slate' }) {
   )
 }
 
-function ProgressBar({ value, total, tone = 'bg-forest-500' }) {
+function ProgressBar({ value, total, tone = 'bg-primary' }) {
   return (
     <div className="h-2 w-full rounded-full bg-slate-100">
       <div className={`h-2 rounded-full ${tone}`} style={{ width: `${clampPercent(value, total)}%` }} />
@@ -149,7 +149,7 @@ function VelocityColumnChart({ rows, maxTotal }) {
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
         <div className="flex shrink-0 items-center gap-3">
           <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-blue-100" />พบไฟ</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-forest-500" />ปิดแล้ว</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-primary" />ปิดแล้ว</span>
         </div>
         <span className="truncate">เทียบกับวันที่พบไฟมากสุด {safeMax} จุด</span>
       </div>
@@ -170,7 +170,7 @@ function VelocityColumnChart({ rows, maxTotal }) {
                   style={{ height: `${clampPercent(safeTotal, safeMax)}%` }}
                 />
                 <div
-                  className="absolute bottom-0 left-0 w-full rounded-t-md bg-forest-500"
+                  className="absolute bottom-0 left-0 w-full rounded-t-md bg-primary"
                   style={{ height: `${clampPercent(safeResolved, safeMax)}%` }}
                 />
               </div>
@@ -366,7 +366,7 @@ export default function DashboardPage() {
                   onClick={() => setActiveTab(tab.key)}
                   className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
                     activeTab === tab.key
-                      ? 'bg-forest-500 text-white shadow-sm'
+                      ? 'bg-primary text-white shadow-sm'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
@@ -449,7 +449,7 @@ export default function DashboardPage() {
                       key={fire.id}
                       type="button"
                       onClick={() => openFireOnMap(fire.id)}
-                      className="block w-full px-3 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-forest-500"
+                      className="block w-full px-3 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -458,7 +458,7 @@ export default function DashboardPage() {
                         </div>
                         <StatusBadge tone="amber">{formatAge(fire.detected_at, nowMs)}</StatusBadge>
                       </div>
-                      <p className="mt-1 text-xs font-medium text-forest-700">เปิดในแผนที่เพื่อมอบหมายเจ้าหน้าที่</p>
+                      <p className="mt-1 text-xs font-medium text-brand">เปิดในแผนที่เพื่อมอบหมายเจ้าหน้าที่</p>
                     </button>
                   )}
                 />
@@ -471,7 +471,7 @@ export default function DashboardPage() {
                       <span className="font-medium text-slate-700">เจ้าหน้าที่ออนไลน์</span>
                       <span className="text-slate-500">{officerSummary.online.length}/{officers.length}</span>
                     </div>
-                    <ProgressBar value={officerSummary.online.length} total={officers.length} tone="bg-forest-500" />
+                    <ProgressBar value={officerSummary.online.length} total={officers.length} tone="bg-primary" />
                   </div>
                   <div>
                     <div className="mb-1.5 flex items-center justify-between text-xs">

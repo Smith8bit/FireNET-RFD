@@ -235,7 +235,7 @@ export default function AuditTrail() {
         <button
           type="button"
           onClick={() => setReload((n) => n + 1)}
-          className="text-sm text-forest-700 hover:text-forest-600 px-2 py-1.5"
+          className="text-sm text-brand hover:text-brand px-2 py-1.5"
         >
           รีเฟรช
         </button>

@@ -97,7 +97,7 @@ export default function PendingTab({ onCount }) {
                     type="button"
                     onClick={() => verify(o.user_id)}
                     disabled={busyId === o.user_id}
-                    className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
+                    className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 disabled:opacity-50"
                   >
                     {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
                   </button>
@@ -130,7 +130,7 @@ export default function PendingTab({ onCount }) {
                     type="button"
                     onClick={() => decide(r.request_id, 'approve')}
                     disabled={busyId === r.request_id}
-                    className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
+                    className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 disabled:opacity-50"
                   >
                     อนุมัติ
                   </button>

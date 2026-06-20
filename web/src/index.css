@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: 50 22% 95%;
-  --foreground: 152 73% 8%;
+  --background: #E0E0E0;
+  --foreground: #FFFFFF;
 
   --card: 0 0% 100%;
-  --card-foreground: 152 73% 8%;
+  --card-foreground: #1A1A1A;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 152 73% 8%;
+  --popover-foreground: #1A1A1A;
 
-  --primary: 160 76% 24%;
+  --primary: #FF4000;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 50 18% 90%;
-  --secondary-foreground: 152 45% 18%;
+  --secondary: #FF6633;
+  --secondary-foreground: #1A1A1A;
 
   --muted: 50 14% 88%;
-  --muted-foreground: 152 18% 32%;
+  --muted-foreground: #525252;
 
-  --accent: 160 53% 38%;
+  --accent: #292929;
   --accent-foreground: 0 0% 100%;
 
   --destructive: 0 72% 45%;
@@ -33,31 +33,25 @@
 
   --border: 50 12% 82%;
   --input: 50 12% 82%;
-  --ring: 160 76% 24%;
+  --ring: #FF4000;
 
   --radius: 0.75rem;
 }
 
 @theme {
-  --color-forest-50:  #E1F5EE;
-  --color-forest-100: #C3EBDD;
-  --color-forest-500: #1D9E75;
-  --color-forest-600: #0F6E56;
-  --color-forest-700: #085041;
-
-  --color-background:         hsl(var(--background));
-  --color-foreground:         hsl(var(--foreground));
+  --color-background:         var(--background);
+  --color-foreground:         var(--foreground);
   --color-card:               hsl(var(--card));
-  --color-card-foreground:    hsl(var(--card-foreground));
+  --color-card-foreground:    var(--card-foreground);
   --color-popover:            hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-primary:            hsl(var(--primary));
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary:            var(--primary);
   --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary:            hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary:            var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted:            hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent:            hsl(var(--accent));
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent:            var(--accent);
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive:            hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
@@ -67,15 +61,18 @@
   --color-warning-foreground: hsl(var(--warning-foreground));
   --color-border: hsl(var(--border));
   --color-input:  hsl(var(--input));
-  --color-ring:   hsl(var(--ring));
+  --color-ring:   var(--ring);
 
-  --color-brand:    #0F6E56;
-  --color-fg-brand: #0F6E56;
-  --color-body:     #6b6375;
-  --color-default:  #e5e4e7;
+  --color-brand:    #D23400;
+  --color-flame-light: #ffebe5;
+  --color-flame:       #FF4000;
+  --gradient-flame: linear-gradient(135deg, #ffebe5 0%, #FF4000 100%);
+  --font-sans: 'Kanit', system-ui, sans-serif;
+  --font-head: 'Sarabun', system-ui, sans-serif;
+}
 
-  --font-sans: 'Sarabun', system-ui, sans-serif;
-  --font-title: 'Kanit', system-ui, sans-serif;
+@utility bg-flame {
+  background-image: var(--gradient-flame);
 }
 
 /* * {
@@ -84,18 +81,17 @@
 
 body {
   margin: 0;
-  font-family: 'Sarabun', system-ui, sans-serif;
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+  font-family: 'Kanit', system-ui, sans-serif;
+  background: var(--background);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 :focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
 :focus {
@@ -128,7 +124,7 @@ body {
   top: -10rem;
   z-index: 100;
   padding: 0.5rem 1rem;
-  background: hsl(var(--primary));
+  background: var(--primary);
   color: hsl(var(--primary-foreground));
   border-radius: 0.5rem;
   font-weight: 500;

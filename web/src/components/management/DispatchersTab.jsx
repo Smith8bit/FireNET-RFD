@@ -215,7 +215,7 @@ export default function DispatchersTab() {
                   type="checkbox"
                   checked={newPerms.includes(p.id)}
                   onChange={() => togglePerm(p.id)}
-                  className="rounded border-gray-300 text-forest-600 focus:ring-forest-500"
+                  className="rounded border-gray-300 text-brand focus:ring-primary"
                 />
                 {p.label}
               </label>
@@ -235,7 +235,7 @@ export default function DispatchersTab() {
           <button
             type="submit"
             disabled={creating}
-            className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
+            className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {creating ? 'กำลังสร้าง…' : 'สร้างผู้ควบคุม'}
           </button>
@@ -295,7 +295,7 @@ export default function DispatchersTab() {
                                   type="checkbox"
                                   checked={editPerms.includes(p.id)}
                                   onChange={() => toggleEditPerm(p.id)}
-                                  className="rounded border-gray-300 text-forest-600 focus:ring-forest-500"
+                                  className="rounded border-gray-300 text-brand focus:ring-primary"
                                 />
                                 {p.label}
                               </label>
@@ -331,7 +331,7 @@ export default function DispatchersTab() {
                               type="button"
                               onClick={() => saveEdit(d)}
                               disabled={savingId === d.user_id}
-                              className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
+                              className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
                             >
                               {savingId === d.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
                             </button>
@@ -350,7 +350,7 @@ export default function DispatchersTab() {
                           <button
                             type="button"
                             onClick={() => startEdit(d)}
-                            className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
+                            className="text-sm text-brand hover:text-brand border border-orange-200 hover:border-orange-300 rounded-full px-3 py-1"
                           >
                             แก้ไข
                           </button>

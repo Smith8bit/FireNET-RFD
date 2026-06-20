@@ -190,6 +190,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FireNet API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+# Throttle credential brute force / registration abuse on the auth endpoints.
+# Registered BEFORE CORS so that CORS ends up the outermost middleware: Starlette
+# runs the last-added middleware first, and CORS must wrap every response —
+# including the limiter's early 429 — or the browser sees a cross-origin reply
+# with no Access-Control-Allow-Origin header and reports it as a CORS failure
+# instead of letting the client read the 429.
+install_rate_limiting(
+    app,
+    limit=settings.RATE_LIMIT_MAX,
+    window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -197,9 +209,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Throttle credential brute force / registration abuse on the auth endpoints.
-install_rate_limiting(app)
 
 app.include_router(
     fastapi_users.get_auth_router(auth_backend),

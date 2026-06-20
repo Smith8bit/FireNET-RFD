@@ -1,4 +1,4 @@
-import { useEffect, useRef, createElement, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, createElement, forwardRef, useImperativeHandle, memo } from 'react'
 import { createRoot } from 'react-dom/client'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -132,6 +132,7 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     const focusedId = useMapSelection((s) => s.focusedId)
     const hoveredId = useMapSelection((s) => s.hoveredId)
     const setFocused = useMapSelection((s) => s.setFocused)
+    const clearSelection = useMapSelection((s) => s.clear)
 
     // let the parent recenter the map to the user's starting view
     useImperativeHandle(ref, () => ({
@@ -165,11 +166,26 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
             const feature = e.features?.[0]
             if (feature) setFocused(feature.properties.id)
         })
+        // a click on empty map (not on a fire) clears the current selection
+        map.on('click', (e) => {
+            const hit = map.getLayer(FIRES_LAYER)
+                && map.queryRenderedFeatures(e.point, { layers: [FIRES_LAYER] }).length > 0
+            if (!hit) clearSelection()
+        })
         map.on('mouseenter', FIRES_LAYER, () => { map.getCanvas().style.cursor = 'pointer' })
         map.on('mouseleave', FIRES_LAYER, () => { map.getCanvas().style.cursor = '' })
 
         mapRef.current = map
-        return () => map.remove()
+
+        // the map container resizes when side panels collapse/expand, which
+        // doesn't fire a window resize — keep the canvas in sync ourselves
+        const ro = new ResizeObserver(() => map.resize())
+        ro.observe(map.getContainer())
+
+        return () => {
+            ro.disconnect()
+            map.remove()
+        }
     }, [])
 
     useEffect(() => {
@@ -240,4 +256,6 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     )
 })
 
-export default MapView
+// the map instance is built once; collapsing side panels only changes layout,
+// so skip re-rendering as long as the data/layer props are unchanged
+export default memo(MapView)

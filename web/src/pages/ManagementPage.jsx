@@ -32,7 +32,7 @@ export default function ManagementPage() {
   return (
     <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
       <div className='bg-white border-0 rounded-2xl p-6'>
-        <h2 className="text-lg font-semibold text-forest-700 mb-3 font-title">การจัดการเจ้าหน้าที่ภาคสนาม</h2>
+        <h2 className="text-lg font-semibold text-brand mb-3 font-title">การจัดการเจ้าหน้าที่ภาคสนาม</h2>
         <div className="flex gap-2 border-b border-gray-200">
           {tabs.map((tab) => (
             <button
@@ -40,7 +40,7 @@ export default function ManagementPage() {
               onClick={() => setSelectedTab(tab)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab
-                  ? 'border-forest-500 text-forest-700'
+                  ? 'border-primary text-brand'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >

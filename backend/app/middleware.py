@@ -84,7 +84,7 @@ def install_rate_limiting(app: FastAPI, *, limit: int = 10, window_seconds: floa
             allowed, retry_after = limiter.check(f"{client_key(request)}|{request.url.path}")
             if not allowed:
                 return JSONResponse(
-                    {"detail": "Too many attempts. Please wait and try again."},
+                    {"detail": "โปรดรอสักครู่แล้วลองใหม่อีกครั้ง"},
                     status_code=429,
                     headers={"Retry-After": str(retry_after)},
                 )

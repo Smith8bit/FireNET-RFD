@@ -11,7 +11,7 @@ export default function Card({ Title, Area, Date, Time, id, status, booked }) {
 
     return (
         <div
-            className="flex items-center bg-white hover:bg-forest-100 hover:border-forest-600 shadow-md px-4 py-0.5 border-b border-gray-300 w-full h-full text-left transition-colors duration-150 cursor-pointer"
+            className="flex items-center bg-white hover:bg-orange-100 hover:border-brand shadow-md px-4 py-0.5 border-b border-gray-300 w-full h-full text-left transition-colors duration-150 cursor-pointer"
             onMouseEnter={() => setHovered(id)}
             onMouseLeave={() => setHovered(null)}
             onClick={() => setFocused(id)}

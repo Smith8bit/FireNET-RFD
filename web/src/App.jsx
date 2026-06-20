@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 
-import Navbar from './components/navbar'
+import Sidebar from './components/sidebar'
 import Toaster from './components/Toaster'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -14,11 +14,13 @@ import { useAuthStore } from './functions/useAuthStore'
 
 import './App.css'
 
-function NavbarLayout() {
+function SidebarLayout() {
   return (
-    <div className="flex flex-col h-screen">
-      <Navbar />
-      <Outlet />
+    <div className="flex flex-row h-screen">
+      <Sidebar />
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <Outlet />
+      </main>
     </div>
   )
 }
@@ -93,7 +95,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
-          <Route element={<NavbarLayout />}>
+          <Route element={<SidebarLayout />}>
             <Route path="" element={<MapViewPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/management" element={<ManagementPage />} />
