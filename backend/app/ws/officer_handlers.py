@@ -256,8 +256,24 @@ async def handle_decide_region_request(
         req.status = "approved" if action == "approve" else "rejected"
         req.decided_at = datetime.now(timezone.utc)
         req.decided_by = admin.id
+        # officer name (+ origin province on approval) so the console trail reads
+        # "name: old → new" / "name: province" without extra client lookups
+        officer_name = (
+            await session.execute(
+                select(UserRegion.name).where(
+                    UserRegion.user_id == req.user_id, UserRegion.role == "field_officer"
+                )
+            )
+        ).scalar_one_or_none()
+        detail = {"request_id": str(req.id), "province_path": str(dest.path),
+                  "officer_name": officer_name}
+        if action == "approve":
+            prev_path = (
+                await session.execute(select(Region.path).where(Region.id == old_region_id))
+            ).scalar_one_or_none()
+            detail["previous_province_path"] = str(prev_path) if prev_path is not None else None
         audit(session, actor=admin, action=f"region_change.{req.status}", entity_type="user",
-              entity_id=str(req.user_id), detail={"request_id": str(req.id), "province_path": str(dest.path)})
+              entity_id=str(req.user_id), detail=detail)
         try:
             await session.commit()
         except IntegrityError:
@@ -685,7 +701,7 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
         audit(session, actor=admin, action="fire.appoint", entity_type="fire",
               entity_id=str(fire_id),
               detail={"officer_id": str(officer_id), "officer_user_id": str(officer.user_id),
-                      "name": fire.name})
+                      "name": fire.name, "officer_name": officer.name})
         try:
             await session.commit()
         except IntegrityError:
@@ -760,7 +776,7 @@ async def handle_cancel_booking(ws: WebSocket, user: User, data: dict, active_co
         audit(session, actor=user, action="fire.cancel_booking", entity_type="fire",
               entity_id=str(fire_id),
               detail={"officer_id": str(officer.id), "officer_user_id": str(officer.user_id),
-                      "name": fire_name})
+                      "name": fire_name, "officer_name": officer.name})
         await session.commit()
 
     if notify_user_id is not None:

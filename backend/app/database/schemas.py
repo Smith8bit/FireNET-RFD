@@ -93,6 +93,12 @@ class RegionChangeCreate(BaseModel):
     province_code: str = Field(max_length=32)  # stable Region.code (e.g. "p50")
 
 
+class LocationPollUpdate(BaseModel):
+    # superuser-set mobile location-poll cadence, in minutes. Stored as-is; the
+    # read endpoint clamps to the configured floor (0.5 → still served as the 1-min floor).
+    minutes: float = Field(gt=0, le=1440)
+
+
 class PushTokenRegister(BaseModel):
     token: str = Field(min_length=1, max_length=4096)
     platform: str | None = None  # "android" | "ios" | "web"

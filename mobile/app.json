@@ -41,6 +41,13 @@
         }
       ],
       [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true,
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to share your location while you are on duty, even in the background"
+        }
+      ],
+      [
         "@maplibre/maplibre-react-native"
       ],
       [

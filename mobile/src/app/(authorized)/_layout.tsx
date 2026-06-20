@@ -1,13 +1,16 @@
 import { useEffect } from 'react'
 import { Redirect, Tabs, router } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import { ActivityIndicator, Pressable, View } from 'react-native'
+import { ActivityIndicator, AppState, Pressable, View } from 'react-native'
 import * as Location from 'expo-location'
 import { useAuthSession } from '@/providers/AuthProvider'
 import { useFireStore } from '@/stores/fireStore'
 import { setupNotificationHandlers } from '@/lib/push'
+import { api } from '@/lib/api'
+import { startBackgroundLocation, stopBackgroundLocation } from '@/lib/locationTask'
 
-const LOCATION_POLL_MS = 5 * 60 * 1000
+const DEFAULT_POLL_MIN = 5
+const MIN_POLL_MIN = 1
 
 export default function AuthorizedLayout() {
   const { user, isLoading } = useAuthSession()
@@ -42,21 +45,44 @@ export default function AuthorizedLayout() {
     return unsubscribe
   }, [loadReservedFire, loadFires])
 
-  // While online, push the officer's position immediately and then every 5 minutes.
+  // While online, push the officer's position immediately, then keep pushing in
+  // the background on the superuser-configured cadence (floor 1 min, default 5).
   // Coords-only (no `active`): going offline is owned solely by the toggle.
   useEffect(() => {
-    if (!online) return
-    const push = async () => {
+    if (!online) {
+      stopBackgroundLocation()
+      return
+    }
+    let cancelled = false
+    const arm = async () => {
+      // immediate fix so the map updates without waiting a whole interval
       try {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
         await pushLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
       } catch {
-        // skip this tick; next poll retries
+        // skip; the background task will catch up
       }
+      let minutes = DEFAULT_POLL_MIN
+      try {
+        const res = await api.get<{ minutes: number }>('/officers/location-poll-interval')
+        if (res.data?.minutes > 0) minutes = res.data.minutes
+      } catch {
+        // fall back to the default cadence
+      }
+      if (cancelled) return
+      await startBackgroundLocation(Math.max(minutes, MIN_POLL_MIN) * 60 * 1000)
     }
-    push()
-    const id = setInterval(push, LOCATION_POLL_MS)
-    return () => clearInterval(id)
+    arm()
+    // Android can kill the foreground-service location task during screen-off Doze
+    // (or OEM battery optimization). The effect won't re-run on resume, so without
+    // this the officer silently stops reporting until they re-toggle online.
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') arm()
+    })
+    return () => {
+      cancelled = true
+      sub.remove()
+    }
   }, [online, pushLocation])
 
   if (isLoading) {
