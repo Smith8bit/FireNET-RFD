@@ -6,6 +6,10 @@ async function api(path, init = {}) {
   return fetch(`${API_URL}${path}`, { credentials: 'include', ...init })
 }
 
+// per-resource UI gate: superuser holds everything, others check their effective set
+export const can = (user, perm) =>
+  !!user && (user.is_superuser || (user.permissions ?? []).includes(perm))
+
 export const useAuthStore = create((set, get) => ({
   user: null,
   status: 'unknown', // 'unknown' | 'guest' | 'authed'

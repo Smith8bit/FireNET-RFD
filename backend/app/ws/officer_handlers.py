@@ -20,7 +20,12 @@ from ..database.models import (
     UserRegion,
 )
 from ..db_control.audit import audit
-from ..db_control.permission import can_manage_officers, is_admin_user, user_region_paths
+from ..db_control.permission import (
+    can_manage_officers,
+    has_perm_anywhere,
+    is_admin_user,
+    user_region_paths,
+)
 from ..db_control.push import send_push
 from ..database.schemas import valid_username
 from .manager import fanout, group_by_scope
@@ -68,6 +73,10 @@ async def _can_manage(user: User, session) -> bool:
     return await can_manage_officers(user, session)
 
 
+async def _can_view_officers(user: User, session) -> bool:
+    return await has_perm_anywhere(user, "officers.view", session)
+
+
 async def _fetch_officers(session, user: User, *, limit: int | None = None) -> list[dict]:
     ttl = settings.OFFICER_ONLINE_TTL_MINUTES
     cap = limit if limit is not None else settings.OFFICER_MAP_MAX
@@ -103,7 +112,7 @@ async def _fetch_officers(session, user: User, *, limit: int | None = None) -> l
 
 async def handle_list_pending(ws: WebSocket, user: User) -> None:
     async with async_session_maker() as session:
-        if not await _is_admin(user, session):
+        if not await _can_view_officers(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         if user.is_superuser:
@@ -265,7 +274,7 @@ async def handle_decide_region_request(
 
 async def handle_list_officers(ws: WebSocket, user: User) -> None:
     async with async_session_maker() as session:
-        if not await _is_admin(user, session):
+        if not await _can_view_officers(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         officers = await _fetch_officers(session, user)
@@ -289,7 +298,7 @@ def _map_subset(officers: list[dict]) -> list[dict]:
 
 async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
     async with async_session_maker() as session:
-        if not await _is_admin(user, session):
+        if not await _can_view_officers(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         officers = await _fetch_officers(session, user)
@@ -300,9 +309,9 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
 
 async def broadcast_officers_update(active_connections) -> None:
     """Bucketed: one officer fetch per distinct scope, fanned out to its sockets."""
-    # every active ws connection is already an admin — non-admins are rejected at
-    # the handshake (router/ws.py) — so skip a per-socket role query each tick
-    admins = list(active_connections)
+    # only push officer data to connections that hold officers.view (resolved once
+    # at connect); the rest get no officer list or map markers
+    admins = [c for c in active_connections if c.can_view_officers]
     async with async_session_maker() as session:
         for scope, members in group_by_scope(admins).items():
             try:
@@ -320,8 +329,8 @@ async def broadcast_admin_refresh(active_connections, include_pending: bool = Fa
     Bucketed: the officer query runs once per distinct scope (not once per admin),
     and each scope's two payloads are serialized once and fanned out to every
     socket in that scope — same frames each admin received before, O(scopes) DB."""
-    # every active ws connection is already an admin (gated at the handshake)
-    admins = list(active_connections)
+    # only connections holding officers.view receive officer lists / map markers
+    admins = [c for c in active_connections if c.can_view_officers]
     async with async_session_maker() as session:
         groups = group_by_scope(admins)
         for scope, members in groups.items():

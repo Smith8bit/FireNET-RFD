@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useFireData } from '../functions/useFireData'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
+import { useAuthStore, can } from '../functions/useAuthStore'
 
 const collator = new Intl.Collator('th')
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -198,6 +199,7 @@ export default function DashboardPage() {
   const send = useSocketStore((s) => s.send)
   const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
   const pendingMsg = useSocketStore((s) => s.byType?.pending_officers)
+  const canViewOfficers = can(useAuthStore((s) => s.user), 'officers.view')
   const setFocusedFire = useMapSelection((s) => s.setFocused)
 
   const [activeTab, setActiveTab] = useState('ops')
@@ -206,19 +208,21 @@ export default function DashboardPage() {
   const pendingOfficers = useMemo(() => pendingMsg?.officers ?? [], [pendingMsg])
 
   useEffect(() => {
-    if (!ready) return
+    if (!ready || !canViewOfficers) return
     send({ type: 'list_officers' })
     send({ type: 'list_pending_officers' })
-  }, [ready, send])
+  }, [ready, send, canViewOfficers])
 
   const refresh = useCallback(() => {
     setNowMs(Date.now())
     if (ready) {
-      send({ type: 'list_officers' })
-      send({ type: 'list_pending_officers' })
+      if (canViewOfficers) {
+        send({ type: 'list_officers' })
+        send({ type: 'list_pending_officers' })
+      }
       send({ type: 'resync_fires' })
     }
-  }, [ready, send])
+  }, [ready, send, canViewOfficers])
 
   const openFireOnMap = useCallback(
     (fireId) => {

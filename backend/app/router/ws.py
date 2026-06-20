@@ -4,7 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..auth.ws_auth import get_user_from_ws
 from ..database import async_session_maker
-from ..db_control.permission import is_admin_user, user_region_paths
+from ..db_control.permission import has_perm_anywhere, is_admin_user, user_region_paths
 from ..ws.manager import manager
 from ..ws.dispatcher_handlers import (
     handle_create_dispatcher,
@@ -42,7 +42,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         # resolve the visibility scope once, here, so recurring broadcasts can
         # bucket by it instead of re-deriving paths per connection on every tick
         paths = await user_region_paths(user, session)
-    conn = await manager.connect(ws, user, paths)
+        can_view_officers = await has_perm_anywhere(user, "officers.view", session)
+    conn = await manager.connect(ws, user, paths, can_view_officers)
     try:
         while True:
             try:

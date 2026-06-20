@@ -205,7 +205,9 @@ class SimWorld:
         return len({c.scope_key for c in conns})
 
     def _conn(self, user: SimUser) -> Connection:
-        return Connection(ws=FakeWS(), user=user, is_super=user.is_superuser, paths=user.paths)
+        # simulated admins are officer-viewers (the population these cost models size for)
+        return Connection(ws=FakeWS(), user=user, is_super=user.is_superuser,
+                          paths=user.paths, can_view_officers=True)
 
     # ---- web population across national -> region -> province ----
     def build_web_population(self) -> list[Connection]:

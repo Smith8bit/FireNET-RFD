@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSocketStore } from '../../functions/stateStore'
+import { useAuthStore, can } from '../../functions/useAuthStore'
 import { toast } from '../../functions/toastStore'
 import { useMessageEffect } from '../../functions/useMessageEffect'
 import { formatDate, formatTime } from '../../functions/datetime'
@@ -17,6 +18,7 @@ const APPOINT_ERRORS = {
 export default function ExpandedCard({ fire, officers }) {
     const [selectedOfficer, setSelectedOfficer] = useState('')
     const [pending, setPending] = useState(false)
+    const canAppoint = can(useAuthStore((s) => s.user), 'fire.appoint')
     const send = useSocketStore((s) => s.send)
     const appointedMsg = useSocketStore((s) => s.byType?.officer_appointed)
     const errorMsg = useSocketStore((s) => s.byType?.error)
@@ -94,6 +96,7 @@ export default function ExpandedCard({ fire, officers }) {
                 </dl>
             </div>
 
+            {canAppoint && (<>
             <div className={`flex-1 min-h-0 overflow-y-auto minimal-scrollbar pb-2 border-b-2 border-gray-300 ${locked ? 'opacity-50 pointer-events-none select-none' : ''}`} id="available-officers">
                 <p className="sticky top-0 z-10 bg-white py-2 text-md font-semibold text-gray-500">เจ้าหน้าที่ในพื้นที่</p>
                 {officers.length === 0 ? (
@@ -145,6 +148,7 @@ export default function ExpandedCard({ fire, officers }) {
                     {fire.status ? 'ดับแล้ว' : fire.booked ? 'ถูกจองแล้ว' : pending ? 'กำลังมอบหมาย…' : 'มอบหมายเจ้าหน้าที่'}
                 </button>
             </div>
+            </>)}
         </div>
     )
 }

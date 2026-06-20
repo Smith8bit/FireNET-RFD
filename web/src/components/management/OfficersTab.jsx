@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSocketStore } from '../../functions/stateStore'
+import { useAuthStore, can } from '../../functions/useAuthStore'
 import { toast } from '../../functions/toastStore'
 import { useMessageEffect } from '../../functions/useMessageEffect'
 import { API_URL, INPUT_CLS, SELECT_CLS, errorText } from './shared'
@@ -8,6 +9,7 @@ import { API_URL, INPUT_CLS, SELECT_CLS, errorText } from './shared'
 // province, login username/password) and delete.
 export default function OfficersTab() {
   const send = useSocketStore((s) => s.send)
+  const canManage = can(useAuthStore((s) => s.user), 'officer.manage')
   const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
   const updatedMsg = useSocketStore((s) => s.byType?.officer_updated)
   const deletedMsg = useSocketStore((s) => s.byType?.officer_deleted)
@@ -184,13 +186,15 @@ export default function OfficersTab() {
                         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                           {o.active ? 'ออนไลน์' : 'ออฟไลน์'}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => startEdit(o)}
-                          className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
-                        >
-                          แก้ไข
-                        </button>
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => startEdit(o)}
+                            className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
+                          >
+                            แก้ไข
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}

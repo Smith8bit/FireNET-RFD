@@ -141,6 +141,10 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS division text')
         )
+        await conn.execute(
+            text("ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
+                 "permissions text[] NOT NULL DEFAULT '{}'")
+        )
         # backfill the snapshot for rows predating the column, so a later officer
         # delete doesn't strip their attribution (no-op once filled)
         await conn.execute(text(

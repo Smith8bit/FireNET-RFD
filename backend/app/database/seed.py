@@ -13,7 +13,11 @@ from ..config import get_settings
 from .db import async_session_maker
 from .models import Region, User, UserRegion
 from .schemas import UserCreate
+from ..db_control.permission import PRESETS
 from ..db_control.users import UserManager
+
+_DISPATCHER_PERMS = sorted(PRESETS["dispatcher"])
+_ADMIN_PERMS = sorted(PRESETS["admin"])
 
 FIXTURE = Path(__file__).parent / "seedbag" / "regions_info.json"
 
@@ -146,7 +150,8 @@ async def seed_superuser() -> None:
 
         existing = await session.get(UserRegion, (user.id, national.id))
         if not existing:
-            session.add(UserRegion(user_id=user.id, region_id=national.id, role="admin", name="Admin"))
+            session.add(UserRegion(user_id=user.id, region_id=national.id, role="admin",
+                                   name="Admin", permissions=_ADMIN_PERMS))
             await session.commit()
             print(f"[seed] assigned superuser → national region ({national.name_en})")
 
@@ -184,7 +189,8 @@ async def seed_regional_users() -> list[dict]:
 
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
-                session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher", name=ro["name_en"]))
+                session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher",
+                                       name=ro["name_en"], permissions=_DISPATCHER_PERMS))
                 await session.commit()
                 print(f"[seed] assigned {username} → {ro['code']}")
     return created
@@ -222,7 +228,8 @@ async def seed_province_users() -> list[dict]:
 
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
-                session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher", name=region.name_en))
+                session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher",
+                                       name=region.name_en, permissions=_DISPATCHER_PERMS))
                 await session.commit()
                 print(f"[seed] assigned {username} → {region.code}")
     return created

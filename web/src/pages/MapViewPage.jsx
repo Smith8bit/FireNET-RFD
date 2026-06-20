@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { List } from 'react-window'
 import { ArrowsPointingOutIcon, UserGroupIcon } from '@heroicons/react/20/solid'
 import { useMapSelection, useSocketStore } from '../functions/stateStore'
-import { useAuthStore } from '../functions/useAuthStore'
+import { useAuthStore, can } from '../functions/useAuthStore'
 import { useFireData } from '../functions/useFireData'
 import Map from '../components/map/map'
 import Card from '../components/map/card'
@@ -47,11 +47,12 @@ export default function MapViewPage() {
   const send = useSocketStore((s) => s.send)
   const ready = useSocketStore((s) => s.ready)
   const officersMsg = useSocketStore((s) => s.byType?.officers_map)
+  const canViewOfficers = can(useAuthStore((s) => s.user), 'officers.view')
 
   useEffect(() => {
-    if (!ready) return
+    if (!ready || !canViewOfficers) return
     send({ type: 'list_officers_MAP' })
-  }, [ready])
+  }, [ready, canViewOfficers])
     
   useEffect(() => {
     if (!officersMsg) return
@@ -147,6 +148,7 @@ export default function MapViewPage() {
             <ArrowsPointingOutIcon className="w-5 h-5" />
             กลับไปจุดเริ่มต้น
           </button>
+          {canViewOfficers && (
           <button
             title={showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
             aria-pressed={showOfficers}
@@ -156,6 +158,7 @@ export default function MapViewPage() {
             <UserGroupIcon className="w-5 h-5" />
             {showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
           </button>
+          )}
         </div>
       </div>
       <div className="relative w-1/4 h-full">

@@ -1,16 +1,37 @@
 import { useEffect, useState } from 'react'
 import { ChevronDownIcon, PlusIcon } from '@heroicons/react/20/solid'
 import { useSocketStore } from '../../functions/stateStore'
+import { useAuthStore } from '../../functions/useAuthStore'
 import { toast } from '../../functions/toastStore'
 import { useMessageEffect } from '../../functions/useMessageEffect'
 import { API_URL, ERROR_MESSAGES, INPUT_CLS, REGION_LEVEL_TH, SELECT_CLS, errorText } from './shared'
 
 const regionLabel = (r) => `${r.name_th} (${REGION_LEVEL_TH[r.level] ?? r.level})`
 
+// Console permissions a dispatcher can be granted (mirrors backend ALL_PERMISSIONS).
+const PERMISSION_OPTIONS = [
+  { id: 'officers.view', label: 'ดูเจ้าหน้าที่' },
+  { id: 'fires.view', label: 'ดูไฟ (แผนที่)' },
+  { id: 'region_requests.view', label: 'ดูคำขอย้ายพื้นที่' },
+  { id: 'dispatchers.view', label: 'ดูผู้ควบคุม' },
+  { id: 'officer.verify', label: 'อนุมัติเจ้าหน้าที่ที่รอยืนยัน' },
+  { id: 'officer.manage', label: 'จัดการเจ้าหน้าที่ (แก้ไข/ลบ)' },
+  { id: 'fire.appoint', label: 'มอบหมายงานดับไฟ' },
+  { id: 'region_request.decide', label: 'อนุมัติคำขอย้ายพื้นที่' },
+  // dispatcher.manage / permission.grant are superuser-only — not delegatable
+]
+// Default checkboxes = the backend "dispatcher" preset.
+const DISPATCHER_DEFAULT = [
+  'officers.view', 'region_requests.view', 'officer.verify',
+  'officer.manage', 'fire.appoint', 'region_request.decide',
+]
+
 // Superuser-only: provision, edit, and remove dispatcher accounts, each scoped
 // to one region (regional office or province).
 export default function DispatchersTab() {
   const send = useSocketStore((s) => s.send)
+  // create/edit/delete + permission granting are superuser-only (matches backend)
+  const canManage = useAuthStore((s) => s.user)?.is_superuser
   const dispatchersMsg = useSocketStore((s) => s.byType?.dispatchers)
   const createdMsg = useSocketStore((s) => s.byType?.dispatcher_created)
   const updatedMsg = useSocketStore((s) => s.byType?.dispatcher_updated)
@@ -28,6 +49,7 @@ export default function DispatchersTab() {
   const [newDivision, setNewDivision] = useState('') // สังกัด
   const [newPassword, setNewPassword] = useState('')
   const [newRegion, setNewRegion] = useState('') // Region.id
+  const [newPerms, setNewPerms] = useState(DISPATCHER_DEFAULT)
 
   // inline edit
   const [editingId, setEditingId] = useState(null) // dispatcher user_id
@@ -36,6 +58,7 @@ export default function DispatchersTab() {
   const [editUsername, setEditUsername] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editRegion, setEditRegion] = useState('')
+  const [editPerms, setEditPerms] = useState([])
   const [savingId, setSavingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
@@ -50,6 +73,7 @@ export default function DispatchersTab() {
     setCreating(false)
     setShowCreate(false)
     setNewUsername(''); setNewName(''); setNewDivision(''); setNewPassword(''); setNewRegion('')
+    setNewPerms(DISPATCHER_DEFAULT)
     toast.success('สร้างผู้ควบคุมสำเร็จ')
   })
 
@@ -91,11 +115,16 @@ export default function DispatchersTab() {
     return () => { cancelled = true }
   }, [regions])
 
+  const toggle = (id) => (list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
+  const togglePerm = (id) => setNewPerms(toggle(id))
+  const toggleEditPerm = (id) => setEditPerms(toggle(id))
+
   const createDispatcher = (e) => {
     e.preventDefault()
     if (!newRegion) { toast.error(ERROR_MESSAGES.invalid_region); return }
+    if (newPerms.length === 0) { toast.error('เลือกสิทธิ์อย่างน้อยหนึ่งรายการ'); return }
     setCreating(true)
-    send({ type: 'create_dispatcher', username: newUsername, password: newPassword, name: newName, division: newDivision, region_id: newRegion })
+    send({ type: 'create_dispatcher', username: newUsername, password: newPassword, name: newName, division: newDivision, region_id: newRegion, permissions: newPerms })
   }
 
   const startEdit = (d) => {
@@ -105,11 +134,13 @@ export default function DispatchersTab() {
     setEditUsername(d.username ?? '')
     setEditPassword('')
     setEditRegion(d.region_id ?? '')
+    setEditPerms(d.permissions ?? DISPATCHER_DEFAULT)
   }
 
   const saveEdit = (d) => {
+    if (editPerms.length === 0) { toast.error('เลือกสิทธิ์อย่างน้อยหนึ่งรายการ'); return }
     setSavingId(d.user_id)
-    const payload = { type: 'update_dispatcher', user_id: d.user_id, name: editName, username: editUsername, division: editDivision }
+    const payload = { type: 'update_dispatcher', user_id: d.user_id, name: editName, username: editUsername, division: editDivision, permissions: editPerms }
     if (editRegion) payload.region_id = editRegion
     if (editPassword) payload.password = editPassword
     send(payload)
@@ -125,6 +156,7 @@ export default function DispatchersTab() {
     <div>
       <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">ผู้ควบคุมประจำพื้นที่ (สร้าง แก้ไข และลบบัญชี)</p>
 
+      {canManage && (<>
       <button
         type="button"
         onClick={() => setShowCreate((v) => !v)}
@@ -174,6 +206,22 @@ export default function DispatchersTab() {
             <option key={r.id} value={r.id}>{regionLabel(r)}</option>
           ))}
         </select>
+        <fieldset className="border border-gray-200 rounded-lg p-3">
+          <legend className="text-sm text-gray-600 px-1">สิทธิ์การใช้งาน</legend>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {PERMISSION_OPTIONS.map((p) => (
+              <label key={p.id} className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={newPerms.includes(p.id)}
+                  onChange={() => togglePerm(p.id)}
+                  className="rounded border-gray-300 text-forest-600 focus:ring-forest-500"
+                />
+                {p.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <input
           type="password"
           value={newPassword}
@@ -194,6 +242,7 @@ export default function DispatchersTab() {
         </div>
       </form>
       )}
+      </>)}
 
       {dispatchers === null
         ? <p className="text-gray-500">กำลังโหลด…</p>
@@ -237,6 +286,22 @@ export default function DispatchersTab() {
                             <option key={r.id} value={r.id}>{regionLabel(r)}</option>
                           ))}
                         </select>
+                        <fieldset className="border border-gray-200 rounded-lg p-3">
+                          <legend className="text-sm text-gray-600 px-1">สิทธิ์การใช้งาน</legend>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {PERMISSION_OPTIONS.map((p) => (
+                              <label key={p.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={editPerms.includes(p.id)}
+                                  onChange={() => toggleEditPerm(p.id)}
+                                  className="rounded border-gray-300 text-forest-600 focus:ring-forest-500"
+                                />
+                                {p.label}
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
                         <input
                           type="password"
                           value={editPassword}
@@ -281,13 +346,15 @@ export default function DispatchersTab() {
                           {d.division && <p className="text-sm text-gray-500">สังกัด: {d.division}</p>}
                           <p className="text-sm text-gray-500">{d.region_name_th} ({REGION_LEVEL_TH[d.region_level] ?? d.region_level})</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => startEdit(d)}
-                          className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
-                        >
-                          แก้ไข
-                        </button>
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => startEdit(d)}
+                            className="text-sm text-forest-700 hover:text-forest-600 border border-forest-200 hover:border-forest-300 rounded-full px-3 py-1"
+                          >
+                            แก้ไข
+                          </button>
+                        )}
                       </div>
                     )}
                   </li>

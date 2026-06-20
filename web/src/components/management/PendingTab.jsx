@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSocketStore } from '../../functions/stateStore'
+import { useAuthStore, can } from '../../functions/useAuthStore'
 import { toast } from '../../functions/toastStore'
 import { useMessageEffect } from '../../functions/useMessageEffect'
 import { errorText } from './shared'
@@ -9,6 +10,10 @@ import { errorText } from './shared'
 // in sync.
 export default function PendingTab({ onCount }) {
   const send = useSocketStore((s) => s.send)
+  const user = useAuthStore((s) => s.user)
+  const canVerify = can(user, 'officer.verify')
+  const canViewReq = can(user, 'region_requests.view')
+  const canDecide = can(user, 'region_request.decide')
   const pendingMsg = useSocketStore((s) => s.byType?.pending_officers)
   const verifiedMsg = useSocketStore((s) => s.byType?.officer_verified)
   const requestsMsg = useSocketStore((s) => s.byType?.region_change_requests)
@@ -21,8 +26,8 @@ export default function PendingTab({ onCount }) {
 
   useEffect(() => {
     send({ type: 'list_pending_officers' })
-    send({ type: 'list_region_requests' })
-  }, [send])
+    if (canViewReq) send({ type: 'list_region_requests' })
+  }, [send, canViewReq])
 
   useEffect(() => {
     if (!pendingMsg) return
@@ -87,20 +92,23 @@ export default function PendingTab({ onCount }) {
                   {o.division && <p className="text-sm text-gray-500">สังกัด: {o.division}</p>}
                   <p className="text-sm text-gray-500">{o.province_name_th}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => verify(o.user_id)}
-                  disabled={busyId === o.user_id}
-                  className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
-                >
-                  {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
-                </button>
+                {canVerify && (
+                  <button
+                    type="button"
+                    onClick={() => verify(o.user_id)}
+                    disabled={busyId === o.user_id}
+                    className="bg-forest-500 hover:bg-forest-600 text-white rounded-full px-4 py-1.5 disabled:opacity-50"
+                  >
+                    {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </div>
       </div>
 
+      {canViewReq && (
       <div>
         <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">คำขอย้ายพื้นที่ (เข้ามายังเขตของคุณ)</p>
 
@@ -116,6 +124,7 @@ export default function PendingTab({ onCount }) {
                   <p className="text-sm text-gray-500">{r.username}</p>
                   <p className="text-sm text-gray-500">{r.current_province} → {r.requested_province}</p>
                 </div>
+                {canDecide && (
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -134,11 +143,13 @@ export default function PendingTab({ onCount }) {
                     ปฏิเสธ
                   </button>
                 </div>
+                )}
               </li>
             ))}
           </ul>
         </div>
       </div>
+      )}
     </div>
   )
 }
