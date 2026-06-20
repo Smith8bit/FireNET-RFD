@@ -25,7 +25,7 @@ export default function Pending() {
       <View style={{ flex: 1, padding: 24, gap: 16, justifyContent: 'center' }}>
         <Text style={{ fontSize: 22, fontWeight: '600' }}>รอการอนุมัติ</Text>
         <Text>บัญชีเจ้าหน้าที่ภาคสนามของคุณกำลังรอผู้ดูแลระบบยืนยัน</Text>
-        <Text style={{ color: '#666' }}>{user.email}</Text>
+        <Text style={{ color: '#666' }}>{user.username}</Text>
 
         <Pressable
           onPress={onRefresh}

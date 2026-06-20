@@ -1,8 +1,8 @@
 export const API_URL = import.meta.env.VITE_API_URL ?? ''
 
 export const ERROR_MESSAGES = {
-  email_taken: 'อีเมลนี้ถูกใช้งานแล้ว',
-  invalid_email: 'รูปแบบอีเมลไม่ถูกต้อง',
+  username_taken: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว',
+  invalid_username: 'ชื่อผู้ใช้ต้องเป็นตัวอักษรหรือตัวเลข 3-32 ตัว',
   weak_password: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร',
   out_of_scope: 'อยู่นอกพื้นที่รับผิดชอบของคุณ',
   nothing_to_update: 'ไม่มีการเปลี่ยนแปลง',

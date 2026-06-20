@@ -28,6 +28,9 @@ class Connection:
     user: User
     is_super: bool = False
     paths: Tuple[str, ...] = ()
+    # resolved once at connect: does this user hold officers.view? Gates officer
+    # broadcasts so a console user without it gets no officer data (list or map).
+    can_view_officers: bool = False
     wants_map: bool = False
     viewport: Optional[tuple] = None
 
@@ -104,11 +107,12 @@ class ConnectionManager:
         self._snap_at[key] = time.monotonic()
         return payload
 
-    async def connect(self, ws: WebSocket, user: User, paths: Tuple[str, ...] = ()) -> Connection:
+    async def connect(self, ws: WebSocket, user: User, paths: Tuple[str, ...] = (),
+                      can_view_officers: bool = False) -> Connection:
         await ws.accept()
         conn = Connection(
             ws=ws, user=user, is_super=bool(getattr(user, "is_superuser", False)),
-            paths=tuple(paths),
+            paths=tuple(paths), can_view_officers=can_view_officers,
         )
         # subscribe before sending the snapshot so a concurrent delta is never lost
         # (an early delta only triggers a harmless client resync)

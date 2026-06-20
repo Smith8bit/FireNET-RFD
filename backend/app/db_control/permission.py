@@ -12,26 +12,135 @@ async def user_roles(user: User, session: AsyncSession) -> list[str]:
     return [row[0] for row in result.all()]
 
 
-# Roles permitted on the web console. Both may manage officers (scoped by region);
-# there is no read-only role. "field_officer" is mobile-only and never appears here.
-MANAGE_ROLES = frozenset({"admin", "dispatcher"})
+# --- Permission catalog -------------------------------------------------------
+# Fine-grained, region-scoped console capabilities. A superuser implicitly holds
+# all of them everywhere; everyone else holds an explicit subset per region
+# assignment (user_regions.permissions). See the WS handlers for the gate each one
+# guards.
+VIEW_PERMS = frozenset(
+    {"fires.view", "officers.view", "region_requests.view", "dispatchers.view"}
+)
+ACTION_PERMS = frozenset(
+    {
+        "officer.verify",
+        "officer.manage",
+        "fire.appoint",
+        "region_request.decide",
+        "dispatcher.manage",
+        "permission.grant",
+    }
+)
+ALL_PERMISSIONS = VIEW_PERMS | ACTION_PERMS
+
+# Holding an action permission implies being able to read the resource it acts on.
+IMPLIES = {
+    "officer.verify": frozenset({"officers.view"}),
+    "officer.manage": frozenset({"officers.view"}),
+    "fire.appoint": frozenset({"officers.view", "fires.view"}),
+    "region_request.decide": frozenset({"region_requests.view"}),
+    "dispatcher.manage": frozenset({"dispatchers.view"}),
+}
+
+# Named bundles for provisioning — a starting checkbox set, never a gate.
+PRESETS = {
+    "viewer": frozenset({"fires.view", "officers.view"}),
+    "dispatcher": frozenset(
+        {
+            "officers.view",
+            "region_requests.view",
+            "officer.verify",
+            "officer.manage",
+            "fire.appoint",
+            "region_request.decide",
+        }
+    ),
+    "admin": ALL_PERMISSIONS,
+}
+
+# Permissions that authorize mutating officer/fire/dispatcher records.
+MANAGE_PERMS = ACTION_PERMS - frozenset({"permission.grant"})
+
+# Permissions a superuser may grant to others. dispatcher.manage and
+# permission.grant are superuser-only (escalation guards) — never delegatable, so
+# they're excluded and the backend rejects them on any grant payload.
+GRANTABLE = ALL_PERMISSIONS - frozenset({"dispatcher.manage", "permission.grant"})
+
+
+def expand(perms) -> set[str]:
+    """Add implied view permissions. ponytail: one-level map, no transitive
+    closure until a permission implies a permission that itself implies."""
+    out = set(perms)
+    for p in list(perms):
+        out |= IMPLIES.get(p, frozenset())
+    return out
+
+
+def effective_perms(role: str, permissions) -> set[str]:
+    """Permissions an assignment confers. Falls back to the role preset for rows
+    not yet backfilled with an explicit set — role IS the migration."""
+    perms = set(permissions or [])
+    if not perms and role in PRESETS:
+        perms = set(PRESETS[role])
+    return expand(perms)
+
+
+async def _assignments(user: User, session: AsyncSession):
+    """(role, permissions) for every region the user is assigned to."""
+    rows = await session.execute(
+        select(UserRegion.role, UserRegion.permissions).where(UserRegion.user_id == user.id)
+    )
+    return rows.all()
+
+
+async def has_perm(user: User, perm: str, path, session: AsyncSession) -> bool:
+    """True if the user holds `perm` via an assignment whose region is an ancestor
+    of (or equals) `path`. Superuser holds everything, everywhere."""
+    if user.is_superuser:
+        return True
+    rows = await session.execute(
+        text(
+            "SELECT ur.role, ur.permissions FROM user_regions ur "
+            "JOIN regions r ON r.id = ur.region_id "
+            "WHERE ur.user_id = :uid AND CAST(:p AS ltree) <@ r.path"
+        ).bindparams(uid=user.id, p=str(path))
+    )
+    return any(perm in effective_perms(role, permissions) for role, permissions in rows.all())
+
+
+async def has_perm_anywhere(user: User, perm: str, session: AsyncSession) -> bool:
+    """True if the user holds `perm` in any of their assignments (no path scope).
+    For aggregate list views that span everything the user covers."""
+    if user.is_superuser:
+        return True
+    return any(perm in effective_perms(role, p) for role, p in await _assignments(user, session))
+
+
+async def user_permissions(user: User, session: AsyncSession) -> set[str]:
+    """Union of effective permissions across all assignments. Superuser holds all."""
+    if user.is_superuser:
+        return set(ALL_PERMISSIONS)
+    out: set[str] = set()
+    for role, p in await _assignments(user, session):
+        out |= effective_perms(role, p)
+    return out
 
 
 async def is_admin_user(user: User, session: AsyncSession) -> bool:
-    """Web side (console access): superuser, or any non-field-officer role
-    (admin/dispatcher). Field officers belong to the mobile app."""
+    """Web side (console access): superuser, or anyone holding at least one
+    console permission. Field officers (no console perms) are rejected."""
     if user.is_superuser:
         return True
-    return any(r != "field_officer" for r in await user_roles(user, session))
+    return any(effective_perms(role, p) for role, p in await _assignments(user, session))
 
 
 async def can_manage_officers(user: User, session: AsyncSession) -> bool:
-    """Authority to mutate officer records (verify/appoint/edit/delete).
-    Superuser always; otherwise an explicit management role. Kept separate from
-    is_admin_user so a read-only role can be reintroduced without reopening writes."""
+    """Authority to mutate any officer/fire/dispatcher record (somewhere). Region
+    scope is enforced separately per handler. Superuser always."""
     if user.is_superuser:
         return True
-    return any(r in MANAGE_ROLES for r in await user_roles(user, session))
+    return any(
+        effective_perms(role, p) & MANAGE_PERMS for role, p in await _assignments(user, session)
+    )
 
 
 async def is_field_officer(user: User, session: AsyncSession) -> bool:

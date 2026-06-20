@@ -6,7 +6,7 @@ import { useAuthSession } from '@/providers/AuthProvider'
 
 export default function Login() {
   const { signIn } = useAuthSession()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordHidden, setPasswordHidden] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -15,13 +15,13 @@ export default function Login() {
   const onSubmit = async () => {
     if (submitting) return
     setError(null)
-    if (!email || !password) {
-      setError('กรุณากรอกอีเมลและรหัสผ่าน')
+    if (!username || !password) {
+      setError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน')
       return
     }
     setSubmitting(true)
     try {
-      await signIn(email.trim(), password) // AuthProvider redirects on success
+      await signIn(username.trim(), password) // AuthProvider redirects on success
     } catch (e) {
       setError(e instanceof Error ? e.message : 'เข้าสู่ระบบไม่สำเร็จ')
     } finally {
@@ -35,13 +35,12 @@ export default function Login() {
         <Text style={{ fontSize: 22, fontWeight: '600' }}>ระบบจัดการไฟป่า (หน่วยดับไฟ)</Text>
 
         <View style={{ gap: 6 }}>
-          <Text>อีเมล</Text>
+          <Text>ชื่อผู้ใช้</Text>
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="email@example.com"
-            keyboardType="email-address"
-            textContentType="emailAddress"
+            value={username}
+            onChangeText={setUsername}
+            placeholder="ชื่อผู้ใช้"
+            textContentType="username"
             autoCapitalize="none"
             autoCorrect={false}
             style={{ borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 }}

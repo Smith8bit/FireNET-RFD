@@ -39,7 +39,9 @@ export default function Firespot() {
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
   const resolveFire = useFireStore((s) => s.resolveFire)
   const reportFalseFire = useFireStore((s) => s.reportFalseFire)
+  const cancelReservation = useFireStore((s) => s.cancelReservation)
   const online = useFireStore((s) => s.online)
+  const [cancelling, setCancelling] = useState(false)
 
   const [formVisible, setFormVisible] = useState(false)
   const [note, setNote] = useState('')
@@ -121,6 +123,26 @@ export default function Firespot() {
     }
   }, [note, photos, resolveFire])
 
+  const confirmCancel = useCallback(() => {
+    Alert.alert('ยกเลิกการจอง', 'ต้องการยกเลิกการจองไฟนี้ใช่หรือไม่? ไฟจะกลับไปให้ผู้อื่นรับผิดชอบได้', [
+      { text: 'ไม่ใช่', style: 'cancel' },
+      {
+        text: 'ยกเลิกการจอง',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelling(true)
+          try {
+            await cancelReservation()
+          } catch (e) {
+            Alert.alert('ไม่สำเร็จ', e instanceof Error ? e.message : 'ไม่สามารถยกเลิกการจองได้')
+          } finally {
+            setCancelling(false)
+          }
+        },
+      },
+    ])
+  }, [cancelReservation])
+
   const openFalseForm = useCallback(() => {
     setFalseNote('')
     setFalseFormVisible(true)
@@ -173,6 +195,18 @@ export default function Firespot() {
         </View>
       </View>
 
+      {/* how this fire became yours: dispatcher-appointed vs self-reserved */}
+      <View style={[styles.bookingTag, reservedFire.appointed ? styles.bookingTagAppoint : styles.bookingTagSelf]}>
+        <Ionicons
+          name={reservedFire.appointed ? 'person-circle-outline' : 'hand-left-outline'}
+          size={14}
+          color={reservedFire.appointed ? '#4338ca' : '#0369a1'}
+        />
+        <Text style={[styles.bookingTagText, { color: reservedFire.appointed ? '#4338ca' : '#0369a1' }]}>
+          {reservedFire.appointed ? 'มอบหมายโดยผู้ควบคุม' : 'จองเอง'}
+        </Text>
+      </View>
+
       <View style={styles.card}>
         <Row label="ตรวจพบเมื่อ" value={formatDetectedAt(reservedFire.detected_at)} />
         <Row label="สถานะ" value={statusLabel} />
@@ -207,6 +241,15 @@ export default function Firespot() {
               ไม่ใช่ไฟ (แจ้งเตือนผิดพลาด)
             </Text>
           </TouchableOpacity>
+          {/* self-reserved fires can be released; dispatcher-appointed ones cannot */}
+          {!reservedFire.appointed && (
+            <TouchableOpacity style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
+              <Ionicons name="arrow-undo-outline" size={20} color="#ef4444" />
+              <Text style={styles.cancelButtonText}>
+                {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิกการจอง'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </>
       )}
 
@@ -413,6 +456,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  bookingTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 12,
+  },
+  bookingTagAppoint: {
+    backgroundColor: '#e0e7ff',
+  },
+  bookingTagSelf: {
+    backgroundColor: '#e0f2fe',
+  },
+  bookingTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
@@ -481,6 +544,23 @@ const styles = StyleSheet.create({
   },
   falseButtonTextDisabled: {
     color: '#d1d5db',
+  },
+  cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  cancelButtonText: {
+    color: '#ef4444',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   note: {
     fontSize: 12,

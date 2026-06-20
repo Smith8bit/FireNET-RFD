@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSocketStore } from '../../functions/stateStore'
+import { useAuthStore, can } from '../../functions/useAuthStore'
 import { toast } from '../../functions/toastStore'
 import { useMessageEffect } from '../../functions/useMessageEffect'
 import { formatDate, formatTime } from '../../functions/datetime'
@@ -14,16 +15,26 @@ const APPOINT_ERRORS = {
     forbidden: 'คุณไม่มีสิทธิ์มอบหมายงาน',
 }
 
+const CANCEL_ERRORS = {
+    forbidden: 'คุณไม่มีสิทธิ์ยกเลิกการจองนี้',
+    not_booked: 'ไฟนี้ไม่ได้ถูกจอง',
+}
+
 export default function ExpandedCard({ fire, officers }) {
     const [selectedOfficer, setSelectedOfficer] = useState('')
     const [pending, setPending] = useState(false)
+    const [cancelling, setCancelling] = useState(false)
+    const canAppoint = can(useAuthStore((s) => s.user), 'fire.appoint')
     const send = useSocketStore((s) => s.send)
     const appointedMsg = useSocketStore((s) => s.byType?.officer_appointed)
+    const cancelledMsg = useSocketStore((s) => s.byType?.booking_cancelled)
     const errorMsg = useSocketStore((s) => s.byType?.error)
 
     // a resolved or already-booked fire can't be (re)assigned:
     // lock the officer list + actions
     const locked = fire.status || fire.booked
+    // who may cancel a booking: self-reserved → anyone; dispatcher-appointed → fire.appoint
+    const canCancel = fire.booked && !fire.status && (!fire.appointed || canAppoint)
 
     // the picked officer may turn busy via a live officers_map refresh (self-reserve
     // or another admin) — disarm the action so we don't fire a doomed appoint
@@ -42,10 +53,27 @@ export default function ExpandedCard({ fire, officers }) {
         toast.error(APPOINT_ERRORS[m.code] ?? 'มอบหมายไม่สำเร็จ')
     })
 
+    useMessageEffect(cancelledMsg, (m) => {
+        if (!cancelling || m.fire_id !== fire.id) return
+        setCancelling(false)
+        toast.success('ยกเลิกการจองแล้ว')
+    })
+
+    useMessageEffect(errorMsg, (m) => {
+        if (!cancelling) return
+        setCancelling(false)
+        toast.error(CANCEL_ERRORS[m.code] ?? 'ยกเลิกไม่สำเร็จ')
+    })
+
     const appoint = () => {
         if (!selectedOfficer || selectedBusy) return
         setPending(true)
         send({ type: 'appoint_officer', fire_id: fire.id, officer_id: selectedOfficer })
+    }
+
+    const cancelBooking = () => {
+        setCancelling(true)
+        send({ type: 'cancel_booking', fire_id: fire.id })
     }
 
     return (
@@ -92,8 +120,19 @@ export default function ExpandedCard({ fire, officers }) {
                         </dd>
                     </div>
                 </dl>
+                {canCancel && (
+                    <button
+                        type="button"
+                        disabled={cancelling}
+                        onClick={cancelBooking}
+                        className="mt-3 w-full py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded-lg disabled:opacity-50 transition-colors"
+                    >
+                        {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิกการจอง'}
+                    </button>
+                )}
             </div>
 
+            {canAppoint && (<>
             <div className={`flex-1 min-h-0 overflow-y-auto minimal-scrollbar pb-2 border-b-2 border-gray-300 ${locked ? 'opacity-50 pointer-events-none select-none' : ''}`} id="available-officers">
                 <p className="sticky top-0 z-10 bg-white py-2 text-md font-semibold text-gray-500">เจ้าหน้าที่ในพื้นที่</p>
                 {officers.length === 0 ? (
@@ -145,6 +184,7 @@ export default function ExpandedCard({ fire, officers }) {
                     {fire.status ? 'ดับแล้ว' : fire.booked ? 'ถูกจองแล้ว' : pending ? 'กำลังมอบหมาย…' : 'มอบหมายเจ้าหน้าที่'}
                 </button>
             </div>
+            </>)}
         </div>
     )
 }

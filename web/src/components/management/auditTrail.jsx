@@ -9,6 +9,8 @@ const ACTION_LABELS = {
   'fire.resolve': 'ดับไฟสำเร็จ',
   'fire.false_report': 'แจ้งว่าไม่ใช่ไฟ',
   'fire.appoint': 'มอบหมายเจ้าหน้าที่',
+  'fire.release': 'ยกเลิกการจอง',
+  'fire.cancel_booking': 'ยกเลิกการมอบหมาย',
   'fire.expire': 'หมดอายุอัตโนมัติ',
   'fire.ingest': 'นำเข้าข้อมูลดาวเทียม',
   'officer.verify': 'ยืนยันเจ้าหน้าที่',
@@ -22,15 +24,22 @@ const ACTION_LABELS = {
   'region_change.request': 'ขอย้ายพื้นที่',
   'region_change.approved': 'อนุมัติย้ายพื้นที่',
   'region_change.rejected': 'ปฏิเสธย้ายพื้นที่',
+  'region.assign': 'มอบสิทธิ์พื้นที่',
+  'region.revoke': 'เพิกถอนสิทธิ์พื้นที่',
+  'settings.location_poll': 'ตั้งค่ารอบส่งตำแหน่ง',
   'auth.login': 'เข้าสู่ระบบ',
   'auth.register': 'สมัครบัญชี',
 }
+
+const ROLE_LABELS = { field_officer: 'เจ้าหน้าที่', dispatcher: 'ผู้ควบคุม' }
 
 const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
   officer: 'bg-blue-100 text-blue-700',
   dispatcher: 'bg-purple-100 text-purple-700',
   region_change: 'bg-teal-100 text-teal-700',
+  region: 'bg-emerald-100 text-emerald-700',
+  settings: 'bg-amber-100 text-amber-700',
   auth: 'bg-gray-100 text-gray-600',
 }
 
@@ -40,6 +49,8 @@ const CATEGORY_LABELS = {
   officer: 'เจ้าหน้าที่',
   dispatcher: 'ผู้ควบคุม',
   region_change: 'คำขอย้ายพื้นที่',
+  region: 'สิทธิ์พื้นที่',
+  settings: 'การตั้งค่า',
   auth: 'บัญชีผู้ใช้',
 }
 
@@ -65,21 +76,37 @@ function summarize(item, names = {}) {
     case 'fire.reserve':
     case 'fire.resolve':
     case 'fire.false_report':
-    case 'fire.appoint':
       return d.name ?? ''
+    case 'fire.appoint':
+      return d.officer_name ? `${d.name ?? ''} → ${d.officer_name}` : (d.name ?? '')
+    case 'fire.release':
+      return `ยกเลิกไฟ ${d.name ?? ''}`.trim()
+    case 'fire.cancel_booking':
+      return `ยกเลิกไฟ ${d.name ?? ''}${d.officer_name ? ` ของ ${d.officer_name}` : ''}`.trim()
     case 'region_change.request':
-    case 'region_change.approved':
-    case 'region_change.rejected':
       return provName(names, d.province_path)
+    case 'region_change.approved': {
+      const who = d.officer_name ? `${d.officer_name}: ` : ''
+      const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
+      return `${who}${from}${provName(names, d.province_path)}`
+    }
+    case 'region_change.rejected':
+      return `${d.officer_name ? `${d.officer_name}: ` : ''}${provName(names, d.province_path)}`
+    case 'region.assign':
+    case 'region.revoke':
+      return [provName(names, d.region_path), ROLE_LABELS[d.role] ?? d.role].filter(Boolean).join(' · ')
+    case 'settings.location_poll':
+      return d.minutes != null ? `ทุก ${d.minutes} นาที` : ''
     case 'officer.verify':
     case 'officer.delete':
     case 'dispatcher.create':
     case 'dispatcher.delete':
-      return [d.name, d.email].filter(Boolean).join(' · ')
+      return [d.name, d.username, d.division].filter(Boolean).join(' · ')
     case 'dispatcher.update': {
       const parts = []
       if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
-      if (d.email) parts.push(`เปลี่ยนอีเมล: ${d.previous_email ? `${d.previous_email} → ` : ''}${d.email}`)
+      if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
+      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.division ?? '—'}`)
       if (d.region_path) parts.push(`ย้ายพื้นที่: ${provName(names, d.region_path)}`)
       if (d.password_changed) parts.push('รีเซ็ตรหัสผ่าน')
       return parts.join('\n')
@@ -87,7 +114,8 @@ function summarize(item, names = {}) {
     case 'officer.update': {
       const parts = []
       if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
-      if (d.email) parts.push(`เปลี่ยนอีเมล: ${d.previous_email ? `${d.previous_email} → ` : ''}${d.email}`)
+      if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
+      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.division ?? '—'}`)
       if (d.province_path) parts.push(`ย้ายไป: ${d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''}${provName(names, d.province_path)}`)
       if (d.password_changed) parts.push(`รีเซ็ตรหัสผ่าน${d.officer_name ? `: ${d.officer_name}` : ''}`)
       return parts.join('\n')
@@ -118,7 +146,8 @@ export default function AuditTrail() {
       (it) =>
         (it.action === 'officer.update' && it.detail?.province_path) ||
         (it.action === 'dispatcher.update' && it.detail?.region_path) ||
-        (it.action.startsWith('region_change.') && it.detail?.province_path)
+        (it.action.startsWith('region_change.') && it.detail?.province_path) ||
+        (it.action.startsWith('region.') && it.detail?.region_path)
     )
     if (!needsProvince) return
     provincesLoaded.current = true
@@ -199,7 +228,7 @@ export default function AuditTrail() {
             value={actorInput}
             onChange={(e) => setActorInput(e.target.value)}
             onBlur={() => { setActor(actorInput.trim()); setPage(0) }}
-            placeholder="ค้นหาด้วยอีเมลผู้กระทำ…"
+            placeholder="ค้นหาด้วยชื่อผู้ใช้ผู้กระทำ…"
             className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
           />
         </form>
@@ -244,7 +273,7 @@ export default function AuditTrail() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 align-top text-gray-600 break-all">
-                    {item.actor_email === 'system' ? 'ระบบ' : item.actor_email}
+                    {item.actor_username === 'system' ? 'ระบบ' : item.actor_username}
                   </td>
                   <td className="px-3 py-2.5 align-top text-gray-700 whitespace-pre-line wrap-break-word">
                     {summarize(item, provinceNames) || '—'}

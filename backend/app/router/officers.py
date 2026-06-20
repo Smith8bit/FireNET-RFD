@@ -16,6 +16,7 @@ from ..auth.authen import current_active_user
 from ..config import get_settings
 from ..database import get_async_session
 from ..database.models import (
+    AppSetting,
     DeviceToken,
     FieldOfficer,
     FireResolution,
@@ -29,6 +30,7 @@ from ..database.models import (
 from ..database.schemas import (
     FireAssign,
     FireFalseReport,
+    LocationPollUpdate,
     OfficerProfileUpdate,
     OfficerRegister,
     OfficerStatusUpdate,
@@ -64,7 +66,7 @@ async def register_officer(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid province")
     try:
         user = await manager.create(
-            UserCreate(email=body.email, password=body.password),
+            UserCreate(email=body.username, password=body.password, division=body.division),
             safe=True,  # forces is_verified=False and is_superuser=False
         )
     except UserAlreadyExists:
@@ -74,6 +76,53 @@ async def register_officer(
     session.add(UserRegion(user_id=user.id, region_id=province.id, role="field_officer", name=body.name))
     await session.commit()
     return user
+
+
+_LOCATION_POLL_KEY = "location_poll_minutes"
+
+
+def _effective_poll_minutes(raw: str | None) -> float:
+    """Superuser's value if set, else the default — never below the floor (a
+    0.5-min override is served as the 1-min floor). Pure, so it's unit-testable."""
+    minutes = float(raw) if raw is not None else settings.LOCATION_POLL_DEFAULT_MINUTES
+    return max(minutes, settings.LOCATION_POLL_MIN_MINUTES)
+
+
+async def _location_poll_minutes(session: AsyncSession) -> float:
+    raw = (
+        await session.execute(
+            select(AppSetting.value).where(AppSetting.key == _LOCATION_POLL_KEY)
+        )
+    ).scalar_one_or_none()
+    return _effective_poll_minutes(raw)
+
+
+# ---- effective mobile location-poll cadence (any officer reads; superuser sets) ----
+@router.get("/location-poll-interval")
+async def get_location_poll_interval(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return {"minutes": await _location_poll_minutes(session)}
+
+
+@router.patch("/location-poll-interval", status_code=status.HTTP_200_OK)
+async def set_location_poll_interval(
+    body: LocationPollUpdate,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if not user.is_superuser:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "superuser only")
+    await session.execute(
+        insert(AppSetting)
+        .values(key=_LOCATION_POLL_KEY, value=str(body.minutes))
+        .on_conflict_do_update(index_elements=["key"], set_={"value": str(body.minutes)})
+    )
+    audit(session, actor=user, action="settings.location_poll", entity_type="settings",
+          entity_id=_LOCATION_POLL_KEY, detail={"minutes": body.minutes})
+    await session.commit()
+    return {"minutes": await _location_poll_minutes(session)}
 
 
 # ---- field officer: update own location / online status ----
@@ -106,7 +155,7 @@ async def update_my_location(
     return {"active": fo.active, "last_updated": fo.last_updated.isoformat()}
 
 
-def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
+def _fire_detail(fire: Firespot, booked: bool = True, appointed: bool = False) -> dict:
     pt = to_shape(fire.location)
     detail = fire.detail or {}
     return {
@@ -117,6 +166,7 @@ def _fire_detail(fire: Firespot, booked: bool = True) -> dict:
         "expired": fire.expired,
         "false_alarm": fire.false_alarm,
         "booked": booked,
+        "appointed": appointed,  # dispatcher-assigned → officer can't self-cancel
         "lat": pt.y,
         "lng": pt.x,
         "tumboon": detail.get("TUMBON"),
@@ -148,6 +198,10 @@ async def reserve_fire(
 ):
     fo = await _my_field_officer(user, session)
     fire = None
+    # releasing a reservation: a dispatcher-appointed fire can only be cancelled by
+    # a dispatcher (web console), not by the officer themselves
+    if body.fire_id is None and fo.fire_id is not None and fo.appointed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "appointed fire, dispatcher-only cancel")
     if body.fire_id is not None:
         if not fo.active:
             raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
@@ -178,13 +232,16 @@ async def reserve_fire(
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already reserved")
     previous_fire_id = fo.fire_id
     fo.fire_id = body.fire_id
+    fo.appointed = False  # self-reserve (or clear) is never a dispatcher appointment
     if body.fire_id is not None:
         if body.fire_id != previous_fire_id:
             audit(session, actor=user, action="fire.reserve", entity_type="fire",
                   entity_id=str(fire.id), detail={"name": fire.name})
     elif previous_fire_id is not None:
+        released = await session.get(Firespot, previous_fire_id)
         audit(session, actor=user, action="fire.release", entity_type="fire",
-              entity_id=str(previous_fire_id))
+              entity_id=str(previous_fire_id),
+              detail={"name": released.name} if released is not None else None)
     try:
         await session.commit()
     except IntegrityError:
@@ -326,7 +383,7 @@ async def resolve_my_fire(
         print(f"[resolve] evidence upload failed: {exc}")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "evidence storage unavailable")
 
-    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, note=note or None)
+    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None)
     session.add(resolution)
     await session.flush()
     for (key, data, content_type), point in zip(prepared, gps):
@@ -396,7 +453,7 @@ async def false_report_my_fire(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
 
     # records who reported it false and why; no images, unlike a real resolution
-    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, note=note or None)
+    resolution = FireResolution(fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None)
     session.add(resolution)
     await session.flush()
     fo.fire_id = None
@@ -436,7 +493,7 @@ async def my_reserved_fire(
     if fo.fire_id is None:
         return None
     fire = await session.get(Firespot, fo.fire_id)
-    return _fire_detail(fire) if fire is not None else None
+    return _fire_detail(fire, appointed=fo.appointed) if fire is not None else None
 
 
 # ---- field officer: register / remove this device's FCM push token ----
@@ -499,8 +556,11 @@ async def update_my_profile(
     await session.execute(
         update(FieldOfficer).where(FieldOfficer.user_id == user.id).values(name=name)
     )
+    # division (สังกัด) is optional; only overwrite when the client sends it
+    if body.division is not None:
+        user.division = body.division.strip() or None
     await session.commit()
-    return {"name": name}
+    return {"name": name, "division": user.division}
 
 
 # ---- field officer: request a move to another province (dispatcher approves) ----

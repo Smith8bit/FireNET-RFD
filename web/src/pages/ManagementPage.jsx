@@ -4,17 +4,22 @@ import HistoryTab from '../components/management/HistoryTab'
 import PendingTab from '../components/management/PendingTab'
 import OfficersTab from '../components/management/OfficersTab'
 import DispatchersTab from '../components/management/DispatchersTab'
-import { useAuthStore } from '../functions/useAuthStore'
+import { useAuthStore, can } from '../functions/useAuthStore'
 
 export default function ManagementPage() {
   const user = useAuthStore((s) => s.user)
   const [selectedTab, setSelectedTab] = useState('Pending')
   const [pendingCount, setPendingCount] = useState(null)
 
-  // dispatcher management + the audit endpoint are superuser-only (regional scoping deferred)
-  const tabs = user?.is_superuser
-    ? ['Pending', 'Officers', 'Dispatchers', 'History', 'Audit']
-    : ['Pending', 'Officers', 'History']
+  // each tab shows only if the user holds the matching permission (Audit stays superuser-only)
+  const tabs = [
+    can(user, 'officers.view') && 'Pending',
+    can(user, 'officers.view') && 'Officers',
+    can(user, 'dispatchers.view') && 'Dispatchers',
+    can(user, 'fires.view') && 'History',
+    user?.is_superuser && 'Audit',
+  ].filter(Boolean)
+  const activeTab = tabs.includes(selectedTab) ? selectedTab : tabs[0]
 
   const TAB_LABELS = {
     Pending: `รอยืนยัน${pendingCount != null ? ` (${pendingCount})` : ''}`,
@@ -34,7 +39,7 @@ export default function ManagementPage() {
               key={tab}
               onClick={() => setSelectedTab(tab)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                selectedTab === tab
+                activeTab === tab
                   ? 'border-forest-500 text-forest-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
@@ -45,11 +50,11 @@ export default function ManagementPage() {
         </div>
       </div>
       <div className='flex-1 bg-white border-0 rounded-2xl p-6 mb-1'>
-        {selectedTab === 'Pending' && <PendingTab onCount={setPendingCount} />}
-        {selectedTab === 'Officers' && <OfficersTab />}
-        {selectedTab === 'Dispatchers' && user?.is_superuser && <DispatchersTab />}
-        {selectedTab === 'History' && <HistoryTab />}
-        {selectedTab === 'Audit' && <AuditTrail />}
+        {activeTab === 'Pending' && <PendingTab onCount={setPendingCount} />}
+        {activeTab === 'Officers' && <OfficersTab />}
+        {activeTab === 'Dispatchers' && <DispatchersTab />}
+        {activeTab === 'History' && <HistoryTab />}
+        {activeTab === 'Audit' && <AuditTrail />}
       </div>
     </div>
   )

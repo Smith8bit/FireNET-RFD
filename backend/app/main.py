@@ -135,6 +135,26 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS false_alarm boolean NOT NULL DEFAULT false")
         )
+        await conn.execute(
+            text("ALTER TABLE fire_resolutions ADD COLUMN IF NOT EXISTS officer_name text")
+        )
+        await conn.execute(
+            text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS division text')
+        )
+        await conn.execute(
+            text("ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
+                 "permissions text[] NOT NULL DEFAULT '{}'")
+        )
+        await conn.execute(
+            text("ALTER TABLE field_officers ADD COLUMN IF NOT EXISTS "
+                 "appointed boolean NOT NULL DEFAULT false")
+        )
+        # backfill the snapshot for rows predating the column, so a later officer
+        # delete doesn't strip their attribution (no-op once filled)
+        await conn.execute(text(
+            "UPDATE fire_resolutions r SET officer_name = fo.name FROM field_officers fo "
+            "WHERE r.officer_id = fo.id AND r.officer_name IS NULL"
+        ))
         await conn.execute(text(_AUDIT_BLOCK_FN_SQL))
         await conn.execute(text(_AUDIT_BLOCK_TRIGGER_SQL))
         # at most one open region-change request per officer

@@ -204,3 +204,4 @@ docker-compose.yml
 # The Python `lib/` rule above also matches mobile/src/lib — real RN source
 # (api client, push). Keep it tracked so git clones / EAS builds include it.
 !mobile/src/lib/
+/web/dashboard

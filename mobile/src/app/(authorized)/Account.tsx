@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useFocusEffect } from 'expo-router'
 import { Dropdown } from 'react-native-element-dropdown'
 import { api } from '@/lib/api'
 import { useAuthSession } from '@/providers/AuthProvider'
@@ -25,43 +26,48 @@ function errMsg(e: any, fallback: string) {
 export default function Account() {
   const { user, refresh } = useAuthSession()
   const [name, setName] = useState(user?.name ?? '')
-  const [email, setEmail] = useState(user?.email ?? '')
+  const [division, setDivision] = useState(user?.division ?? '')
+  const [username, setUsername] = useState(user?.username ?? '')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [province, setProvince] = useState<string | null>(null)
   const [pending, setPending] = useState<{ status: string; province: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
-  // current/last region-change request, so a pending one disables resubmitting
-  useEffect(() => {
-    api.get('/officers/me/region-change').then((r) => {
-      if (r.data?.status === 'pending') setPending(r.data)
-    }).catch(() => {})
-  }, [])
+  // refresh on every focus so the section resets to the default dropdown once a
+  // request is decided (approved/rejected) — a still-pending one keeps disabling resubmit
+  useFocusEffect(
+    useCallback(() => {
+      api.get('/officers/me/region-change').then((r) => {
+        setPending(r.data?.status === 'pending' ? r.data : null)
+      }).catch(() => {})
+    }, []),
+  )
 
-  const saveName = async () => {
+  const saveProfile = async () => {
     if (!name.trim()) return Alert.alert('กรุณากรอกชื่อ')
     setBusy('name')
     try {
-      await api.patch('/officers/me/profile', { name: name.trim() })
+      await api.patch('/officers/me/profile', { name: name.trim(), division: division.trim() })
       await refresh()
-      Alert.alert('บันทึกชื่อแล้ว')
+      Alert.alert('บันทึกข้อมูลแล้ว')
     } catch (e) {
-      Alert.alert('ไม่สำเร็จ', errMsg(e, 'ไม่สามารถบันทึกชื่อได้'))
+      Alert.alert('ไม่สำเร็จ', errMsg(e, 'ไม่สามารถบันทึกข้อมูลได้'))
     } finally {
       setBusy(null)
     }
   }
 
-  const saveEmail = async () => {
-    if (!email.trim()) return Alert.alert('กรุณากรอกอีเมล')
-    setBusy('email')
+  const saveUsername = async () => {
+    if (!username.trim()) return Alert.alert('กรุณากรอกชื่อผู้ใช้')
+    setBusy('username')
     try {
-      await api.patch('/users/me', { email: email.trim() })
+      // fastapi-users keys the identity field as `email` internally; the value is the username
+      await api.patch('/users/me', { email: username.trim() })
       await refresh()
-      Alert.alert('บันทึกอีเมลแล้ว')
+      Alert.alert('บันทึกชื่อผู้ใช้แล้ว')
     } catch (e) {
-      Alert.alert('ไม่สำเร็จ', errMsg(e, 'ไม่สามารถบันทึกอีเมลได้ (อาจถูกใช้งานแล้ว)'))
+      Alert.alert('ไม่สำเร็จ', errMsg(e, 'ไม่สามารถบันทึกชื่อผู้ใช้ได้ (อาจถูกใช้งานแล้ว)'))
     } finally {
       setBusy(null)
     }
@@ -101,15 +107,17 @@ export default function Account() {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Section title="ชื่อ-นามสกุล">
+          <Section title="ชื่อ-นามสกุล / สังกัด">
             <TextInput value={name} onChangeText={setName} style={styles.input} autoCapitalize="words" />
-            <SaveButton label="บันทึกชื่อ" onPress={saveName} loading={busy === 'name'} />
+            <TextInput value={division} onChangeText={setDivision} style={styles.input}
+              placeholder="สังกัด" autoCorrect={false} />
+            <SaveButton label="บันทึกข้อมูล" onPress={saveProfile} loading={busy === 'name'} />
           </Section>
 
-          <Section title="อีเมล">
-            <TextInput value={email} onChangeText={setEmail} style={styles.input}
-              keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
-            <SaveButton label="บันทึกอีเมล" onPress={saveEmail} loading={busy === 'email'} />
+          <Section title="ชื่อผู้ใช้">
+            <TextInput value={username} onChangeText={setUsername} style={styles.input}
+              textContentType="username" autoCapitalize="none" autoCorrect={false} />
+            <SaveButton label="บันทึกชื่อผู้ใช้" onPress={saveUsername} loading={busy === 'username'} />
           </Section>
 
           <Section title="เปลี่ยนรหัสผ่าน">

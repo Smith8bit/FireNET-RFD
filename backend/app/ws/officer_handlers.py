@@ -20,8 +20,15 @@ from ..database.models import (
     UserRegion,
 )
 from ..db_control.audit import audit
-from ..db_control.permission import can_manage_officers, is_admin_user, user_region_paths
+from ..db_control.permission import (
+    can_manage_officers,
+    has_perm,
+    has_perm_anywhere,
+    is_admin_user,
+    user_region_paths,
+)
 from ..db_control.push import send_push
+from ..database.schemas import valid_username
 from .manager import fanout, group_by_scope
 
 settings = get_settings()
@@ -30,7 +37,7 @@ _password_helper = PasswordHelper()
 _MIN_PASSWORD_LEN = 8
 
 _PENDING_SQL = """
-    SELECT u.id AS user_id, u.email AS email, ur.name AS name,
+    SELECT u.id AS user_id, u.email AS username, ur.name AS name, u.division AS division,
            r.name_th AS province_name_th, r.path::text AS province_path
     FROM "user" u
     JOIN user_regions ur ON ur.user_id = u.id AND ur.role = 'field_officer'
@@ -39,7 +46,7 @@ _PENDING_SQL = """
 """
 
 _OFFICERS_SQL = """
-    SELECT fo.id AS field_officer_id, fo.user_id, fo.name, u.email,
+    SELECT fo.id AS field_officer_id, fo.user_id, fo.name, u.email AS username, u.division AS division,
            (fo.active AND fo.last_updated > now() - make_interval(mins => :ttl)) AS active,
            fo.fire_id::text AS fire_id,
            fo.last_updated::text AS last_updated,
@@ -67,6 +74,10 @@ async def _can_manage(user: User, session) -> bool:
     return await can_manage_officers(user, session)
 
 
+async def _can_view_officers(user: User, session) -> bool:
+    return await has_perm_anywhere(user, "officers.view", session)
+
+
 async def _fetch_officers(session, user: User, *, limit: int | None = None) -> list[dict]:
     ttl = settings.OFFICER_ONLINE_TTL_MINUTES
     cap = limit if limit is not None else settings.OFFICER_MAP_MAX
@@ -87,7 +98,8 @@ async def _fetch_officers(session, user: User, *, limit: int | None = None) -> l
             "field_officer_id": str(m["field_officer_id"]),
             "user_id": str(m["user_id"]),
             "name": m["name"],
-            "email": m["email"],
+            "username": m["username"],
+            "division": m["division"],
             "active": m["active"],
             "fire_id": m["fire_id"],
             "last_updated": m["last_updated"],
@@ -101,7 +113,7 @@ async def _fetch_officers(session, user: User, *, limit: int | None = None) -> l
 
 async def handle_list_pending(ws: WebSocket, user: User) -> None:
     async with async_session_maker() as session:
-        if not await _is_admin(user, session):
+        if not await _can_view_officers(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         if user.is_superuser:
@@ -118,8 +130,9 @@ async def handle_list_pending(ws: WebSocket, user: User) -> None:
         officers = [
             {
                 "user_id": str(m["user_id"]),
-                "email": m["email"],
+                "username": m["username"],
                 "name": m["name"],
+                "division": m["division"],
                 "province_name_th": m["province_name_th"],
                 "province_path": m["province_path"],
             }
@@ -139,7 +152,7 @@ async def _fetch_region_requests(session, user: User) -> list[dict]:
             RegionChangeRequest.user_id,
             RegionChangeRequest.created_at,
             UserRegion.name.label("officer_name"),
-            User.email,
+            User.email.label("username"),
             cur.name_th.label("current_province"),
             dest.name_th.label("requested_province"),
         )
@@ -165,7 +178,7 @@ async def _fetch_region_requests(session, user: User) -> list[dict]:
             "request_id": str(r.id),
             "user_id": str(r.user_id),
             "officer_name": r.officer_name,
-            "email": r.email,
+            "username": r.username,
             "current_province": r.current_province,
             "requested_province": r.requested_province,
             "created_at": r.created_at.isoformat(),
@@ -243,14 +256,45 @@ async def handle_decide_region_request(
         req.status = "approved" if action == "approve" else "rejected"
         req.decided_at = datetime.now(timezone.utc)
         req.decided_by = admin.id
+        # officer name (+ origin province on approval) so the console trail reads
+        # "name: old → new" / "name: province" without extra client lookups
+        officer_name = (
+            await session.execute(
+                select(UserRegion.name).where(
+                    UserRegion.user_id == req.user_id, UserRegion.role == "field_officer"
+                )
+            )
+        ).scalar_one_or_none()
+        detail = {"request_id": str(req.id), "province_path": str(dest.path),
+                  "officer_name": officer_name}
+        if action == "approve":
+            prev_path = (
+                await session.execute(select(Region.path).where(Region.id == old_region_id))
+            ).scalar_one_or_none()
+            detail["previous_province_path"] = str(prev_path) if prev_path is not None else None
         audit(session, actor=admin, action=f"region_change.{req.status}", entity_type="user",
-              entity_id=str(req.user_id), detail={"request_id": str(req.id), "province_path": str(dest.path)})
+              entity_id=str(req.user_id), detail=detail)
         try:
             await session.commit()
         except IntegrityError:
             await session.rollback()
             await ws.send_json({"type": "error", "code": "conflict"})
             return
+        notify_user_id = req.user_id
+        decided_status = req.status
+        province_name = dest.name_th
+
+    # tell the officer the outcome (best-effort, outside the decision transaction)
+    approved = decided_status == "approved"
+    async with async_session_maker() as session:
+        await send_push(
+            session, notify_user_id,
+            title="อนุมัติคำขอย้ายพื้นที่" if approved else "ปฏิเสธคำขอย้ายพื้นที่",
+            body=(f"คำขอย้ายไปยัง {province_name} ได้รับการอนุมัติแล้ว" if approved
+                  else f"คำขอย้ายไปยัง {province_name} ถูกปฏิเสธ"),
+            data={"type": "region_change", "status": decided_status},
+        )
+        await session.commit()
 
     logger.info("region request %s %s by admin=%s", request_id, req.status, admin.id)
     await ws.send_json({"type": "region_request_decided", "request_id": str(request_id), "status": req.status})
@@ -262,7 +306,7 @@ async def handle_decide_region_request(
 
 async def handle_list_officers(ws: WebSocket, user: User) -> None:
     async with async_session_maker() as session:
-        if not await _is_admin(user, session):
+        if not await _can_view_officers(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         officers = await _fetch_officers(session, user)
@@ -286,7 +330,7 @@ def _map_subset(officers: list[dict]) -> list[dict]:
 
 async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
     async with async_session_maker() as session:
-        if not await _is_admin(user, session):
+        if not await _can_view_officers(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
         officers = await _fetch_officers(session, user)
@@ -297,9 +341,9 @@ async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
 
 async def broadcast_officers_update(active_connections) -> None:
     """Bucketed: one officer fetch per distinct scope, fanned out to its sockets."""
-    # every active ws connection is already an admin — non-admins are rejected at
-    # the handshake (router/ws.py) — so skip a per-socket role query each tick
-    admins = list(active_connections)
+    # only push officer data to connections that hold officers.view (resolved once
+    # at connect); the rest get no officer list or map markers
+    admins = [c for c in active_connections if c.can_view_officers]
     async with async_session_maker() as session:
         for scope, members in group_by_scope(admins).items():
             try:
@@ -317,8 +361,8 @@ async def broadcast_admin_refresh(active_connections, include_pending: bool = Fa
     Bucketed: the officer query runs once per distinct scope (not once per admin),
     and each scope's two payloads are serialized once and fanned out to every
     socket in that scope — same frames each admin received before, O(scopes) DB."""
-    # every active ws connection is already an admin (gated at the handshake)
-    admins = list(active_connections)
+    # only connections holding officers.view receive officer lists / map markers
+    admins = [c for c in active_connections if c.can_view_officers]
     async with async_session_maker() as session:
         groups = group_by_scope(admins)
         for scope, members in groups.items():
@@ -384,7 +428,7 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
-              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
         await session.commit()
 
     logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
@@ -413,13 +457,15 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
         return
     new_name = (data.get("name") or "").strip() or None if "name" in data else None
     province_code = (data.get("province_code") or "").strip() or None
-    new_email = ((data.get("email") or "").strip().lower() or None) if "email" in data else None
+    new_username = ((data.get("username") or "").strip() or None) if "username" in data else None
     new_password = data.get("password") or None
-    if new_name is None and province_code is None and new_email is None and new_password is None:
+    new_division = ((data.get("division") or "").strip() or None) if "division" in data else None
+    if (new_name is None and province_code is None and new_username is None
+            and new_password is None and "division" not in data):
         await ws.send_json({"type": "error", "code": "nothing_to_update"})
         return
-    if new_email is not None and ("@" not in new_email or "." not in new_email):
-        await ws.send_json({"type": "error", "code": "invalid_email"})
+    if new_username is not None and not valid_username(new_username):
+        await ws.send_json({"type": "error", "code": "invalid_username"})
         return
     if new_password is not None and len(new_password) < _MIN_PASSWORD_LEN:
         await ws.send_json({"type": "error", "code": "weak_password"})
@@ -476,10 +522,13 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
                 ur_values["region_id"] = province.id
 
         # login credentials live on the user row, not the region assignment
-        if new_email is not None and new_email != target.email:
-            changes["email"] = new_email
-            changes["previous_email"] = target.email
-            target.email = new_email
+        if new_username is not None and new_username != target.email:
+            changes["username"] = new_username
+            changes["previous_username"] = target.email
+            target.email = new_username
+        if "division" in data and new_division != target.division:
+            changes["division"] = new_division
+            target.division = new_division
         if new_password is not None:
             # never record the secret itself — only that a reset happened, and whose
             target.hashed_password = _password_helper.hash(new_password)
@@ -510,10 +559,10 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
 
-    # keys only: values may hold Thai text / the new email, which we keep out of logs
+    # keys only: values may hold Thai text / the new username, which we keep out of logs
     logger.info("officer updated user=%s by admin=%s changes=%s", user_id, admin.id, sorted(changes))
     await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
     await broadcast_admin_refresh(active_connections, include_pending=True)
@@ -562,7 +611,7 @@ async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_c
         # capture attribution before the rows are gone
         audit(session, actor=admin, action="officer.delete", entity_type="officer",
               entity_id=str(user_id),
-              detail={"email": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
         # FieldOfficer must go before the user (NOT NULL user_id with SET NULL FK)
         await session.execute(delete(FieldOfficer).where(FieldOfficer.user_id == user_id))
         await session.delete(target)
@@ -648,10 +697,11 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
                 return
 
         officer.fire_id = fire_id
+        officer.appointed = True  # dispatcher-assigned (vs. self-reserved)
         audit(session, actor=admin, action="fire.appoint", entity_type="fire",
               entity_id=str(fire_id),
               detail={"officer_id": str(officer_id), "officer_user_id": str(officer.user_id),
-                      "name": fire.name})
+                      "name": fire.name, "officer_name": officer.name})
         try:
             await session.commit()
         except IntegrityError:
@@ -676,3 +726,68 @@ async def handle_appoint_officer(ws: WebSocket, admin: User, data: dict, active_
     logger.info("fire appointed fire=%s officer=%s by admin=%s", fire_id, officer_id, admin.id)
     await ws.send_json({"type": "officer_appointed", "fire_id": str(fire_id),
                         "officer_id": str(officer_id)})
+
+
+async def handle_cancel_booking(ws: WebSocket, user: User, data: dict, active_connections) -> None:
+    """Release a held (booked, not yet resolved) fire from its officer.
+
+    Who may cancel depends on how it was booked:
+      - self-reserved (officer picked it themselves): any console user.
+      - dispatcher-appointed: only fire.appoint, scoped to the fire's region
+        (the same authority that made the appointment).
+    The pg_listener booking trigger refreshes every client's fire/officer lists;
+    the officer is notified by push."""
+    try:
+        fire_id = uuid.UUID(data["fire_id"])
+    except (KeyError, ValueError):
+        await ws.send_json({"type": "error", "code": "invalid_request"})
+        return
+
+    notify_user_id = None
+    fire_name = None
+    async with async_session_maker() as session:
+        officer = (
+            await session.execute(select(FieldOfficer).where(FieldOfficer.fire_id == fire_id))
+        ).scalar_one_or_none()
+        if officer is None:
+            await ws.send_json({"type": "error", "code": "not_booked"})
+            return
+
+        fire = await session.get(Firespot, fire_id)
+        fire_name = fire.name if fire is not None else None
+
+        if officer.appointed:
+            # dispatcher-appointed: needs fire.appoint within the fire's region
+            fire_path = None if fire is None else (
+                await session.execute(select(Region.path).where(Region.id == fire.region_id))
+            ).scalar_one_or_none()
+            if fire_path is None or not await has_perm(user, "fire.appoint", fire_path, session):
+                await ws.send_json({"type": "error", "code": "forbidden"})
+                return
+        else:
+            # self-reserved: anyone with console access may cancel
+            if not await is_admin_user(user, session):
+                await ws.send_json({"type": "error", "code": "forbidden"})
+                return
+
+        notify_user_id = officer.user_id
+        officer.fire_id = None
+        officer.appointed = False
+        audit(session, actor=user, action="fire.cancel_booking", entity_type="fire",
+              entity_id=str(fire_id),
+              detail={"officer_id": str(officer.id), "officer_user_id": str(officer.user_id),
+                      "name": fire_name, "officer_name": officer.name})
+        await session.commit()
+
+    if notify_user_id is not None:
+        async with async_session_maker() as session:
+            await send_push(
+                session, notify_user_id,
+                title="ยกเลิกการมอบหมายงาน",
+                body=f"การมอบหมายไฟ {fire_name} ถูกยกเลิกแล้ว" if fire_name else "การมอบหมายงานถูกยกเลิกแล้ว",
+                data={"type": "fire_cancelled", "fire_id": str(fire_id)},
+            )
+            await session.commit()
+
+    logger.info("fire booking cancelled fire=%s by user=%s", fire_id, user.id)
+    await ws.send_json({"type": "booking_cancelled", "fire_id": str(fire_id)})

@@ -10,8 +10,9 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database import async_session_maker
 from ..database.models import Region, User, UserRegion
-from ..database.schemas import UserCreate
+from ..database.schemas import UserCreate, valid_username
 from ..db_control.audit import audit
+from ..db_control.permission import GRANTABLE, PRESETS, has_perm_anywhere, user_region_paths
 from ..db_control.users import UserManager
 
 logger = logging.getLogger("firenet.dispatchers")
@@ -23,28 +24,48 @@ _MIN_PASSWORD_LEN = 8
 # not be able to create peers or escalate. Superusers carry role 'admin' on the
 # national region, so filtering on role = 'dispatcher' already excludes them.
 _DISPATCHERS_SQL = """
-    SELECT u.id AS user_id, u.email AS email, ur.name AS name,
+    SELECT u.id AS user_id, u.email AS username, ur.name AS name, u.division AS division,
+           ur.permissions AS permissions,
            r.id AS region_id, r.code AS region_code, r.name_th AS region_name_th,
            r.level AS region_level, r.path::text AS region_path
     FROM "user" u
     JOIN user_regions ur ON ur.user_id = u.id AND ur.role = 'dispatcher'
     JOIN regions r ON r.id = ur.region_id
     WHERE u.is_superuser = false
-    ORDER BY r.path, u.email
 """
+_DISPATCHERS_ORDER = " ORDER BY r.path, u.email"
 
 
-def _valid_email(email: str) -> bool:
-    return "@" in email and "." in email
+def _clean_permissions(raw, *, default) -> list[str]:
+    """Keep only grantable permissions; fall back to `default` when none are given.
+    Superuser-only perms (dispatcher.manage / permission.grant) are dropped here."""
+    if not isinstance(raw, list):
+        return sorted(default)
+    valid = {p for p in raw if p in GRANTABLE}
+    return sorted(valid) if valid else sorted(default)
 
 
-async def _fetch_dispatchers(session) -> list[dict]:
-    rows = await session.execute(text(_DISPATCHERS_SQL))
+async def _fetch_dispatchers(session, viewer: User) -> list[dict]:
+    if viewer.is_superuser:
+        rows = await session.execute(text(_DISPATCHERS_SQL + _DISPATCHERS_ORDER))
+    else:
+        paths = await user_region_paths(viewer, session)
+        if not paths:
+            return []
+        rows = await session.execute(
+            text(_DISPATCHERS_SQL + " AND r.path <@ ANY(CAST(:paths AS ltree[]))" + _DISPATCHERS_ORDER)
+            .bindparams(paths=paths)
+        )
     return [
         {
             "user_id": str(m["user_id"]),
-            "email": m["email"],
+            "username": m["username"],
             "name": m["name"],
+            "division": m["division"],
+            # show what's stored (preset fallback for un-backfilled rows). Do NOT
+            # expand() here — implied views are an enforcement concern; expanding
+            # for display inflates the checkboxes and the inflation gets re-saved.
+            "permissions": sorted(m["permissions"] or PRESETS["dispatcher"]),
             "region_id": str(m["region_id"]),
             "region_code": m["region_code"],
             "region_name_th": m["region_name_th"],
@@ -56,17 +77,17 @@ async def _fetch_dispatchers(session) -> list[dict]:
 
 
 async def handle_list_dispatchers(ws: WebSocket, user: User) -> None:
-    if not user.is_superuser:
-        await ws.send_json({"type": "error", "code": "forbidden"})
-        return
     async with async_session_maker() as session:
-        dispatchers = await _fetch_dispatchers(session)
+        if not await has_perm_anywhere(user, "dispatchers.view", session):
+            await ws.send_json({"type": "error", "code": "forbidden"})
+            return
+        dispatchers = await _fetch_dispatchers(session, user)
     await ws.send_json({"type": "dispatchers", "dispatchers": dispatchers})
 
 
-async def _send_dispatcher_list(ws: WebSocket) -> None:
+async def _send_dispatcher_list(ws: WebSocket, viewer: User) -> None:
     async with async_session_maker() as session:
-        dispatchers = await _fetch_dispatchers(session)
+        dispatchers = await _fetch_dispatchers(session, viewer)
     await ws.send_json({"type": "dispatchers", "dispatchers": dispatchers})
 
 
@@ -76,13 +97,15 @@ async def handle_create_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         await ws.send_json({"type": "error", "code": "forbidden"})
         return
 
-    email = (data.get("email") or "").strip().lower()
+    username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     name = (data.get("name") or "").strip() or None
+    division = (data.get("division") or "").strip() or None
     region_id_raw = data.get("region_id")
+    permissions = _clean_permissions(data.get("permissions"), default=PRESETS["dispatcher"])
 
-    if not _valid_email(email):
-        await ws.send_json({"type": "error", "code": "invalid_email"})
+    if not valid_username(username):
+        await ws.send_json({"type": "error", "code": "invalid_username"})
         return
     if len(password) < _MIN_PASSWORD_LEN:
         await ws.send_json({"type": "error", "code": "weak_password"})
@@ -103,32 +126,35 @@ async def handle_create_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         manager = UserManager(user_db)
         try:
             new_user = await manager.create(
-                UserCreate(email=email, password=password, is_superuser=False, is_verified=True),
+                UserCreate(email=username, password=password, is_superuser=False,
+                           is_verified=True, division=division),
                 safe=False,
             )
         except UserAlreadyExists:
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
         except InvalidPasswordException:
             await ws.send_json({"type": "error", "code": "weak_password"})
             return
 
         session.add(
-            UserRegion(user_id=new_user.id, region_id=region.id, role="dispatcher", name=name)
+            UserRegion(user_id=new_user.id, region_id=region.id, role="dispatcher",
+                       name=name, permissions=permissions)
         )
         audit(session, actor=actor, action="dispatcher.create", entity_type="user",
               entity_id=str(new_user.id),
-              detail={"email": email, "name": name, "region_path": str(region.path)})
+              detail={"username": username, "name": name, "division": division,
+                      "region_path": str(region.path), "permissions": permissions})
         try:
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
 
     logger.info("dispatcher created user=%s by superuser=%s", new_user.id, actor.id)
     await ws.send_json({"type": "dispatcher_created", "user_id": str(new_user.id)})
-    await _send_dispatcher_list(ws)
+    await _send_dispatcher_list(ws, actor)
 
 
 async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> None:
@@ -143,8 +169,13 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         return
 
     new_name = (data.get("name") or "").strip() or None if "name" in data else None
-    new_email = ((data.get("email") or "").strip().lower() or None) if "email" in data else None
+    new_username = ((data.get("username") or "").strip() or None) if "username" in data else None
+    new_division = ((data.get("division") or "").strip() or None) if "division" in data else None
     new_password = data.get("password") or None
+    new_permissions = (
+        _clean_permissions(data.get("permissions"), default=PRESETS["dispatcher"])
+        if "permissions" in data else None
+    )
     region_id_raw = data.get("region_id")
     new_region_id = None
     if region_id_raw:
@@ -154,11 +185,12 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
             await ws.send_json({"type": "error", "code": "invalid_region"})
             return
 
-    if new_name is None and new_email is None and new_password is None and new_region_id is None:
+    if (new_name is None and new_username is None and new_password is None
+            and new_region_id is None and "division" not in data and new_permissions is None):
         await ws.send_json({"type": "error", "code": "nothing_to_update"})
         return
-    if new_email is not None and not _valid_email(new_email):
-        await ws.send_json({"type": "error", "code": "invalid_email"})
+    if new_username is not None and not valid_username(new_username):
+        await ws.send_json({"type": "error", "code": "invalid_username"})
         return
     if new_password is not None and len(new_password) < _MIN_PASSWORD_LEN:
         await ws.send_json({"type": "error", "code": "weak_password"})
@@ -184,6 +216,8 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         changes: dict = {}
         if new_name is not None and new_name != ur_row.name:
             changes["name"] = new_name
+        if new_permissions is not None and new_permissions != sorted(ur_row.permissions or []):
+            changes["permissions"] = new_permissions
 
         new_region = None
         if new_region_id is not None and new_region_id != ur_row.region_id:
@@ -193,10 +227,13 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
                 return
             changes["region_path"] = str(new_region.path)
 
-        if new_email is not None and new_email != target.email:
-            changes["email"] = new_email
-            changes["previous_email"] = target.email
-            target.email = new_email
+        if new_username is not None and new_username != target.email:
+            changes["username"] = new_username
+            changes["previous_username"] = target.email
+            target.email = new_username
+        if "division" in data and new_division != target.division:
+            changes["division"] = new_division
+            target.division = new_division
         if new_password is not None:
             # record only that a reset happened — never the secret itself
             target.hashed_password = _password_helper.hash(new_password)
@@ -210,14 +247,18 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         if new_region is not None:
             old_region_id = ur_row.region_id
             new_name_value = new_name if "name" in changes else ur_row.name
+            new_perms_value = new_permissions if "permissions" in changes else ur_row.permissions
             session.expunge(ur_row)
             await session.execute(
                 update(UserRegion)
                 .where(UserRegion.user_id == user_id, UserRegion.region_id == old_region_id)
-                .values(region_id=new_region.id, name=new_name_value)
+                .values(region_id=new_region.id, name=new_name_value, permissions=new_perms_value)
             )
-        elif "name" in changes:
-            ur_row.name = new_name
+        else:
+            if "name" in changes:
+                ur_row.name = new_name
+            if "permissions" in changes:
+                ur_row.permissions = new_permissions
 
         audit(session, actor=actor, action="dispatcher.update", entity_type="user",
               entity_id=str(user_id), detail=changes)
@@ -225,13 +266,13 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
             await session.commit()
         except IntegrityError:
             await session.rollback()
-            await ws.send_json({"type": "error", "code": "email_taken"})
+            await ws.send_json({"type": "error", "code": "username_taken"})
             return
 
     logger.info("dispatcher updated user=%s by superuser=%s changes=%s",
                 user_id, actor.id, sorted(changes))
     await ws.send_json({"type": "dispatcher_updated", "user_id": str(user_id)})
-    await _send_dispatcher_list(ws)
+    await _send_dispatcher_list(ws, actor)
 
 
 async def handle_delete_dispatcher(ws: WebSocket, actor: User, data: dict) -> None:
@@ -268,11 +309,11 @@ async def handle_delete_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
 
         audit(session, actor=actor, action="dispatcher.delete", entity_type="user",
               entity_id=str(user_id),
-              detail={"email": target.email, "name": user_region.name,
+              detail={"username": target.email, "name": user_region.name,
                       "region_path": str(region_path)})
         await session.delete(target)
         await session.commit()
 
     logger.info("dispatcher deleted user=%s by superuser=%s", user_id, actor.id)
     await ws.send_json({"type": "dispatcher_deleted", "user_id": str(user_id)})
-    await _send_dispatcher_list(ws)
+    await _send_dispatcher_list(ws, actor)

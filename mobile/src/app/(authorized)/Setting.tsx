@@ -21,7 +21,8 @@ export default function Setting() {
           <Ionicons name="person-circle" size={48} color="#10b981" />
           <View style={{ flexShrink: 1 }}>
             <Text style={styles.name}>{user?.name ?? 'เจ้าหน้าที่ภาคสนาม'}</Text>
-            <Text style={styles.email}>{user?.email}</Text>
+            <Text style={styles.email}>{user?.username}</Text>
+            {user?.division ? <Text style={styles.email}>{user.division}</Text> : null}
           </View>
         </View>
 
