@@ -77,10 +77,6 @@ class ConnectionManager:
         # shares one query AND one serialization per scope, not per socket.
         self._snap_payload: dict[Tuple[str, ...], str] = {}
         self._snap_at: dict[Tuple[str, ...], float] = {}
-        # --- legacy full-list broadcast (retained for the peak-load sims;
-        #     production uses the delta path above) ---
-        self._fire_payload: dict[Tuple[str, ...], str] = {}
-        self._fire_at: dict[Tuple[str, ...], float] = {}
 
     # ---- connect snapshot + resync ----
     async def _scope_fires(self, conn: Connection) -> list[dict]:
@@ -189,35 +185,6 @@ class ConnectionManager:
             self._version[scope] = ver
             payload = json.dumps({"type": "fires_delta", "v": ver,
                                   "upserts": vis_up, "removes": vis_rm})
-            await fanout(members, payload)
-
-    # ---- legacy full-list broadcast (peak-load sims / benchmarks) ----
-    async def _build_fire_payload(self, user: User) -> str:
-        fires = await get_fires(user=user)
-        return json.dumps({"fires": fires})
-
-    def _store_fire_payload(self, key: Tuple[str, ...], payload: str) -> None:
-        self._fire_payload[key] = payload
-        self._fire_at[key] = time.monotonic()
-
-    async def broadcast_fires(self) -> None:
-        """Full per-scope fire list with per-scope dedupe — the pre-delta model,
-        retained for the peak-load simulations. The live path is
-        refresh_and_broadcast_deltas.
-
-        One DB fetch per distinct scope, fanned out to all of that scope's
-        sockets; a scope whose payload is byte-identical to the last one it
-        received is skipped."""
-        for scope, members in group_by_scope(self.active).items():
-            try:
-                payload = await self._build_fire_payload(members[0].user)
-            except Exception as exc:
-                print(f"[ws] fire broadcast failed for scope {scope}: {exc}")
-                continue
-            unchanged = self._fire_payload.get(scope) == payload
-            self._store_fire_payload(scope, payload)
-            if unchanged:
-                continue
             await fanout(members, payload)
 
 
