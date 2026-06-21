@@ -1,6 +1,6 @@
 import re
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi_users import schemas
 from pydantic import BaseModel, Field, StringConstraints
@@ -42,13 +42,6 @@ class RegionRead(BaseModel):
 
     class Config:
         from_attributes = True
-
-class UserRegionAssign(BaseModel):
-    region_id: uuid.UUID
-    # "admin" or "dispatcher" (web console / officer management). Required — there
-    # is no read-only role to fall back to.
-    role: Literal["admin", "dispatcher", "field_officer"]
-
 
 class FireAssign(BaseModel):
     fire_id: uuid.UUID | None = None

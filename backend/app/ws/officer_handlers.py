@@ -428,7 +428,8 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
-              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name,
+                      "division": target.division, "province_path": str(province_path)})
         await session.commit()
 
     logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
@@ -613,7 +614,8 @@ async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_c
         # capture attribution before the rows are gone
         audit(session, actor=admin, action="officer.delete", entity_type="officer",
               entity_id=str(user_id),
-              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name,
+                      "division": target.division, "province_path": str(province_path)})
         # FieldOfficer must go before the user (NOT NULL user_id with SET NULL FK)
         await session.execute(delete(FieldOfficer).where(FieldOfficer.user_id == user_id))
         await session.delete(target)

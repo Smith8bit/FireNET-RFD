@@ -25,21 +25,16 @@ const ACTION_LABELS = {
   'region_change.request': 'ขอย้ายพื้นที่',
   'region_change.approved': 'อนุมัติย้ายพื้นที่',
   'region_change.rejected': 'ปฏิเสธย้ายพื้นที่',
-  'region.assign': 'มอบสิทธิ์พื้นที่',
-  'region.revoke': 'เพิกถอนสิทธิ์พื้นที่',
   'settings.location_poll': 'ตั้งค่ารอบส่งตำแหน่ง',
   'auth.login': 'เข้าสู่ระบบ',
   'auth.register': 'สมัครบัญชี',
 }
-
-const ROLE_LABELS = { field_officer: 'เจ้าหน้าที่', dispatcher: 'ผู้ดูแล' }
 
 const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
   officer: 'bg-blue-100 text-blue-700',
   dispatcher: 'bg-purple-100 text-purple-700',
   region_change: 'bg-teal-100 text-teal-700',
-  region: 'bg-emerald-100 text-emerald-700',
   settings: 'bg-amber-100 text-amber-700',
   auth: 'bg-gray-100 text-gray-600',
 }
@@ -50,7 +45,6 @@ const CATEGORY_LABELS = {
   officer: 'เจ้าหน้าที่',
   dispatcher: 'ผู้ดูแล',
   region_change: 'คำขอย้ายพื้นที่',
-  region: 'สิทธิ์พื้นที่',
   settings: 'การตั้งค่า',
   auth: 'บัญชีผู้ใช้',
 }
@@ -98,20 +92,16 @@ function summarize(item, names = {}) {
       const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
       return `${who}${from}${provName(names, d.province_path)}`
     }
-    case 'region.assign':
-      return 'Hello'
-    case 'region.revoke':
-      return [provName(names, d.region_path), ROLE_LABELS[d.role] ?? d.role].filter(Boolean).join(' · ')
     case 'settings.location_poll':
       return d.minutes != null ? `ทุก ${d.minutes} นาที` : ''
     case 'officer.verify':
-      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
+      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.province_path)}`
     case 'officer.delete':
-      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
+      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.province_path)}`
     case 'dispatcher.create':
-      return `ผู้ดูแล: ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
+      return `ผู้ดูแล: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.region_path)}`
     case 'dispatcher.delete':
-      return `ผู้ดูแล  : ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
+      return `ผู้ดูแล: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.region_path)}`
     case 'dispatcher.update': {
       const parts = []
       if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
@@ -155,17 +145,16 @@ export default function AuditPage() {
     if (provincesLoaded.current) return
     const needsProvince = (items ?? []).some(
       (it) =>
-        (it.action === 'officer.update' && it.detail?.province_path) ||
-        (it.action === 'dispatcher.update' && it.detail?.region_path) ||
-        (it.action.startsWith('region_change.') && it.detail?.province_path) ||
-        (it.action.startsWith('region.') && it.detail?.region_path)
+        it.detail?.province_path ||
+        it.detail?.region_path ||
+        it.detail?.previous_province_path
     )
     if (!needsProvince) return
     provincesLoaded.current = true
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`${API_URL}/regions/provinces`, { credentials: 'include' })
+        const res = await fetch(`${API_URL}/regions`, { credentials: 'include' })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (cancelled) return
@@ -308,7 +297,7 @@ export default function AuditPage() {
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light whitespace-pre-line wrap-break-word">
                         {summarize(item, provinceNames) || '—'}
                       </td>
-                      <td className="px-3 py-2.5 align-top text-xs text-gray-400 whitespace-nowrap text-right">
+                      <td className="px-3 py-2.5 align-top text-sm text-gray-500 whitespace-nowrap text-right">
                         {AT_FORMAT.format(new Date(item.at))} น.
                       </td>
                     </tr>

@@ -316,7 +316,7 @@ async def handle_delete_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         audit(session, actor=actor, action="dispatcher.delete", entity_type="user",
               entity_id=str(user_id),
               detail={"username": target.email, "name": user_region.name,
-                      "region_path": str(region_path)})
+                      "division": target.division, "region_path": str(region_path)})
         await session.delete(target)
         await session.commit()
 
