@@ -220,6 +220,7 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         changes: dict = {}
         if new_name is not None and new_name != ur_row.name:
             changes["name"] = new_name
+            changes["previous_name"] = ur_row.name
         if new_permissions is not None and new_permissions != sorted(ur_row.permissions or []):
             changes["permissions"] = new_permissions
 
@@ -237,6 +238,7 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
             target.email = new_username
         if "division" in data and new_division != target.division:
             changes["division"] = new_division
+            changes["previous_division"] = target.division
             target.division = new_division
         if new_password is not None:
             # record only that a reset happened — never the secret itself

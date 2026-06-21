@@ -28,8 +28,15 @@
   display: none;   /* hide up/down arrow buttons */
   width: 0;
   height: 0;
+  /* fallback so any slot Chromium still paints blends with the track
+     instead of the default light/gray button color */
+  background-color: var(--color-flame-light);
 }
 .minimal-scrollbar::-webkit-scrollbar-track {
+  background-color: var(--color-flame-light);
+}
+/* corner where horizontal + vertical bars meet — otherwise default white */
+.minimal-scrollbar::-webkit-scrollbar-corner {
   background-color: var(--color-flame-light);
 }
 .minimal-scrollbar::-webkit-scrollbar-thumb {

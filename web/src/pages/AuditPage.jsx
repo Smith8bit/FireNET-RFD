@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/useAuthStore'
-import { API_URL } from '../lib/shared'
+import { API_URL, INPUT_CLS, SELECT_CLS } from '../lib/shared'
 
 const PAGE_SIZE = 20
 
@@ -19,9 +19,9 @@ const ACTION_LABELS = {
   'officer.online': 'เข้าปฏิบัติงาน',
   'officer.offline': 'ออกปฏิบัติงาน',
   'officer.delete': 'ลบเจ้าหน้าที่',
-  'dispatcher.create': 'สร้างผู้ควบคุม',
-  'dispatcher.update': 'แก้ไขผู้ควบคุม',
-  'dispatcher.delete': 'ลบผู้ควบคุม',
+  'dispatcher.create': 'สร้างผู้ดูแล',
+  'dispatcher.update': 'แก้ไขผู้ดูแล',
+  'dispatcher.delete': 'ลบผู้ดูแล',
   'region_change.request': 'ขอย้ายพื้นที่',
   'region_change.approved': 'อนุมัติย้ายพื้นที่',
   'region_change.rejected': 'ปฏิเสธย้ายพื้นที่',
@@ -32,7 +32,7 @@ const ACTION_LABELS = {
   'auth.register': 'สมัครบัญชี',
 }
 
-const ROLE_LABELS = { field_officer: 'เจ้าหน้าที่', dispatcher: 'ผู้ควบคุม' }
+const ROLE_LABELS = { field_officer: 'เจ้าหน้าที่', dispatcher: 'ผู้ดูแล' }
 
 const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
@@ -48,7 +48,7 @@ const ACTION_COLORS = {
 const CATEGORY_LABELS = {
   fire: 'จุดไฟ',
   officer: 'เจ้าหน้าที่',
-  dispatcher: 'ผู้ควบคุม',
+  dispatcher: 'ผู้ดูแล',
   region_change: 'คำขอย้ายพื้นที่',
   region: 'สิทธิ์พื้นที่',
   settings: 'การตั้งค่า',
@@ -81,42 +81,51 @@ function summarize(item, names = {}) {
     case 'fire.appoint':
       return d.officer_name ? `${d.name ?? ''} → ${d.officer_name}` : (d.name ?? '')
     case 'fire.release':
-      return `ยกเลิกไฟ ${d.name ?? ''}`.trim()
+      return `${d.name ?? ''}`.trim()
     case 'fire.cancel_booking':
-      return `ยกเลิกไฟ ${d.name ?? ''}${d.officer_name ? ` ของ ${d.officer_name}` : ''}`.trim()
-    case 'region_change.request':
-      return provName(names, d.province_path)
+      return `ยกเลิกจุดไฟ ${d.name ?? ''}${d.officer_name ? ` ของ ${d.officer_name}` : ''}`.trim()
+    case 'region_change.request': {
+      const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
+      return `${from}${provName(names, d.province_path)}`
+    }
     case 'region_change.approved': {
       const who = d.officer_name ? `${d.officer_name}: ` : ''
       const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
       return `${who}${from}${provName(names, d.province_path)}`
     }
-    case 'region_change.rejected':
-      return `${d.officer_name ? `${d.officer_name}: ` : ''}${provName(names, d.province_path)}`
+    case 'region_change.rejected': {
+      const who = d.officer_name ? `${d.officer_name}: ` : ''
+      const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
+      return `${who}${from}${provName(names, d.province_path)}`
+    }
     case 'region.assign':
+      return 'Hello'
     case 'region.revoke':
       return [provName(names, d.region_path), ROLE_LABELS[d.role] ?? d.role].filter(Boolean).join(' · ')
     case 'settings.location_poll':
       return d.minutes != null ? `ทุก ${d.minutes} นาที` : ''
     case 'officer.verify':
+      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
     case 'officer.delete':
+      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
     case 'dispatcher.create':
+      return `ผู้ดูแล: ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
     case 'dispatcher.delete':
-      return [d.name, d.username, d.division].filter(Boolean).join(' · ')
+      return `ผู้ดูแล  : ${d.name}\n สังกัด: ${d.division}\n ขอบเขต: ${d.region}`
     case 'dispatcher.update': {
       const parts = []
-      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
+      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
       if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
-      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.division ?? '—'}`)
+      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.previous_division ? `${d.previous_division} → ` : ''}${d.division ?? '—'}`)
       if (d.region_path) parts.push(`ย้ายพื้นที่: ${provName(names, d.region_path)}`)
       if (d.password_changed) parts.push('รีเซ็ตรหัสผ่าน')
       return parts.join('\n')
     }
     case 'officer.update': {
       const parts = []
-      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.name}`)
+      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
       if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
-      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.division ?? '—'}`)
+      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.previous_division ? `${d.previous_division} → ` : ''}${d.division ?? '—'}`)
       if (d.province_path) parts.push(`ย้ายไป: ${d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''}${provName(names, d.province_path)}`)
       if (d.password_changed) parts.push(`รีเซ็ตรหัสผ่าน${d.officer_name ? `: ${d.officer_name}` : ''}`)
       return parts.join('\n')
@@ -205,140 +214,154 @@ export default function AuditPage() {
 
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
   return (
-    <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
-      <div className="bg-white border-0 rounded-2xl p-6">
-        <h2 className="text-lg font-semibold text-brand font-title">บันทึกเหตุการณ์</h2>
+    <div className="flex flex-col h-full w-2/3 p-4 gap-2 self-center">
+      {/* Pge header and detail */}
+      <div className='flex flex-row gap-4 items-center'>
+        <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>บันทึกเหตุการณ์</h1>
+        <p className='font-medium text-md text-accent'>รายการเหตุการณ์ต่างที่เกิดขึ้นในระบบ</p>
       </div>
-      <div className="flex-1 bg-white border-0 rounded-2xl p-6 mb-1 overflow-y-auto">
-        <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 border-b border-gray-300">
+
+      {/* Page content container */}
+      <div className="flex flex-col flex-1 min-h-0 w-full bg-foreground rounded-2xl p-4 shadow-md">
+
+        {/* Table head (filter/searchbar) */}
+        <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-300">
+          
           <select
             value={action}
             onChange={(e) => { setAction(e.target.value); setPage(0) }}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700"
+            className={`${SELECT_CLS} max-w-fit`}
           >
             <option value="">ทุกเหตุการณ์</option>
             {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
+
           <input
             type="date"
             value={onDate}
             onChange={(e) => { setOnDate(e.target.value); setPage(0) }}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700"
+            className={`${INPUT_CLS} max-w-fit text-accent`}
           />
+
           <form
             onSubmit={(e) => { e.preventDefault(); setActor(actorInput.trim()); setPage(0) }}
-            className="flex-1 min-w-40"
+            className="ml-auto flex flex-row w-78 items-center gap-2"
           >
             <input
               type="text"
               value={actorInput}
+              title="ค้นหาด้วยชื่อผู้ใช้หรือผู้กระทำ"
               onChange={(e) => setActorInput(e.target.value)}
               onBlur={() => { setActor(actorInput.trim()); setPage(0) }}
-              placeholder="ค้นหาด้วยชื่อผู้ใช้ผู้กระทำ…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
+              placeholder="ค้นหาด้วยชื่อผู้ใช้หรือผู้กระทำ…"
+              autoComplete="off"
+              className={`${INPUT_CLS} flex-1 min-w-0 text-accent`}
             />
           </form>
+          
           <button
             type="button"
             onClick={() => setReload((n) => n + 1)}
-            className="text-sm text-brand hover:text-brand px-2 py-1.5"
+            className="text-md font-semibold text-blue-400 hover:text-blue-700 px-2 py-1.5"
           >
             รีเฟรช
           </button>
         </div>
+        
+        <div className={`flex ${(items === null) || error || (items !== null && !error && items.length === 0) ? 'justify-center items-center flex-1' : 'flex-col flex-1 min-h-0'}`}>
+          {items === null && <p className="text-gray-400">กำลังโหลด…</p>}
+          {error && <p className="text-destructive">{error}</p>}
+          {items !== null && !error && items.length === 0 && (
+            <p className="text-gray-400">ไม่พบประวัติ</p>
+          )}
 
-        {items === null && <p className="text-gray-500">กำลังโหลด…</p>}
-        {error && <p className="text-red-600">{error}</p>}
-        {items !== null && !error && items.length === 0 && (
-          <p className="text-gray-500">ไม่พบประวัติ</p>
-        )}
-
-        {items !== null && !error && items.length > 0 && (
-          <div className="overflow-y-auto min-h-96 max-h-96 no-scrollbar">
-            <table className="w-full text-sm border-collapse table-fixed">
-              <colgroup>
-                <col className="w-40" />
-                <col className="w-48" />
-                <col />
-                <col className="w-32" />
-              </colgroup>
-              <thead>
-                <tr className="text-xs font-medium text-gray-400 text-left border-b border-gray-200">
-                  <th className="px-3 py-2 font-medium">เหตุการณ์</th>
-                  <th className="px-3 py-2 font-medium">ผู้กระทำ</th>
-                  <th className="px-3 py-2 font-medium">รายละเอียด</th>
-                  <th className="px-3 py-2 font-medium text-right whitespace-nowrap">เวลา</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} className="border-b border-gray-100 last:border-0">
-                    <td className="px-3 py-2.5 align-top">
-                      <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ACTION_COLORS[item.action.split('.')[0]] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {ACTION_LABELS[item.action] ?? item.action}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-gray-600 break-all">
-                      {item.actor_username === 'system' ? 'ระบบ' : item.actor_username}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-gray-700 whitespace-pre-line wrap-break-word">
-                      {summarize(item, provinceNames) || '—'}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-xs text-gray-400 whitespace-nowrap text-right">
-                      {AT_FORMAT.format(new Date(item.at))} น.
-                    </td>
+          {items !== null && !error && items.length > 0 && (
+            <div className="flex-1 min-h-0 overflow-auto minimal-scrollbar">
+              <table className="w-full table-fixed text-left border-collapse">
+                <colgroup>
+                  <col className="w-40" />
+                  <col className="w-48" />
+                  <col />
+                  <col className="w-32" />
+                </colgroup>
+                <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                  <tr className="text-accent text-sm">
+                    <th className="px-3 py-2 font-medium">เหตุการณ์</th>
+                    <th className="px-3 py-2 font-medium">ผู้กระทำ</th>
+                    <th className="px-3 py-2 font-medium">รายละเอียด</th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">เวลา</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id} className="border-b border-background hover:bg-background/50">
+                      <td className="px-3 py-2.5 align-top">
+                        <span title={ACTION_LABELS[item.action] ?? item.action} className={`block w-32 text-center text-xs font-semibold px-2 py-1.5 rounded-full truncate ${ACTION_COLORS[item.action.split('.')[0]] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {ACTION_LABELS[item.action] ?? item.action}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light break-all">
+                        {item.actor_username === 'system' ? 'ระบบ' : item.actor_username}
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light whitespace-pre-line wrap-break-word">
+                        {summarize(item, provinceNames) || '—'}
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-xs text-gray-400 whitespace-nowrap text-right">
+                        {AT_FORMAT.format(new Date(item.at))} น.
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-        {items?.length > 0 && (
-          <div className="flex items-center justify-between pt-3 text-sm text-gray-600">
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(0)}
-                disabled={page === 0}
-                className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
-              >
-                หน้าแรก
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                disabled={page === 0}
-                className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
-              >
-                ก่อนหน้า
-              </button>
+          {items?.length > 0 && (
+            <div className="flex items-center justify-between pt-3 text-sm text-gray-600">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(0)}
+                  disabled={page === 0}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  หน้าแรก
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                  disabled={page === 0}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  ก่อนหน้า
+                </button>
+              </div>
+              <span>
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} จาก {total}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
+                  disabled={page >= lastPage}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  ถัดไป
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage(lastPage)}
+                  disabled={page >= lastPage}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  หน้าสุดท้าย
+                </button>
+              </div>
             </div>
-            <span>
-              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} จาก {total}
-            </span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
-                disabled={page >= lastPage}
-                className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
-              >
-                ถัดไป
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage(lastPage)}
-                disabled={page >= lastPage}
-                className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50"
-              >
-                หน้าสุดท้าย
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

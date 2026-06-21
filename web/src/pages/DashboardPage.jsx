@@ -348,7 +348,7 @@ export default function DashboardPage() {
   const maxDailyTotal = Math.max(...dailyRows.map((row) => row.total), 1)
 
   return (
-    <div className="flex-1 min-h-0 overflow-hidden bg-slate-50">
+    <div className="flex-1 min-h-0 overflow-hidden bg-slate-100">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
         <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="min-w-0">
