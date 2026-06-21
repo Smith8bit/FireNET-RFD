@@ -6,9 +6,6 @@ import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
 import { API_URL, INPUT_CLS, SELECT_CLS, errorText } from '../lib/shared'
 
-// Officer management on a single page: verified officers in scope (inline edit /
-// delete) above, plus the accounts awaiting verification and incoming
-// region-change requests below — no tab switch.
 export default function OfficerPage() {
   const user = useAuthStore((s) => s.user)
   const send = useSocketStore((s) => s.send)
@@ -28,6 +25,8 @@ export default function OfficerPage() {
 
   // verified officers + inline edit
   const [officers, setOfficers] = useState([])
+  const [query, setQuery] = useState('') // search by name/username/division/province
+  const [statusFilter, setStatusFilter] = useState('all') // all | online | offline
   const [provinces, setProvinces] = useState(null) // null = not loaded yet
   const [editingId, setEditingId] = useState(null) // user_id being edited
   const [editName, setEditName] = useState('')
@@ -42,6 +41,8 @@ export default function OfficerPage() {
   const [pending, setPending] = useState(null) // null = loading
   const [requests, setRequests] = useState(null) // region-change requests
   const [busyId, setBusyId] = useState(null)
+  const [pendingQuery, setPendingQuery] = useState('') // search pending by name/username/division/province
+  const [requestQuery, setRequestQuery] = useState('') // search requests by name/username/province
 
   useEffect(() => {
     send({ type: 'list_officers' })
@@ -100,17 +101,17 @@ export default function OfficerPage() {
   useEffect(() => {
     if (provinces !== null) return
     let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch(`${API_URL}/regions/provinces`, { credentials: 'include' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (!cancelled) setProvinces(data)
-      } catch (e) {
-        console.warn('[OfficerPage] provinces load failed:', e)
-        if (!cancelled) setProvinces([])
-      }
-    })()
+      ; (async () => {
+        try {
+          const res = await fetch(`${API_URL}/regions/provinces`, { credentials: 'include' })
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const data = await res.json()
+          if (!cancelled) setProvinces(data)
+        } catch (e) {
+          console.warn('[OfficerPage] provinces load failed:', e)
+          if (!cancelled) setProvinces([])
+        }
+      })()
     return () => { cancelled = true }
   }, [provinces])
 
@@ -151,201 +152,363 @@ export default function OfficerPage() {
 
   const loadingPending = pending === null
   const loadingRequests = requests === null
-  return (
-    <div className="py-2 h-screen flex flex-col gap-2 w-1/2 self-center overflow-y-hidden">
-      <div className="bg-white border-0 rounded-2xl p-6">
-        <h2 className="text-lg font-semibold text-brand font-title">เจ้าหน้าที่</h2>
-      </div>
-      <div className="flex-1 bg-white border-0 rounded-2xl p-6 mb-1 overflow-y-auto space-y-6">
-        {/* Verified officers */}
-        <div>
-          <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">เจ้าหน้าที่ที่ได้รับการยืนยันแล้วในเขตของคุณ</p>
 
-          {officers.length === 0
-            ? <p className="text-gray-500">ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</p>
-            : (
-              <div className='overflow-y-auto max-h-96 no-scrollbar'>
-                <ul className="space-y-2">
-                  {officers.map((o) => (
-                    <li key={o.field_officer_id} className="bg-white border border-gray-200 rounded-lg px-4 py-3">
-                      {editingId === o.user_id ? (
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={editUsername}
-                            onChange={(e) => setEditUsername(e.target.value)}
-                            placeholder="ชื่อผู้ใช้"
-                            autoComplete="off"
-                            className={INPUT_CLS}
-                          />
-                          <input
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            placeholder="ชื่อเจ้าหน้าที่"
-                            className={INPUT_CLS}
-                          />
-                          <input
-                            type="text"
-                            value={editDivision}
-                            onChange={(e) => setEditDivision(e.target.value)}
-                            placeholder="สังกัด"
-                            className={INPUT_CLS}
-                          />
-                          <select
-                            value={editProvince}
-                            onChange={(e) => setEditProvince(e.target.value)}
-                            className={SELECT_CLS}
-                          >
-                            <option value="">— จังหวัดเดิม —</option>
-                            {(provinces ?? []).map((p) => (
-                              <option key={p.code} value={p.code}>{p.name_th}</option>
-                            ))}
-                          </select>
-                          <input
-                            type="password"
-                            value={editPassword}
-                            onChange={(e) => setEditPassword(e.target.value)}
-                            placeholder="ตั้งรหัสผ่านใหม่ (เว้นว่างหากไม่เปลี่ยน)"
-                            autoComplete="new-password"
-                            className={INPUT_CLS}
-                          />
-                          <div className="flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => removeOfficer(o)}
-                              disabled={deletingId === o.user_id}
-                              className="text-sm text-red-600 hover:text-red-700 border border-red-200 hover:border-red-300 rounded-full px-3 py-1.5 disabled:opacity-50"
+  const q = query.trim().toLowerCase()
+  const filteredOfficers = officers.filter((o) => {
+    if (statusFilter === 'online' && !o.active) return false
+    if (statusFilter === 'offline' && o.active) return false
+    if (!q) return true
+    return (
+      (o.name ?? '').toLowerCase().includes(q) ||
+      (o.username ?? '').toLowerCase().includes(q) ||
+      (o.division ?? '').toLowerCase().includes(q) ||
+      (o.province_name_th ?? '').toLowerCase().includes(q)
+    )
+  })
+  const officerCols = canManage ? 5 : 4
+
+  const pq = pendingQuery.trim().toLowerCase()
+  const filteredPending = (pending ?? []).filter((o) => {
+    if (!pq) return true
+    return (
+      (o.name ?? '').toLowerCase().includes(pq) ||
+      (o.username ?? '').toLowerCase().includes(pq) ||
+      (o.division ?? '').toLowerCase().includes(pq) ||
+      (o.province_name_th ?? '').toLowerCase().includes(pq)
+    )
+  })
+
+  const rq = requestQuery.trim().toLowerCase()
+  const filteredRequests = (requests ?? []).filter((r) => {
+    if (!rq) return true
+    return (
+      (r.officer_name ?? '').toLowerCase().includes(rq) ||
+      (r.username ?? '').toLowerCase().includes(rq) ||
+      (r.current_province ?? '').toLowerCase().includes(rq) ||
+      (r.requested_province ?? '').toLowerCase().includes(rq)
+    )
+  })
+
+  return (
+    <div className='flex flex-col h-full p-4 gap-2 '>
+
+      {/* Page header and description */}
+      <div className='flex flex-row gap-4 items-center'>
+        <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>เจ้าหน้าที่</h1>
+        <p className='font-medium text-md text-accent'>รายการเจ้าที่ในขอบเขตที่ดูแล</p>
+      </div>
+
+      <div className="flex-1 min-h-0 w-full flex flex-row gap-4 ">
+
+        {/* Officers list container (Inspect/Edit/Delete) */}
+        <div className="flex-1 flex flex-col min-h-0 bg-foreground h-full rounded-2xl max-w-1/2 p-4 shadow-md">
+          
+          {/* Title + search */}
+          <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
+            <p className="font-medium text-accent text-lg whitespace-nowrap">เจ้าหน้าที่ในเขตของคุณ ({officers.length})</p>
+            <div className="flex flex-row w-78 items-center gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className={`${SELECT_CLS} max-w-fit`}
+              >
+                <option value="all">ทั้งหมด</option>
+                <option value="online">ออนไลน์</option>
+                <option value="offline">ออฟไลน์</option>
+              </select>
+              <input
+                type="text"
+                value={query}
+                title='ค้นหาชื่อ ชื่อผู้ใช้ สังกัด หรือจังหวัด'
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ค้นหาชื่อ ชื่อผู้ใช้ สังกัด หรือจังหวัด"
+                autoComplete="off"
+                className={`${INPUT_CLS} min-w-fit text-accent`}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
+            {officers.length === 0 ? (
+              <div className="h-full flex justify-center items-center">
+                <p className="text-gray-400">ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</p>
+              </div>
+            ) : filteredOfficers.length === 0 ? (
+              <div className="h-full flex justify-center items-center">
+                <p className="text-gray-400">ไม่พบเจ้าหน้าที่ที่ตรงกับการค้นหา</p>
+              </div>
+            ) : (
+              <table className="w-full table-fixed text-left border-collapse">
+                <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                  <tr className="text-accent text-sm">
+                    <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[34%]">ชื่อ / ชื่อผู้ใช้</th>
+                    <th title="สังกัด" className="px-3 py-2 font-medium w-[26%]">สังกัด</th>
+                    <th title="จังหวัด" className="px-3 py-2 font-medium w-[26%]">จังหวัด</th>
+                    <th title="สถานะ" className="px-3 py-2 font-medium w-[14%]">สถานะ</th>
+                    {canManage && <th className="px-3 py-2 font-medium w-20"></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOfficers.map((o) => (
+                    editingId === o.user_id ? (
+                      <tr key={o.field_officer_id} >
+                        <td colSpan={officerCols} className="px-3 py-3">
+                          <div className="space-y-2 text-accent">
+                            <input
+                              type="text"
+                              value={editUsername}
+                              onChange={(e) => setEditUsername(e.target.value)}
+                              placeholder="ชื่อผู้ใช้"
+                              autoComplete="off"
+                              className={INPUT_CLS}
+                            />
+                            <input
+                              type="text"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              placeholder="ชื่อเจ้าหน้าที่"
+                              className={INPUT_CLS}
+                            />
+                            <input
+                              type="text"
+                              value={editDivision}
+                              onChange={(e) => setEditDivision(e.target.value)}
+                              placeholder="สังกัด"
+                              className={INPUT_CLS}
+                            />
+                            <select
+                              value={editProvince}
+                              onChange={(e) => setEditProvince(e.target.value)}
+                              className={SELECT_CLS}
                             >
-                              {deletingId === o.user_id ? 'กำลังลบ…' : 'ลบเจ้าหน้าที่'}
-                            </button>
-                            <div className="flex gap-2">
+                              <option value="">— จังหวัดเดิม —</option>
+                              {(provinces ?? []).map((p) => (
+                                <option key={p.code} value={p.code}>{p.name_th}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="password"
+                              value={editPassword}
+                              onChange={(e) => setEditPassword(e.target.value)}
+                              placeholder="ตั้งรหัสผ่านใหม่ (เว้นว่างหากไม่เปลี่ยน)"
+                              autoComplete="new-password"
+                              className={INPUT_CLS}
+                            />
+                            <div className="flex items-center justify-between gap-2">
                               <button
                                 type="button"
-                                onClick={() => setEditingId(null)}
-                                className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5"
+                                onClick={() => removeOfficer(o)}
+                                disabled={deletingId === o.user_id}
+                                className="text-sm text-destructive hover:text-white hover:bg-destructive border-2 rounded-full px-3 py-1.5 disabled:opacity-50"
                               >
-                                ยกเลิก
+                                {deletingId === o.user_id ? 'กำลังลบ…' : 'ลบเจ้าหน้าที่'}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => saveEdit(o)}
-                                disabled={savingId === o.user_id}
-                                className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 text-sm disabled:opacity-50"
-                              >
-                                {savingId === o.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingId(null)}
+                                  className="text-sm text-gray-500 hover:text-accent px-3 py-1.5"
+                                >
+                                  ยกเลิก
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => saveEdit(o)}
+                                  disabled={savingId === o.user_id}
+                                  className="bg-primary hover:bg-brand text-white rounded-xl px-4 py-1.5 text-sm disabled:opacity-50"
+                                >
+                                  {savingId === o.user_id ? 'กำลังบันทึก…' : 'บันทึก'}
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{o.name ?? o.username}</p>
-                            <p className="text-sm text-gray-500">{o.username}</p>
-                            {o.division && <p className="text-sm text-gray-500">สังกัด: {o.division}</p>}
-                            <p className="text-sm text-gray-500">{o.province_name_th}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                              {o.active ? 'ออนไลน์' : 'ออฟไลน์'}
-                            </span>
-                            {canManage && (
-                              <button
-                                type="button"
-                                onClick={() => startEdit(o)}
-                                className="text-sm text-brand hover:text-brand border border-orange-200 hover:border-orange-300 rounded-full px-3 py-1"
-                              >
-                                แก้ไข
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </li>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={o.field_officer_id} className="border-b border-background hover:bg-background/50">
+                        <td className="px-3 py-2.5">
+                          <p title={o.name ?? o.username} className="text-md text-primary font-medium truncate">{o.name ?? o.username}</p>
+                          <p title={o.username} className="text-sm text-gray-500 font-light truncate">{o.username}</p>
+                        </td>
+                        <td title={o.division || '—'} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{o.division || '—'}</td>
+                        <td title={o.province_name_th} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{o.province_name_th}</td>
+                        <td className="px-3 py-2.5">
+                          <span title={o.active ? 'ออนไลน์' : 'ออฟไลน์'} className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${o.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {o.active ? 'ออนไลน์' : 'ออฟไลน์'}
+                          </span>
+                        </td>
+                        {canManage && (
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(o)}
+                              className="text-sm text-primary hover:text-brand border-2 border-flame hover:border-brand hover:bg-flame-light rounded-xl px-3 py-1.5"
+                            >
+                              แก้ไข
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    )
                   ))}
-                </ul>
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Pending officers */}
+        <div className="flex flex-col flex-1 rounded-2xl max-w-1/2 gap-4">
+
+          {/* Approve registration */}
+          <div className="flex-1 flex flex-col min-h-0 bg-foreground rounded-2xl max-w-full p-4 shadow-md">
+
+            {/* Title + search */}
+            <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
+              <p className="font-medium text-accent text-lg">บัญชีที่รอการยืนยัน ({pending?.length ?? 0})</p>
+              <input
+                type="text"
+                value={pendingQuery}
+                onChange={(e) => setPendingQuery(e.target.value)}
+                placeholder="ค้นหาชื่อ ชื่อผู้ใช้ สังกัด หรือจังหวัด"
+                title="ค้นหาชื่อ ชื่อผู้ใช้ สังกัด หรือจังหวัด"
+                autoComplete="off"
+                className={`${INPUT_CLS} max-w-56 text-accent`}
+              />
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
+              {loadingPending ? (
+                <div className="h-full flex justify-center items-center">
+                  <p className="text-gray-400">กำลังโหลด…</p>
+                </div>
+              ) : pending.length === 0 ? (
+                <div className="h-full flex justify-center items-center">
+                  <p className="text-gray-400">ไม่มีบัญชีที่รอการยืนยัน</p>
+                </div>
+              ) : filteredPending.length === 0 ? (
+                <div className="h-full flex justify-center items-center">
+                  <p className="text-gray-400">ไม่พบบัญชีที่ตรงกับการค้นหา</p>
+                </div>
+              ) : (
+                <table className="w-full table-fixed text-left border-collapse">
+                  <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                    <tr className="text-accent text-sm">
+                      <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[38%]">ชื่อ / ชื่อผู้ใช้</th>
+                      <th title="สังกัด" className="px-3 py-2 font-medium w-[24%]">สังกัด</th>
+                      <th title="จังหวัด" className="px-3 py-2 font-medium w-[22%]">จังหวัด</th>
+                      {canVerify && <th className="px-3 py-2 font-medium w-[16%]"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPending.map((o) => (
+                      <tr key={o.user_id} className="border-b border-background hover:bg-background/50">
+                        <td className="px-3 py-2.5">
+                          <p title={o.name ?? o.username} className="text-md text-primary font-medium truncate">{o.name ?? o.username}</p>
+                          <p title={o.username} className="text-sm text-gray-500 font-light truncate">{o.username}</p>
+                        </td>
+                        <td title={o.division || '—'} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{o.division || '—'}</td>
+                        <td title={o.province_name_th} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{o.province_name_th}</td>
+                        {canVerify && (
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => verify(o.user_id)}
+                              disabled={busyId === o.user_id}
+                              className="text-sm text-primary hover:text-brand border-2 border-flame hover:border-brand hover:bg-flame-light rounded-xl px-3 py-1.5 disabled:opacity-50 whitespace-nowrap"
+                            >
+                              {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Approve region change request */}
+          {canViewReq && (
+            <div className="flex-1 flex flex-col min-h-0 bg-foreground rounded-2xl max-w-full p-4 shadow-md">
+
+              {/* Title + search */}
+              <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
+                <p className="font-medium text-accent text-lg">คำขอย้ายพื้นที่ ({requests?.length ?? 0})</p>
+                <input
+                  type="text"
+                  value={requestQuery}
+                  onChange={(e) => setRequestQuery(e.target.value)}
+                  placeholder="ค้นหาชื่อ ชื่อผู้ใช้ หรือจังหวัด"
+                  title="ค้นหาชื่อ ชื่อผู้ใช้ หรือจังหวัด"
+                  autoComplete="off"
+                  className={`${INPUT_CLS} max-w-56 text-accent`}
+                />
               </div>
-            )
-          }
-        </div>
 
-        {/* Accounts awaiting verification */}
-        <div>
-          <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">บัญชีที่รอการยืนยัน (เฉพาะในเขตพื้นที่ของคุณ)</p>
-
-          {loadingPending && <p className="text-gray-500">กำลังโหลด…</p>}
-          {!loadingPending && pending.length === 0 && <p className="text-gray-500">ไม่มีบัญชีที่รอการยืนยัน</p>}
-
-          <div className='overflow-y-auto max-h-96 no-scrollbar'>
-            <ul className="space-y-2">
-              {(pending ?? []).map((o) => (
-                <li key={o.user_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
-                  <div>
-                    <p className="font-medium">{o.name ?? o.username}</p>
-                    <p className="text-sm text-gray-500">{o.username}</p>
-                    {o.division && <p className="text-sm text-gray-500">สังกัด: {o.division}</p>}
-                    <p className="text-sm text-gray-500">{o.province_name_th}</p>
+              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
+                {loadingRequests ? (
+                  <div className="h-full flex justify-center items-center">
+                    <p className="text-gray-400">กำลังโหลด…</p>
                   </div>
-                  {canVerify && (
-                    <button
-                      type="button"
-                      onClick={() => verify(o.user_id)}
-                      disabled={busyId === o.user_id}
-                      className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 disabled:opacity-50"
-                    >
-                      {busyId === o.user_id ? 'กำลังยืนยัน…' : 'ยืนยัน'}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Incoming region-change requests */}
-        {canViewReq && (
-        <div>
-          <p className="text-gray-600 mb-2 pb-2 border-b border-gray-300 font-title font-medium">คำขอย้ายพื้นที่ (เข้ามายังเขตของคุณ)</p>
-
-          {loadingRequests && <p className="text-gray-500">กำลังโหลด…</p>}
-          {!loadingRequests && requests.length === 0 && <p className="text-gray-500">ไม่มีคำขอย้ายพื้นที่</p>}
-
-          <div className='overflow-y-auto max-h-96 no-scrollbar'>
-            <ul className="space-y-2">
-              {(requests ?? []).map((r) => (
-                <li key={r.request_id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
-                  <div>
-                    <p className="font-medium">{r.officer_name ?? r.username}</p>
-                    <p className="text-sm text-gray-500">{r.username}</p>
-                    <p className="text-sm text-gray-500">{r.current_province} → {r.requested_province}</p>
+                ) : requests.length === 0 ? (
+                  <div className="h-full flex justify-center items-center">
+                    <p className="text-gray-400">ไม่มีคำขอย้ายพื้นที่</p>
                   </div>
-                  {canDecide && (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => decide(r.request_id, 'approve')}
-                      disabled={busyId === r.request_id}
-                      className="bg-primary hover:bg-brand text-white rounded-full px-4 py-1.5 disabled:opacity-50"
-                    >
-                      อนุมัติ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => decide(r.request_id, 'reject')}
-                      disabled={busyId === r.request_id}
-                      className="border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-full px-4 py-1.5 disabled:opacity-50"
-                    >
-                      ปฏิเสธ
-                    </button>
+                ) : filteredRequests.length === 0 ? (
+                  <div className="h-full flex justify-center items-center">
+                    <p className="text-gray-400">ไม่พบคำขอที่ตรงกับการค้นหา</p>
                   </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
+                ) : (
+                  <table className="w-full table-fixed text-left border-collapse">
+                    <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                      <tr className="text-accent text-sm">
+                        <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[34%]">ชื่อ / ชื่อผู้ใช้</th>
+                        <th title="การย้ายพื้นที่" className="px-3 py-2 font-medium w-[34%]">การย้ายพื้นที่</th>
+                        {canDecide && <th className="px-3 py-2 font-medium w-[32%]"></th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRequests.map((r) => (
+                        <tr key={r.request_id} className="border-b border-background hover:bg-background/50">
+                          <td className="px-3 py-2.5">
+                            <p title={r.officer_name ?? r.username} className="text-md text-primary font-medium truncate">{r.officer_name ?? r.username}</p>
+                            <p title={r.username} className="text-sm text-gray-500 font-light truncate">{r.username}</p>
+                          </td>
+                          <td title={`${r.current_province} → ${r.requested_province}`} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{r.current_province} → {r.requested_province}</td>
+                          {canDecide && (
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => decide(r.request_id, 'approve')}
+                                  disabled={busyId === r.request_id}
+                                  className="text-sm text-primary hover:text-brand border-2 border-flame hover:border-brand hover:bg-flame-light rounded-xl px-3 py-1.5 disabled:opacity-50 whitespace-nowrap"
+                                >
+                                  อนุมัติ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => decide(r.request_id, 'reject')}
+                                  disabled={busyId === r.request_id}
+                                  className="text-sm text-gray-500 hover:text-accent px-3 py-1.5 disabled:opacity-50 whitespace-nowrap"
+                                >
+                                  ปฏิเสธ
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+          )}
         </div>
-        )}
       </div>
     </div>
   )
