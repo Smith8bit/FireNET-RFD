@@ -10,7 +10,7 @@ from ..auth.authen import current_active_user
 from ..database import get_async_session
 from ..database.models import FieldOfficer, FireResolution, FireResolutionImage, Firespot, Region, User
 from ..db_control.fires import get_fires, get_resolution_history
-from ..db_control.permission import fire_visible
+from ..db_control.permission import fire_visible, has_perm_anywhere
 
 router = APIRouter()
 
@@ -28,7 +28,12 @@ async def list_resolutions(
     since: datetime | None = None,
     until: datetime | None = None,
     user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
 ):
+    # console fire-resolution history is its own permission, distinct from the
+    # live fire feed (fires.view) — region scope is still applied inside the query
+    if not await has_perm_anywhere(user, "fires.history", session):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "missing fires.history permission")
     return await get_resolution_history(
         user=user, limit=limit, offset=offset,
         false_alarm=false_alarm, since=since, until=until,

@@ -18,7 +18,7 @@ async def user_roles(user: User, session: AsyncSession) -> list[str]:
 # assignment (user_regions.permissions). See the WS handlers for the gate each one
 # guards.
 VIEW_PERMS = frozenset(
-    {"fires.view", "officers.view", "region_requests.view", "dispatchers.view"}
+    {"fires.view", "fires.history", "officers.view", "region_requests.view", "dispatchers.view"}
 )
 ACTION_PERMS = frozenset(
     {
@@ -46,6 +46,7 @@ PRESETS = {
     "viewer": frozenset({"fires.view", "officers.view"}),
     "dispatcher": frozenset(
         {
+            "fires.view",
             "officers.view",
             "region_requests.view",
             "officer.verify",
@@ -76,12 +77,12 @@ def expand(perms) -> set[str]:
 
 
 def effective_perms(role: str, permissions) -> set[str]:
-    """Permissions an assignment confers. Falls back to the role preset for rows
-    not yet backfilled with an explicit set — role IS the migration."""
-    perms = set(permissions or [])
-    if not perms and role in PRESETS:
-        perms = set(PRESETS[role])
-    return expand(perms)
+    """Permissions an assignment confers. A NULL set (row not yet backfilled with an
+    explicit list) falls back to the role preset — role IS the migration. An explicit
+    empty list is honored as 'no permissions', not re-expanded to the preset."""
+    if permissions is None and role in PRESETS:
+        permissions = PRESETS[role]
+    return expand(set(permissions or []))
 
 
 async def _assignments(user: User, session: AsyncSession):

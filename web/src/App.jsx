@@ -7,10 +7,13 @@ import Sidebar from './components/sidebar'
 import Toaster from './components/Toaster'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import ManagementPage from './pages/ManagementPage'
+import OfficerPage from './pages/OfficerPage'
+import DispatcherPage from './pages/DispatcherPage'
+import HistoryPage from './pages/HistoryPage'
+import AuditPage from './pages/AuditPage'
 import MapViewPage from './pages/MapViewPage'
-import { useSocketStore } from './functions/stateStore'
-import { useAuthStore } from './functions/useAuthStore'
+import { useSocketStore } from './lib/stateStore'
+import { useAuthStore } from './lib/useAuthStore'
 
 import './App.css'
 
@@ -98,7 +101,10 @@ function App() {
           <Route element={<SidebarLayout />}>
             <Route path="" element={<MapViewPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/management" element={<ManagementPage />} />
+            <Route path="/officers" element={<OfficerPage />} />
+            <Route path="/dispatchers" element={<DispatcherPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/audit" element={<AuditPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

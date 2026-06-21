@@ -4,11 +4,14 @@ import {
   MapIcon,
   Squares2X2Icon as DashboardIcon,
   UsersIcon,
+  ShieldCheckIcon,
+  ClockIcon,
+  ClipboardDocumentListIcon,
   ViewColumnsIcon as SidebarToggleIcon,
   ArrowRightOnRectangleIcon as LogoutIcon,
 } from "@heroicons/react/24/outline";
-import { API_URL } from "./management/shared";
-import { useAuthStore } from "../functions/useAuthStore";
+import { API_URL } from "../lib/shared";
+import { useAuthStore, can } from "../lib/useAuthStore";
 
 export default function Sidebar() {
   const navigate = useNavigate()
@@ -59,8 +62,11 @@ export default function Sidebar() {
   const links = [
     { name: 'แผนที่', path: '/', icon: MapIcon },
     { name: 'แดชบอร์ด', path: '/dashboard', icon: DashboardIcon },
-    { name: 'การจัดการเจ้าหน้าที่', path: '/management', icon: UsersIcon },
-  ]
+    can(user, 'officers.view') && { name: 'เจ้าหน้าที่', path: '/officers', icon: UsersIcon },
+    can(user, 'dispatchers.view') && { name: 'ผู้ดูแล', path: '/dispatchers', icon: ShieldCheckIcon },
+    can(user, 'fires.history') && { name: 'ประวัติการดับไฟ', path: '/history', icon: ClockIcon },
+    user?.is_superuser && { name: 'บันทึกเหตุการณ์', path: '/audit', icon: ClipboardDocumentListIcon },
+  ].filter(Boolean)
 
   const handleLogout = async () => {
     await logout()
@@ -73,7 +79,7 @@ export default function Sidebar() {
   return (
     <nav
       aria-label="Sidebar"
-      className={`relative z-20 pt-3 flex flex-col h-screen shrink-0 overflow-x-hidden whitespace-nowrap border-r border-black/6 bg-foreground shadow-sm lg:shadow-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${collapsed ? 'w-16' : 'w-56'}`}
+      className={`relative z-20 pt-3 flex flex-col h-screen shrink-0 overflow-x-hidden whitespace-nowrap border-r border-background/50 bg-foreground shadow-sm lg:shadow-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${collapsed ? 'w-16' : 'w-56'}`}
     >
       {/* Brand + collapse toggle. Fixed height keeps the toggle at a constant
           Y in both states; only its horizontal placement changes. */}

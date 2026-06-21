@@ -9,9 +9,9 @@ import {
   ShieldCheckIcon,
   UserGroupIcon,
 } from '@heroicons/react/24/outline'
-import { useFireData } from '../functions/useFireData'
-import { useMapSelection, useSocketStore } from '../functions/stateStore'
-import { useAuthStore, can } from '../functions/useAuthStore'
+import { useFireData } from '../lib/useFireData'
+import { useMapSelection, useSocketStore } from '../lib/stateStore'
+import { useAuthStore, can } from '../lib/useAuthStore'
 
 const collator = new Intl.Collator('th')
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -364,11 +364,10 @@ export default function DashboardPage() {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                    activeTab === tab.key
+                  className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${activeTab === tab.key
                       ? 'bg-primary text-white shadow-sm'
                       : 'text-slate-600 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>

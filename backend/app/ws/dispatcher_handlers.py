@@ -37,12 +37,13 @@ _DISPATCHERS_ORDER = " ORDER BY r.path, u.email"
 
 
 def _clean_permissions(raw, *, default) -> list[str]:
-    """Keep only grantable permissions; fall back to `default` when none are given.
-    Superuser-only perms (dispatcher.manage / permission.grant) are dropped here."""
+    """Keep only grantable permissions. A missing/invalid field falls back to
+    `default`; an explicit list is honored as given — including an empty one, so a
+    dispatcher can be saved with no permissions. Superuser-only perms
+    (dispatcher.manage / permission.grant) are dropped here."""
     if not isinstance(raw, list):
         return sorted(default)
-    valid = {p for p in raw if p in GRANTABLE}
-    return sorted(valid) if valid else sorted(default)
+    return sorted({p for p in raw if p in GRANTABLE})
 
 
 async def _fetch_dispatchers(session, viewer: User) -> list[dict]:
@@ -62,10 +63,13 @@ async def _fetch_dispatchers(session, viewer: User) -> list[dict]:
             "username": m["username"],
             "name": m["name"],
             "division": m["division"],
-            # show what's stored (preset fallback for un-backfilled rows). Do NOT
-            # expand() here — implied views are an enforcement concern; expanding
-            # for display inflates the checkboxes and the inflation gets re-saved.
-            "permissions": sorted(m["permissions"] or PRESETS["dispatcher"]),
+            # show what's stored. NULL = un-backfilled row → preset fallback; an
+            # explicit [] is honored as "no permissions". Do NOT expand() here —
+            # implied views are an enforcement concern; expanding for display
+            # inflates the checkboxes and the inflation gets re-saved.
+            "permissions": sorted(
+                m["permissions"] if m["permissions"] is not None else PRESETS["dispatcher"]
+            ),
             "region_id": str(m["region_id"]),
             "region_code": m["region_code"],
             "region_name_th": m["region_name_th"],

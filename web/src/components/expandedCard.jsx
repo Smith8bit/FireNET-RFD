@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useSocketStore } from '../../functions/stateStore'
-import { useAuthStore, can } from '../../functions/useAuthStore'
-import { toast } from '../../functions/toastStore'
-import { useMessageEffect } from '../../functions/useMessageEffect'
-import { formatDate, formatTime } from '../../functions/datetime'
+import { useSocketStore } from '../lib/stateStore'
+import { useAuthStore, can } from '../lib/useAuthStore'
+import { toast } from '../lib/toastStore'
+import { useMessageEffect } from '../lib/useMessageEffect'
+import { formatDate, formatTime } from '../lib/datetime'
 
 const APPOINT_ERRORS = {
     out_of_scope: 'ไฟหรือเจ้าหน้าที่อยู่นอกพื้นที่ของคุณ',
@@ -33,8 +33,9 @@ export default function ExpandedCard({ fire, officers }) {
     // a resolved or already-booked fire can't be (re)assigned:
     // lock the officer list + actions
     const locked = fire.status || fire.booked
-    // who may cancel a booking: self-reserved → anyone; dispatcher-appointed → fire.appoint
-    const canCancel = fire.booked && !fire.status && (!fire.appointed || canAppoint)
+    // cancelling any booking requires fire.appoint (a 0-permission dispatcher must not
+    // be able to cancel a field officer's self-reservation)
+    const canCancel = canAppoint && fire.booked && !fire.status
 
     // the picked officer may turn busy via a live officers_map refresh (self-reserve
     // or another admin) — disarm the action so we don't fire a doomed appoint

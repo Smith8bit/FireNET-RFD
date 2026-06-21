@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useAuthStore } from '../functions/useAuthStore'
-import { toast } from '../functions/toastStore'
+import { useAuthStore } from '../lib/useAuthStore'
+import { toast } from '../lib/toastStore'
 import forestPlaceholder from '../assets/forest_placeholder.jpg'
 
 // Map backend/auth error codes to Thai messages. Anything unrecognized falls
