@@ -63,6 +63,12 @@ PRESETS = {
     "admin": ALL_PERMISSIONS,
 }
 
+# Baseline permissions every assignment of a given role holds, regardless of its
+# explicit (even empty) permission list. The live fire feed is the dispatcher's
+# floor, so a dispatcher saved with no permissions still sees fires in their region
+# (and, being non-empty, still clears is_admin_user to reach the console).
+ROLE_FLOOR = {"dispatcher": frozenset({"fires.view"})}
+
 # Permissions that authorize mutating officer/fire/dispatcher records.
 MANAGE_PERMS = ACTION_PERMS - frozenset({"permission.grant"})
 
@@ -87,7 +93,7 @@ def effective_perms(role: str, permissions) -> set[str]:
     empty list is honored as 'no permissions', not re-expanded to the preset."""
     if permissions is None and role in PRESETS:
         permissions = PRESETS[role]
-    return expand(set(permissions or []))
+    return expand(set(permissions or [])) | ROLE_FLOOR.get(role, frozenset())
 
 
 async def _assignments(user: User, session: AsyncSession):
@@ -200,3 +206,16 @@ def filter_fires(user_paths: list[str], fires: list[dict], superuser: bool) -> l
         if p in exact or any(p.startswith(pref) for pref in prefixes):
             out.append(fire)
     return out
+
+
+if __name__ == "__main__":  # python -m app.db_control.permission
+    # dispatcher floor: empty/None perms still confer fires.view, and the set is
+    # non-empty so is_admin_user (any effective perm) lets them onto the console.
+    assert effective_perms("dispatcher", []) == {"fires.view"}
+    assert "fires.view" in effective_perms("dispatcher", None)
+    assert "fires.view" in effective_perms("dispatcher", ["officers.view"])
+    # other roles get no floor — an empty list stays empty (locked out).
+    assert effective_perms("viewer", []) == set()
+    # floor doesn't leak manage authority.
+    assert not (effective_perms("dispatcher", []) & MANAGE_PERMS)
+    print("permission self-check ok")
