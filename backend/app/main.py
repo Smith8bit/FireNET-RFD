@@ -146,6 +146,10 @@ async def lifespan(app: FastAPI):
                  "permissions text[] NOT NULL DEFAULT '{}'")
         )
         await conn.execute(
+            text("ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
+                 "created_at timestamptz NOT NULL DEFAULT now()")
+        )
+        await conn.execute(
             text("ALTER TABLE field_officers ADD COLUMN IF NOT EXISTS "
                  "appointed boolean NOT NULL DEFAULT false")
         )

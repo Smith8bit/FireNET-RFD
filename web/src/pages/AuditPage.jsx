@@ -270,8 +270,8 @@ export default function AuditPage() {
             <div className="flex-1 min-h-0 overflow-auto minimal-scrollbar">
               <table className="w-full table-fixed text-left border-collapse">
                 <colgroup>
+                  <col className="w-36" />
                   <col className="w-40" />
-                  <col className="w-48" />
                   <col />
                   <col className="w-32" />
                 </colgroup>

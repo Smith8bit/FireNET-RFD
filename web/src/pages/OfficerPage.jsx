@@ -6,6 +6,8 @@ import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
 import { API_URL, INPUT_CLS, SELECT_CLS, errorText } from '../lib/shared'
 
+const PAGE_SIZE = 20
+
 export default function OfficerPage() {
   const user = useAuthStore((s) => s.user)
   const send = useSocketStore((s) => s.send)
@@ -27,6 +29,9 @@ export default function OfficerPage() {
   const [officers, setOfficers] = useState([])
   const [query, setQuery] = useState('') // search by name/username/division/province
   const [statusFilter, setStatusFilter] = useState('all') // all | online | offline
+  const [sort, setSort] = useState('name') // 'name' = by display name, 'new' = by date added
+  const [dir, setDir] = useState('asc') // 'asc' | 'desc'
+  const [page, setPage] = useState(0)
   const [provinces, setProvinces] = useState(null) // null = not loaded yet
   const [editingId, setEditingId] = useState(null) // user_id being edited
   const [editName, setEditName] = useState('')
@@ -167,6 +172,24 @@ export default function OfficerPage() {
   })
   const officerCols = canManage ? 5 : 4
 
+  // Sort the filtered verified officers by the chosen field, ascending, then
+  // flip for 'desc'. 'name' = Thai collation on display name (falling back to
+  // username); 'new' = region assignment's created_at (asc oldest, desc newest).
+  const cmp =
+    sort === 'new'
+      ? (a, b) => new Date(a.created_at ?? 0) - new Date(b.created_at ?? 0)
+      : (a, b) => (a.name ?? a.username ?? '').localeCompare(b.name ?? b.username ?? '', 'th')
+  const sortedOfficers = [...filteredOfficers].sort(
+    (a, b) => (dir === 'desc' ? -cmp(a, b) : cmp(a, b)))
+
+  // Client-side pagination over the sorted list (the full list arrives via the
+  // socket). Clamp the page if filtering/deletion shrinks the result set.
+  const total = sortedOfficers.length
+  const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
+  const safePage = Math.min(page, lastPage)
+  const pagedOfficers = sortedOfficers.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  if (page !== safePage) setPage(safePage)
+
   const pq = pendingQuery.trim().toLowerCase()
   const filteredPending = (pending ?? []).filter((o) => {
     if (!pq) return true
@@ -206,10 +229,27 @@ export default function OfficerPage() {
           {/* Title + search */}
           <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
             <p className="font-medium text-accent text-lg whitespace-nowrap">เจ้าหน้าที่ในเขตของคุณ ({officers.length})</p>
-            <div className="flex flex-row w-78 items-center gap-2">
+            <div className="flex flex-row items-center gap-2">
+              <select
+                value={sort}
+                onChange={(e) => { setSort(e.target.value); setPage(0) }}
+                title="เรียงลำดับ"
+                className={`${SELECT_CLS} max-w-fit`}
+              >
+                <option value="name">ตามชื่อ</option>
+                <option value="new">ตามเวลาที่เพิ่ม</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => { setDir((d) => (d === 'asc' ? 'desc' : 'asc')); setPage(0) }}
+                title={dir === 'asc' ? 'จากน้อยไปมาก' : 'จากมากไปน้อย'}
+                className="px-2 py-1.5 rounded-lg border border-gray-300 text-accent hover:bg-gray-50"
+              >
+                {dir === 'asc' ? '↑' : '↓'}
+              </button>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(0) }}
                 className={`${SELECT_CLS} max-w-fit`}
               >
                 <option value="all">ทั้งหมด</option>
@@ -220,10 +260,10 @@ export default function OfficerPage() {
                 type="text"
                 value={query}
                 title='ค้นหาชื่อ ชื่อผู้ใช้ สังกัด หรือจังหวัด'
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => { setQuery(e.target.value); setPage(0) }}
                 placeholder="ค้นหาชื่อ ชื่อผู้ใช้ สังกัด หรือจังหวัด"
                 autoComplete="off"
-                className={`${INPUT_CLS} min-w-fit text-accent`}
+                className={`${INPUT_CLS} w-40 text-accent`}
               />
             </div>
           </div>
@@ -249,7 +289,7 @@ export default function OfficerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOfficers.map((o) => (
+                  {pagedOfficers.map((o) => (
                     editingId === o.user_id ? (
                       <tr key={o.field_officer_id} >
                         <td colSpan={officerCols} className="px-3 py-3">
@@ -355,6 +395,50 @@ export default function OfficerPage() {
               </table>
             )}
           </div>
+
+          {filteredOfficers.length > 0 && (
+            <div className="flex items-center justify-between pt-3 mt-2 border-t border-gray-300 text-sm text-gray-600">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(0)}
+                  disabled={safePage === 0}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  หน้าแรก
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                  disabled={safePage === 0}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  ก่อนหน้า
+                </button>
+              </div>
+              <span>
+                {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, total)} จาก {total}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
+                  disabled={safePage >= lastPage}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  ถัดไป
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage(lastPage)}
+                  disabled={safePage >= lastPage}
+                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
+                >
+                  หน้าสุดท้าย
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Pending officers */}

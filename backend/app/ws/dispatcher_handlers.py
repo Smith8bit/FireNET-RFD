@@ -25,7 +25,7 @@ _MIN_PASSWORD_LEN = 8
 # national region, so filtering on role = 'dispatcher' already excludes them.
 _DISPATCHERS_SQL = """
     SELECT u.id AS user_id, u.email AS username, ur.name AS name, u.division AS division,
-           ur.permissions AS permissions,
+           ur.permissions AS permissions, ur.created_at AS created_at,
            r.id AS region_id, r.code AS region_code, r.name_th AS region_name_th,
            r.level AS region_level, r.path::text AS region_path
     FROM "user" u
@@ -75,6 +75,7 @@ async def _fetch_dispatchers(session, viewer: User) -> list[dict]:
             "region_name_th": m["region_name_th"],
             "region_level": m["region_level"],
             "region_path": m["region_path"],
+            "created_at": m["created_at"].isoformat() if m["created_at"] else None,
         }
         for m in rows.mappings().all()
     ]

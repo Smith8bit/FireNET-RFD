@@ -27,6 +27,8 @@ async def list_resolutions(
     false_alarm: bool | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
+    province: str | None = None,
+    search: str | None = None,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -36,7 +38,8 @@ async def list_resolutions(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "missing fires.history permission")
     return await get_resolution_history(
         user=user, limit=limit, offset=offset,
-        false_alarm=false_alarm, since=since, until=until,
+        false_alarm=false_alarm, since=since, until=until, province=province,
+        search=search,
     )
 
 

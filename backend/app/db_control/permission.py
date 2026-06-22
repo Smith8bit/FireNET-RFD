@@ -33,11 +33,16 @@ ACTION_PERMS = frozenset(
 ALL_PERMISSIONS = VIEW_PERMS | ACTION_PERMS
 
 # Holding an action permission implies being able to read the resource it acts on.
+# Region-change view/approve also imply officers.view, since a request is read and
+# decided against the officer it concerns. expand() is one-level, so officers.view
+# is listed directly on region_request.decide rather than chained via
+# region_requests.view.
 IMPLIES = {
     "officer.verify": frozenset({"officers.view"}),
     "officer.manage": frozenset({"officers.view"}),
     "fire.appoint": frozenset({"officers.view", "fires.view"}),
-    "region_request.decide": frozenset({"region_requests.view"}),
+    "region_requests.view": frozenset({"officers.view"}),
+    "region_request.decide": frozenset({"region_requests.view", "officers.view"}),
     "dispatcher.manage": frozenset({"dispatchers.view"}),
 }
 

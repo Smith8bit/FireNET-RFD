@@ -52,6 +52,7 @@ _OFFICERS_SQL = """
            fo.last_updated::text AS last_updated,
            ST_Y(fo.last_location::geometry) AS latitude,
            ST_X(fo.last_location::geometry) AS longitude,
+           ur.created_at AS created_at,
            r.name_th AS province_name_th, r.path::text AS province_path
     FROM field_officers fo
     JOIN "user" u ON u.id = fo.user_id
@@ -106,6 +107,7 @@ async def _fetch_officers(session, user: User, *, limit: int | None = None) -> l
             "location": {"latitude": m["latitude"], "longitude": m["longitude"]} if m["latitude"] is not None else None,
             "province_name_th": m["province_name_th"],
             "province_path": m["province_path"],
+            "created_at": m["created_at"].isoformat() if m["created_at"] else None,
         }
         for m in rows.mappings().all()
     ]

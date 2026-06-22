@@ -70,7 +70,16 @@ export default function AuthorizedLayout() {
         // fall back to the default cadence
       }
       if (cancelled) return
-      await startBackgroundLocation(Math.max(minutes, MIN_POLL_MIN) * 60 * 1000)
+      // Android forbids starting a foreground-service task from the background. The
+      // awaits above (GPS fix + interval fetch) leave a window where the app can be
+      // backgrounded, so re-check here and bail if so — the AppState 'active'
+      // listener below re-arms when the officer returns to the app.
+      if (AppState.currentState !== 'active') return
+      try {
+        await startBackgroundLocation(Math.max(minutes, MIN_POLL_MIN) * 60 * 1000)
+      } catch {
+        // OS refused the start (e.g. raced into the background); next resume re-arms
+      }
     }
     arm()
     // Android can kill the foreground-service location task during screen-off Doze

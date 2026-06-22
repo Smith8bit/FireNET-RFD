@@ -318,6 +318,8 @@ async def get_resolution_history(
     user=None, limit: int = 20, offset: int = 0,
     false_alarm: bool | None = None,
     since: datetime | None = None, until: datetime | None = None,
+    province: str | None = None,
+    search: str | None = None,
     officer_id=None,
 ) -> dict:
     """Resolved fires that have officer evidence, newest first, region-scoped, paged.
@@ -351,6 +353,17 @@ async def get_resolution_history(
             stmt = stmt.where(or_(*[Region.path.op("<@")(p) for p in paths]))
         if false_alarm is not None:
             stmt = stmt.where(Firespot.false_alarm == false_alarm)
+        if province:
+            stmt = stmt.where(Firespot.detail["PROVINCE"].astext == province)
+        if search:
+            like = f"%{search}%"
+            stmt = stmt.where(or_(
+                Firespot.name.ilike(like),
+                func.coalesce(FieldOfficer.name, FireResolution.officer_name).ilike(like),
+                Firespot.detail["TUMBON"].astext.ilike(like),
+                Firespot.detail["AUMPER"].astext.ilike(like),
+                Firespot.detail["PROVINCE"].astext.ilike(like),
+            ))
         if officer_id is not None:
             stmt = stmt.where(FireResolution.officer_id == officer_id)
         if since is not None:

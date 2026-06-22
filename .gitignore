@@ -205,3 +205,10 @@ docker-compose.yml
 # (api client, push). Keep it tracked so git clones / EAS builds include it.
 !mobile/src/lib/
 /web/dashboard
+backend/app/database/seed_mock_audit.py
+backend/app/database/seed_mock_fire_history.py
+backend/app/database/seed_mock_fire_history_dup.py
+backend/app/database/seed_mock_officer.py
+backend/app/database/seed_mock_officers_bulk.py
+backend/app/database/seed_mock_pending.py
+backend/app/database/seed_mock_region_change.py
