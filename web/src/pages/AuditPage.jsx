@@ -203,7 +203,8 @@ export default function AuditPage() {
 
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
   return (
-    <div className="flex flex-col h-full w-2/3 p-4 gap-2 self-center">
+    <div className="flex-1 min-h-0 overflow-hidden bg-background">
+      <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
       {/* Pge header and detail */}
       <div className='flex flex-row gap-4 items-center'>
         <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>บันทึกเหตุการณ์</h1>
@@ -351,6 +352,7 @@ export default function AuditPage() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   )

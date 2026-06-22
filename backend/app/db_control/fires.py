@@ -291,6 +291,10 @@ async def get_fires(
                 "id": str(row.id),
                 "name": row.name,
                 "detected_at": row.detected_at.isoformat(),
+                # resolve_time is real UTC (officer close / expiry job), unlike
+                # detected_at which carries Thai wall-clock — the dashboard buckets
+                # daily throughput by this, so it must reach the client
+                "resolve_time": row.resolve_time.isoformat() if row.resolve_time else None,
                 "status": row.status,
                 "expired": row.expired,
                 "false_alarm": row.false_alarm,

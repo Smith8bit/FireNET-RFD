@@ -284,7 +284,8 @@ export default function DispatcherPage() {
   if (page !== safePage) setPage(safePage)
 
   return (
-    <div className='flex flex-col h-full p-4 gap-2 '>
+    <div className="flex-1 min-h-0 overflow-hidden bg-background">
+      <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
 
       {/* Page header and description */}
       <div className='flex flex-row gap-4 items-center'>
@@ -577,6 +578,7 @@ export default function DispatcherPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   )
