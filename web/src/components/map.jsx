@@ -1,9 +1,9 @@
-import { useEffect, useRef, createElement, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, createElement, forwardRef, useImperativeHandle, memo } from 'react'
 import { createRoot } from 'react-dom/client'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { UserCircleIcon } from '@heroicons/react/20/solid'
-import { useMapSelection } from '../../functions/stateStore'
+import { useMapSelection } from '../lib/stateStore'
 
 // Fires are drawn as a WebGL circle layer (one source, not one DOM marker per
 // fire) so the map stays smooth with thousands of points.
@@ -132,12 +132,16 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     const focusedId = useMapSelection((s) => s.focusedId)
     const hoveredId = useMapSelection((s) => s.hoveredId)
     const setFocused = useMapSelection((s) => s.setFocused)
+    const clearSelection = useMapSelection((s) => s.clear)
 
-    // let the parent recenter the map to the user's starting view
+    // let the parent recenter the map to the user's starting view, plus drive
+    // the zoom buttons that live in the floating map-control group
     useImperativeHandle(ref, () => ({
         resetView: () => {
             mapRef.current?.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: startZoom, duration: 800 })
         },
+        zoomIn: () => mapRef.current?.zoomIn(),
+        zoomOut: () => mapRef.current?.zoomOut(),
     }), [startPoint, startZoom])
 
     useEffect(() => {
@@ -153,7 +157,8 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         map.setRenderWorldCopies(false)
         map.dragRotate.disable()
         map.doubleClickZoom.disable()
-        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+        // zoom buttons live in the floating control group (see MapViewPage) so they
+        // stay grouped with the other controls and shift left when the panel opens
 
         // setStyle() wipes custom sources, so re-add fires after every style load
         map.on('style.load', () => {
@@ -165,11 +170,26 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
             const feature = e.features?.[0]
             if (feature) setFocused(feature.properties.id)
         })
+        // a click on empty map (not on a fire) clears the current selection
+        map.on('click', (e) => {
+            const hit = map.getLayer(FIRES_LAYER)
+                && map.queryRenderedFeatures(e.point, { layers: [FIRES_LAYER] }).length > 0
+            if (!hit) clearSelection()
+        })
         map.on('mouseenter', FIRES_LAYER, () => { map.getCanvas().style.cursor = 'pointer' })
         map.on('mouseleave', FIRES_LAYER, () => { map.getCanvas().style.cursor = '' })
 
         mapRef.current = map
-        return () => map.remove()
+
+        // the map container resizes when side panels collapse/expand, which
+        // doesn't fire a window resize — keep the canvas in sync ourselves
+        const ro = new ResizeObserver(() => map.resize())
+        ro.observe(map.getContainer())
+
+        return () => {
+            ro.disconnect()
+            map.remove()
+        }
     }, [])
 
     useEffect(() => {
@@ -240,4 +260,6 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     )
 })
 
-export default MapView
+// the map instance is built once; collapsing side panels only changes layout,
+// so skip re-rendering as long as the data/layer props are unchanged
+export default memo(MapView)

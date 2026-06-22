@@ -25,7 +25,7 @@ _MIN_PASSWORD_LEN = 8
 # national region, so filtering on role = 'dispatcher' already excludes them.
 _DISPATCHERS_SQL = """
     SELECT u.id AS user_id, u.email AS username, ur.name AS name, u.division AS division,
-           ur.permissions AS permissions,
+           ur.permissions AS permissions, ur.created_at AS created_at,
            r.id AS region_id, r.code AS region_code, r.name_th AS region_name_th,
            r.level AS region_level, r.path::text AS region_path
     FROM "user" u
@@ -37,12 +37,13 @@ _DISPATCHERS_ORDER = " ORDER BY r.path, u.email"
 
 
 def _clean_permissions(raw, *, default) -> list[str]:
-    """Keep only grantable permissions; fall back to `default` when none are given.
-    Superuser-only perms (dispatcher.manage / permission.grant) are dropped here."""
+    """Keep only grantable permissions. A missing/invalid field falls back to
+    `default`; an explicit list is honored as given — including an empty one, so a
+    dispatcher can be saved with no permissions. Superuser-only perms
+    (dispatcher.manage / permission.grant) are dropped here."""
     if not isinstance(raw, list):
         return sorted(default)
-    valid = {p for p in raw if p in GRANTABLE}
-    return sorted(valid) if valid else sorted(default)
+    return sorted({p for p in raw if p in GRANTABLE})
 
 
 async def _fetch_dispatchers(session, viewer: User) -> list[dict]:
@@ -62,15 +63,19 @@ async def _fetch_dispatchers(session, viewer: User) -> list[dict]:
             "username": m["username"],
             "name": m["name"],
             "division": m["division"],
-            # show what's stored (preset fallback for un-backfilled rows). Do NOT
-            # expand() here — implied views are an enforcement concern; expanding
-            # for display inflates the checkboxes and the inflation gets re-saved.
-            "permissions": sorted(m["permissions"] or PRESETS["dispatcher"]),
+            # show what's stored. NULL = un-backfilled row → preset fallback; an
+            # explicit [] is honored as "no permissions". Do NOT expand() here —
+            # implied views are an enforcement concern; expanding for display
+            # inflates the checkboxes and the inflation gets re-saved.
+            "permissions": sorted(
+                m["permissions"] if m["permissions"] is not None else PRESETS["dispatcher"]
+            ),
             "region_id": str(m["region_id"]),
             "region_code": m["region_code"],
             "region_name_th": m["region_name_th"],
             "region_level": m["region_level"],
             "region_path": m["region_path"],
+            "created_at": m["created_at"].isoformat() if m["created_at"] else None,
         }
         for m in rows.mappings().all()
     ]
@@ -216,6 +221,7 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         changes: dict = {}
         if new_name is not None and new_name != ur_row.name:
             changes["name"] = new_name
+            changes["previous_name"] = ur_row.name
         if new_permissions is not None and new_permissions != sorted(ur_row.permissions or []):
             changes["permissions"] = new_permissions
 
@@ -233,6 +239,7 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
             target.email = new_username
         if "division" in data and new_division != target.division:
             changes["division"] = new_division
+            changes["previous_division"] = target.division
             target.division = new_division
         if new_password is not None:
             # record only that a reset happened — never the secret itself
@@ -310,7 +317,7 @@ async def handle_delete_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
         audit(session, actor=actor, action="dispatcher.delete", entity_type="user",
               entity_id=str(user_id),
               detail={"username": target.email, "name": user_region.name,
-                      "region_path": str(region_path)})
+                      "division": target.division, "region_path": str(region_path)})
         await session.delete(target)
         await session.commit()
 

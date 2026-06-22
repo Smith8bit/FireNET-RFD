@@ -1,21 +1,22 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { List } from 'react-window'
-import { ArrowsPointingOutIcon, UserGroupIcon } from '@heroicons/react/20/solid'
-import { useMapSelection, useSocketStore } from '../functions/stateStore'
-import { useAuthStore, can } from '../functions/useAuthStore'
-import { useFireData } from '../functions/useFireData'
-import Map from '../components/map/map'
-import Card from '../components/map/card'
-import ExpandedCard from '../components/map/expandedCard'
+import { ArrowsPointingOutIcon, UserGroupIcon, ChevronDoubleRightIcon, ChevronDoubleLeftIcon, PlusIcon, MinusIcon } from '@heroicons/react/20/solid'
+import { useMapSelection, useSocketStore } from '../lib/stateStore'
+import { useAuthStore, can } from '../lib/useAuthStore'
+import { useFireData } from '../lib/useFireData'
+import Map from '../components/map'
+import Card from '../components/card'
+import ExpandedCard from '../components/expandedCard'
 
-import satelliteStyle from '../components/map/layers/satellite.json'
-import baseStyle from '../components/map/layers/base.json'
-import topoStyle from '../components/map/layers/topo.json'
+import satelliteStyle from '../components/layers/satellite.json'
+import baseStyle from '../components/layers/base.json'
+import topoStyle from '../components/layers/topo.json'
 
 const LAYERS = { 'ค่าเริ่มต้น': baseStyle, 'ดาวเทียม': satelliteStyle, 'ภูมิประเทศ': topoStyle }
 // fallback view (all of Thailand) until the profile's per-region home arrives
 const DEFAULT_HOME = { lat: 13.05, lng: 101.45, zoom: 5.5 }
-const CARD_HEIGHT = 135 // px — must match Card's rendered height (py-3 + 3 text lines + border)
+const CARD_HEIGHT = 140 // px — must match Card's rendered height (py-3 + 3 text lines + border)
+const EMPTY_OFFICERS = [] // stable ref so <Map> doesn't re-render when officers are hidden
 
 function FireRow({ index, style, fires }) {
   const f = fires[index]
@@ -36,11 +37,13 @@ function FireRow({ index, style, fires }) {
 
 export default function MapViewPage() {
   const [selectedLayer, setSelectedLayer] = useState(LAYERS['ค่าเริ่มต้น'])
+  const [listCollapsed, setListCollapsed] = useState(false)
   const mapRef = useRef(null)
 
   // per-user opening view: center + zoom of the region this admin is assigned to
   const home = useAuthStore((s) => s.user?.home) ?? DEFAULT_HOME
-  const startPoint = { lat: home.lat, lng: home.lng }
+  // memoized so a layout-only re-render (panel collapse) keeps <Map> props stable
+  const startPoint = useMemo(() => ({ lat: home.lat, lng: home.lng }), [home.lat, home.lng])
 
   const [officers, setOfficers] = useState([])
   const [showOfficers, setShowOfficers] = useState(true)
@@ -53,7 +56,7 @@ export default function MapViewPage() {
     if (!ready || !canViewOfficers) return
     send({ type: 'list_officers_MAP' })
   }, [ready, canViewOfficers])
-    
+
   useEffect(() => {
     if (!officersMsg) return
     setOfficers(officersMsg.officers ?? [])
@@ -121,67 +124,118 @@ export default function MapViewPage() {
   const clearSelection = useMapSelection((s) => s.clear)
   const focused = focusedId ? fires.find((f) => f.id === focusedId) : null
 
+  // focusing a fire (e.g. clicking its spot on the map) reveals its card, so
+  // open the panel if it was collapsed
+  useEffect(() => {
+    if (focusedId) setListCollapsed(false)
+  }, [focusedId])
+
   return (
-    <div className="flex flex-1 w-full overflow-hidden">
-      <div className="relative w-3/4 h-full">
-        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={showOfficers ? officers : []} />
-        <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-2">
-          <div
-            id="layers"
-            className="flex rounded-lg overflow-hidden shadow-md divide-x divide-gray-300"
-          >
-            {Object.keys(LAYERS).map((key) => (
-              <button
-                key={key}
-                className={`px-3 py-1.5 text-sm font-medium hover:bg-forest-500 hover:text-primary-foreground ${selectedLayer === LAYERS[key] ? 'bg-forest-500 text-primary-foreground' : 'bg-white'}`}
-                onClick={() => setSelectedLayer(LAYERS[key])}
-              >
-                {key}
-              </button>
-            ))}
-          </div>
-          <button
-            title="กลับไปจุดเริ่มต้น"
-            className="flex items-center gap-1.5 bg-white rounded-lg shadow-md px-3 py-1.5 text-sm font-medium hover:bg-forest-500 hover:text-primary-foreground"
-            onClick={() => mapRef.current?.resetView()}
-          >
-            <ArrowsPointingOutIcon className="w-5 h-5" />
-            กลับไปจุดเริ่มต้น
-          </button>
-          {canViewOfficers && (
+    <div className="relative flex flex-1 w-full overflow-hidden">
+      {/* Full-screen map fills the viewport; the sidebar and list panel float over it */}
+      <div className="fixed inset-0 z-0">
+        <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={showOfficers ? officers : EMPTY_OFFICERS} />
+      </div>
+
+      {/* Map controls float top-right, shifting left of the panel when it's open */}
+      <div className={`fixed top-3 z-10 flex flex-col items-end gap-2 transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'right-3' : 'right-[calc(25vw+0.75rem)]'}`}>
+
+        {/* Map tile controls Base/Satellite/Topography */}
+        <div
+          id="layers"
+          className="flex rounded-lg overflow-hidden shadow-md divide-x divide-gray-300"
+        >
+          {Object.keys(LAYERS).map((key) => (
+            <button
+              key={key}
+              className={`px-3 py-1.5 text-sm font-medium text-primary hover:bg-flame-light hover:text-primary ${selectedLayer === LAYERS[key] ? 'bg-primary text-white' : 'bg-white'}`}
+              onClick={() => setSelectedLayer(LAYERS[key])}
+            >
+              {key}
+            </button>
+          ))}
+        </div>
+
+        {/* Reset view button */}
+        <button
+          title="กลับไปจุดเริ่มต้น"
+          className="flex items-center gap-1.5 bg-white rounded-lg shadow-md px-3 py-1.5 text-sm text-primary font-medium hover:bg-flame-light hover:text-primary"
+          onClick={() => mapRef.current?.resetView()}
+        >
+          <ArrowsPointingOutIcon className="w-5 h-5" />
+          กลับไปจุดเริ่มต้น
+        </button>
+
+        {/* Toggle officers in map */}
+        {canViewOfficers && (
           <button
             title={showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
             aria-pressed={showOfficers}
-            className={`flex items-center gap-1.5 rounded-lg shadow-md px-3 py-1.5 text-sm font-medium hover:bg-forest-500 hover:text-primary-foreground ${showOfficers ? 'bg-forest-500 text-primary-foreground' : 'bg-white'}`}
+            className={`flex items-center gap-1.5 rounded-lg shadow-md px-3 py-1.5 text-sm text-primary font-medium hover:bg-flame-light hover:text-primary ${showOfficers ? 'bg-primary text-white' : 'bg-white'}`}
             onClick={() => setShowOfficers((v) => !v)}
           >
             <UserGroupIcon className="w-5 h-5" />
             {showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
           </button>
-          )}
+        )}
+
+        {/* Zoom in/out control */}
+        <div id="zoom" className="flex flex-col rounded-lg overflow-hidden shadow-md divide-y divide-gray-300">
+          <button
+            title="ซูมเข้า"
+            aria-label="ซูมเข้า"
+            className="bg-white p-1.5 text-primary hover:bg-flame-light hover:text-primary"
+            onClick={() => mapRef.current?.zoomIn()}
+          >
+            <PlusIcon className="w-5 h-5" />
+          </button>
+          <button
+            title="ซูมออก"
+            aria-label="ซูมออก"
+            className="bg-white p-1.5 text-primary hover:bg-flame-light hover:text-primary"
+            onClick={() => mapRef.current?.zoomOut()}
+          >
+            <MinusIcon className="w-5 h-5" />
+          </button>
         </div>
+
       </div>
-      <div className="relative w-1/4 h-full">
+
+      {/* List panel floats over the right edge of the map */}
+      <div className={`fixed top-0 right-0 h-full z-10 transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'w-0' : 'w-1/4'}`}>
+        
+        {/* collapse/expand handle: sits on the panel's outer edge, vertically centered */}
+        <button
+          title={listCollapsed ? 'แสดงรายการไฟ' : 'ซ่อนรายการไฟ'}
+          onClick={() => setListCollapsed((v) => !v)}
+          className="absolute top-1/2 -left-6 -translate-y-1/2 z-20 flex items-center justify-center w-6 h-12 bg-white border border-gray-300 rounded-l-lg shadow-md text-primary hover:bg-flame-light"
+        >
+          {listCollapsed
+            ? <ChevronDoubleLeftIcon className="w-5 h-5" />
+            : <ChevronDoubleRightIcon className="w-5 h-5" />}
+        </button>
+
         {/* list panel stays mounted while the expanded card overlays it,
             so the scroll position is kept naturally */}
+        {/* fixed width (matching the open panel) so the outer w-0 + overflow-hidden
+            clips it smoothly during the close transition instead of reflowing */}
         <div
-          className="h-full bg-background overflow-hidden flex flex-col"
+          className="h-full w-[25vw] bg-background border-l border-background/50 shadow-xl overflow-hidden flex flex-col"
           id="map-controller"
         >
-          <div id="list-controls" className="px-3 py-2 space-y-2 bg-white border-b border-gray-300">
+          <div id="list-controls" className="px-4 py-2 space-y-2.5 bg-white border-b border-gray-300">
             <div className="flex items-center justify-between">
-              <p className="font-semibold text-md">รายการไฟ ({listFires.length})</p>
-              <div className="flex items-center gap-1.5">
+              <p className="font-semibold text-lg text-primary ">รายการไฟ ({listFires.length})</p>
+              <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">เรียงตาม</span>
                 {[{ key: 'time', label: 'เวลา' }, { key: 'name', label: 'ชื่อ' }].map(({ key, label }) => (
                   <button
                     key={key}
                     onClick={() => changeSort(key)}
-                    className={`px-2.5 py-1 rounded-full text-sm font-semibold transition-colors ${
-                      sortBy === key
-                        ? 'bg-forest-500 text-white'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                    }`}
+                    className={`px-2.5 py-1 rounded-lg text-sm font-semibold transition-colors ${sortBy === key
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-gray-500 hover:bg-background'
+                      }`}
                   >
                     {label}{sortBy === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
                   </button>
@@ -190,11 +244,11 @@ export default function MapViewPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <label className="flex-1 min-w-0">
-                <span className="block text-xs text-gray-500 mb-0.5">สถานะ</span>
+                <span className="block text-sm text-gray-500 mb-0.5">สถานะ</span>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
+                  className="w-full text-sm text-accent bg-white border border-gray-300 rounded-lg px-2 py-1"
                 >
                   <option value="all">ทั้งหมด</option>
                   <option value="free">ลุกไหม้</option>
@@ -203,11 +257,11 @@ export default function MapViewPage() {
                 </select>
               </label>
               <label className="flex-1 min-w-0">
-                <span className="block text-xs text-gray-500 mb-0.5">จังหวัด</span>
+                <span className="block text-sm text-gray-500 mb-0.5">จังหวัด</span>
                 <select
                   value={provinceFilter}
                   onChange={(e) => setProvinceFilter(e.target.value)}
-                  className="w-full text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
+                  className="w-full text-sm text-accent bg-white border border-gray-300 rounded-lg px-2 py-1"
                 >
                   <option value="">ทั้งหมด</option>
                   {provinces.map((p) => (
@@ -216,11 +270,11 @@ export default function MapViewPage() {
                 </select>
               </label>
               <label className="flex-1 min-w-0">
-                <span className="block text-xs text-gray-500 mb-0.5">ดาวเทียม</span>
+                <span className="block text-sm text-gray-500 mb-0.5">ดาวเทียม</span>
                 <select
                   value={satelliteFilter}
                   onChange={(e) => setSatelliteFilter(e.target.value)}
-                  className="w-full text-sm bg-white border border-gray-300 rounded-lg px-2 py-1"
+                  className="w-full text-sm text-accent bg-white border border-gray-300 rounded-lg px-2 py-1"
                 >
                   <option value="">ทั้งหมด</option>
                   {satellites.map((s) => (
@@ -235,7 +289,7 @@ export default function MapViewPage() {
             className="flex-1 min-h-0 cursor-pointer"
           >
             <List
-              className="no-scrollbar"
+              className="minimal-scrollbar"
               rowComponent={FireRow}
               rowCount={listFires.length}
               rowHeight={CARD_HEIGHT}
@@ -249,9 +303,9 @@ export default function MapViewPage() {
               className="bg-white p-1 w-fit"
               onClick={clearSelection}
             >
-              <svg className="w-8 h-8" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
+              <svg className="w-8 h-8" xmlns="http://www.w3.org/2000/svg" fill="primary" viewBox="0 0 16 16">
                 <path fillRule="evenodd"
-                    d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z" />
+                  d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z" />
               </svg>
             </button>
             <ExpandedCard fire={focused} officers={officers} />

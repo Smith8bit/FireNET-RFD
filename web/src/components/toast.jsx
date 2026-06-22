@@ -25,9 +25,9 @@ export default function Toast({ message, type = 'success', onClose, duration = 3
       role={role}
       aria-live={ariaLive}
       aria-atomic="true"
-      className={`animate-slide-in-top border rounded-lg shadow-lg px-4 py-3 max-w-sm pointer-events-auto ${styles[type]}`}
+      className={` animate-slide-in-top border rounded-lg shadow-lg px-4 py-3 max-w-sm pointer-events-auto ${styles[type]}`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <span className="font-medium text-sm flex-1">{message}</span>
         <button
           type="button"

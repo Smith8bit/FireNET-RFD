@@ -590,10 +590,18 @@ async def request_region_change(
     if ur.region_id == province.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "already in this province")
 
+    previous = (
+        await session.execute(select(Region).where(Region.id == ur.region_id))
+    ).scalar_one_or_none()
+
     req = RegionChangeRequest(user_id=user.id, requested_region_id=province.id)
     session.add(req)
+    detail = {"province_code": province.code, "province_path": str(province.path)}
+    if previous is not None:
+        detail["previous_province_code"] = previous.code
+        detail["previous_province_path"] = str(previous.path)
     audit(session, actor=user, action="region_change.request", entity_type="user",
-          entity_id=str(user.id), detail={"province_code": province.code, "province_path": str(province.path)})
+          entity_id=str(user.id), detail=detail)
     try:
         await session.commit()
     except IntegrityError:  # partial unique index: one open request per officer

@@ -52,6 +52,7 @@ _OFFICERS_SQL = """
            fo.last_updated::text AS last_updated,
            ST_Y(fo.last_location::geometry) AS latitude,
            ST_X(fo.last_location::geometry) AS longitude,
+           ur.created_at AS created_at,
            r.name_th AS province_name_th, r.path::text AS province_path
     FROM field_officers fo
     JOIN "user" u ON u.id = fo.user_id
@@ -106,6 +107,7 @@ async def _fetch_officers(session, user: User, *, limit: int | None = None) -> l
             "location": {"latitude": m["latitude"], "longitude": m["longitude"]} if m["latitude"] is not None else None,
             "province_name_th": m["province_name_th"],
             "province_path": m["province_path"],
+            "created_at": m["created_at"].isoformat() if m["created_at"] else None,
         }
         for m in rows.mappings().all()
     ]
@@ -229,20 +231,21 @@ async def handle_decide_region_request(
             await ws.send_json({"type": "error", "code": "out_of_scope"})
             return
 
-        if action == "approve":
-            ur = (
-                await session.execute(
-                    select(UserRegion).where(
-                        UserRegion.user_id == req.user_id,
-                        UserRegion.role == "field_officer",
-                    )
+        ur = (
+            await session.execute(
+                select(UserRegion).where(
+                    UserRegion.user_id == req.user_id,
+                    UserRegion.role == "field_officer",
                 )
-            ).scalar_one_or_none()
-            if ur is None:
-                await ws.send_json({"type": "error", "code": "not_found"})
-                return
+            )
+        ).scalar_one_or_none()
+        if ur is None:
+            await ws.send_json({"type": "error", "code": "not_found"})
+            return
+        # origin province — captured before any move, recorded on both outcomes
+        old_region_id = ur.region_id
+        if action == "approve":
             # region_id is part of the composite PK — move via UPDATE, not ORM identity
-            old_region_id = ur.region_id
             session.expunge(ur)
             await session.execute(
                 update(UserRegion)
@@ -256,8 +259,8 @@ async def handle_decide_region_request(
         req.status = "approved" if action == "approve" else "rejected"
         req.decided_at = datetime.now(timezone.utc)
         req.decided_by = admin.id
-        # officer name (+ origin province on approval) so the console trail reads
-        # "name: old → new" / "name: province" without extra client lookups
+        # officer name + origin province so the console trail reads
+        # "name: old → new" on both outcomes without extra client lookups
         officer_name = (
             await session.execute(
                 select(UserRegion.name).where(
@@ -265,13 +268,12 @@ async def handle_decide_region_request(
                 )
             )
         ).scalar_one_or_none()
+        prev_path = (
+            await session.execute(select(Region.path).where(Region.id == old_region_id))
+        ).scalar_one_or_none()
         detail = {"request_id": str(req.id), "province_path": str(dest.path),
-                  "officer_name": officer_name}
-        if action == "approve":
-            prev_path = (
-                await session.execute(select(Region.path).where(Region.id == old_region_id))
-            ).scalar_one_or_none()
-            detail["previous_province_path"] = str(prev_path) if prev_path is not None else None
+                  "officer_name": officer_name,
+                  "previous_province_path": str(prev_path) if prev_path is not None else None}
         audit(session, actor=admin, action=f"region_change.{req.status}", entity_type="user",
               entity_id=str(req.user_id), detail=detail)
         try:
@@ -428,7 +430,8 @@ async def handle_verify_officer(ws: WebSocket, admin: User, data: dict, active_c
 
         audit(session, actor=admin, action="officer.verify", entity_type="officer",
               entity_id=str(user_id),
-              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name,
+                      "division": target.division, "province_path": str(province_path)})
         await session.commit()
 
     logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
@@ -501,6 +504,7 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
         ur_values: dict = {}
         if new_name is not None and new_name != user_region.name:
             changes["name"] = new_name
+            changes["previous_name"] = user_region.name
             ur_values["name"] = new_name
 
         if province_code is not None:
@@ -528,6 +532,7 @@ async def handle_update_officer(ws: WebSocket, admin: User, data: dict, active_c
             target.email = new_username
         if "division" in data and new_division != target.division:
             changes["division"] = new_division
+            changes["previous_division"] = target.division
             target.division = new_division
         if new_password is not None:
             # never record the secret itself — only that a reset happened, and whose
@@ -611,7 +616,8 @@ async def handle_delete_officer(ws: WebSocket, admin: User, data: dict, active_c
         # capture attribution before the rows are gone
         audit(session, actor=admin, action="officer.delete", entity_type="officer",
               entity_id=str(user_id),
-              detail={"username": target.email, "name": officer_name, "province_path": str(province_path)})
+              detail={"username": target.email, "name": officer_name,
+                      "division": target.division, "province_path": str(province_path)})
         # FieldOfficer must go before the user (NOT NULL user_id with SET NULL FK)
         await session.execute(delete(FieldOfficer).where(FieldOfficer.user_id == user_id))
         await session.delete(target)

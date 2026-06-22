@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     COOKIE_MAX_AGE: int = 86400
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    # Auth-endpoint rate limit (per client IP, per worker). Tuned so a real user
+    # fumbling a password is never blocked while a scripted attack is. Raise the
+    # limit (or widen the window) in dev to avoid tripping it during testing.
+    RATE_LIMIT_MAX: int = 10
+    RATE_LIMIT_WINDOW_SECONDS: float = 60.0
+
     INITIAL_SUPERUSER_USERNAME: str = "adminRFD"
     # No default: the bootstrap superuser password must come from the environment.
     INITIAL_SUPERUSER_PASSWORD: str
@@ -61,6 +67,12 @@ class Settings(BaseSettings):
 
     # an officer stops showing as online after this long without a location update
     OFFICER_ONLINE_TTL_MINUTES: int = 15
+
+    # how often the mobile app pushes an officer's location while online. The
+    # superuser can override the default from the console; the effective value is
+    # never allowed below MIN (battery/server-load floor) — see officers router.
+    LOCATION_POLL_DEFAULT_MINUTES: float = 5
+    LOCATION_POLL_MIN_MINUTES: float = 1
 
     # admin officer lists (positions / online status) are refreshed on this cadence
     # rather than per location ping — see ws/pg_listener.py. Routine 5-min pings from

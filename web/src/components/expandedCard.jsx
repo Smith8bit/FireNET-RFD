@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useSocketStore } from '../../functions/stateStore'
-import { useAuthStore, can } from '../../functions/useAuthStore'
-import { toast } from '../../functions/toastStore'
-import { useMessageEffect } from '../../functions/useMessageEffect'
-import { formatDate, formatTime } from '../../functions/datetime'
+import { useSocketStore } from '../lib/stateStore'
+import { useAuthStore, can } from '../lib/useAuthStore'
+import { toast } from '../lib/toastStore'
+import { useMessageEffect } from '../lib/useMessageEffect'
+import { formatDate, formatTime } from '../lib/datetime'
 
 const APPOINT_ERRORS = {
     out_of_scope: 'ไฟหรือเจ้าหน้าที่อยู่นอกพื้นที่ของคุณ',
@@ -33,8 +33,9 @@ export default function ExpandedCard({ fire, officers }) {
     // a resolved or already-booked fire can't be (re)assigned:
     // lock the officer list + actions
     const locked = fire.status || fire.booked
-    // who may cancel a booking: self-reserved → anyone; dispatcher-appointed → fire.appoint
-    const canCancel = fire.booked && !fire.status && (!fire.appointed || canAppoint)
+    // cancelling any booking requires fire.appoint (a 0-permission dispatcher must not
+    // be able to cancel a field officer's self-reservation)
+    const canCancel = canAppoint && fire.booked && !fire.status
 
     // the picked officer may turn busy via a live officers_map refresh (self-reserve
     // or another admin) — disarm the action so we don't fire a doomed appoint
@@ -80,7 +81,7 @@ export default function ExpandedCard({ fire, officers }) {
         <div id="container" className="bg-white w-full flex-1 min-h-0 flex flex-col px-4">
             <div id="detail" className="no-scrollbar border-b-2 border-gray-300 pb-4 pt-2">
                 <div className="flex items-start justify-between gap-2">
-                    <h2 className="text-2xl font-bold leading-tight">{fire.name}</h2>
+                    <h2 className="text-2xl text-primary font-bold leading-tight">{fire.name}</h2>
                     <span
                         className={`shrink-0 mt-0.5 px-2.5 py-1 rounded-full text-sm font-semibold ${
                             fire.status
@@ -147,12 +148,12 @@ export default function ExpandedCard({ fire, officers }) {
                                 o.busy
                                     ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
                                     : selectedOfficer === o.field_officer_id
-                                    ? 'bg-forest-100 border-forest-500'
+                                    ? 'bg-flame-light border-primary'
                                     : 'bg-white border-gray-200 hover:bg-gray-50'
                             }`}
                         >
                             <div className="flex items-center justify-between">
-                                <span className="font-medium text-md">{o.name}</span>
+                                <span className="font-medium text-primary text-md">{o.name}</span>
                                 <div className="flex items-center gap-1.5">
                                     {o.busy && (
                                         <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">มีงานอยู่</span>
@@ -178,7 +179,7 @@ export default function ExpandedCard({ fire, officers }) {
                 </button>
                 <button
                     disabled={locked || !selectedOfficer || selectedBusy || pending}
-                    className="flex-1 py-3 text-white font-bold text-lg border rounded-lg bg-forest-500 hover:bg-forest-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    className="flex-1 py-3 text-white font-bold text-lg border rounded-lg bg-primary hover:bg-brand disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                     onClick={appoint}
                 >
                     {fire.status ? 'ดับแล้ว' : fire.booked ? 'ถูกจองแล้ว' : pending ? 'กำลังมอบหมาย…' : 'มอบหมายเจ้าหน้าที่'}
