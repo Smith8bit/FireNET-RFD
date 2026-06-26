@@ -81,8 +81,9 @@ export default function Login() {
           fixed (no layout animation), so resizing the form sheet can't shift it. */}
       <SafeAreaView edges={['top']} className="flex-1">
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-4xl font-sans-semibold text-white">FireNET</Text>
-          <Text className="mt-1 text-base font-head text-white/90">ระบบจัดการไฟป่า</Text>
+          <Text className="text-5xl font-sans-semibold text-white">FireNET</Text>
+          <Text className=" text-xl font-sans-semibold text-white">ระบบจัดการไฟป่า</Text>
+          <Text className="mt-1 text-lg font-head-semibold text-accent">สำหรับเจ้าหน้าที่ภาคสนาม</Text>
         </View>
       </SafeAreaView>
 
@@ -95,7 +96,7 @@ export default function Login() {
         className="absolute inset-x-4 bottom-0 pb-8 rounded-t-3xl bg-foreground"
         style={[
           {
-            shadowColor: '#000',
+            shadowColor: '`#000',
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.18,
             shadowRadius: 16,

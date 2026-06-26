@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Redirect } from 'expo-router'
-import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuthSession } from '@/providers/AuthProvider'
 
@@ -21,23 +21,39 @@ export default function Pending() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <View style={{ flex: 1, padding: 24, gap: 16, justifyContent: 'center' }}>
-        <Text style={{ fontSize: 22, fontWeight: '600' }}>รอการอนุมัติ</Text>
-        <Text>บัญชีเจ้าหน้าที่ภาคสนามของคุณกำลังรอผู้ดูแลระบบยืนยัน</Text>
-        <Text style={{ color: '#666' }}>{user.username}</Text>
+    <SafeAreaView className="flex-1 bg-secondary">
+      {/* Centered status card — large rounded border, no brand header. */}
+      <View className="flex-1 items-center justify-center p-6">
+        <View className="w-full justify-center gap-4 rounded-3xl bg-foreground p-6">
 
-        <Pressable
-          onPress={onRefresh}
-          disabled={checking}
-          style={{ backgroundColor: '#2563eb', padding: 14, borderRadius: 10, alignItems: 'center' }}
-        >
-          {checking ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '600' }}>ตรวจสอบสถานะอีกครั้ง</Text>}
-        </Pressable>
+          <Text className="self-center border-b-2 border-border pb-2 text-xl font-sans-normal text-card-foreground">
+            {user.username}
+          </Text>
+          
+          <Text className="self-center text-2xl font-sans-semibold text-card-foreground border-2 px-3 py-1.5 rounded-full">
+            รอการอนุมัติ
+          </Text>
 
-        <Pressable onPress={signOut} style={{ padding: 12, alignItems: 'center' }}>
-          <Text style={{ color: '#b91c1c' }}>ออกจากระบบ</Text>
-        </Pressable>
+          <Text className="text-center text-base font-head text-muted-foreground">
+            บัญชีของคุณกำลังรอผู้ดูแลระบบยืนยัน
+          </Text>
+
+          <TouchableOpacity
+            onPress={onRefresh}
+            disabled={checking}
+            className={`items-center rounded-2xl bg-primary p-3.5 ${checking ? 'opacity-60' : ''}`}
+          >
+            {checking ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text className="font-sans-semibold text-white">ตรวจสอบสถานะอีกครั้ง</Text>
+            )}
+          </TouchableOpacity>
+
+          <Pressable onPress={signOut} className="items-center">
+            <Text className="text-destructive">ออกจากระบบ</Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   )
