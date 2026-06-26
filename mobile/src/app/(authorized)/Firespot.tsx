@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   Alert,
   TouchableOpacity,
@@ -21,6 +20,20 @@ import * as Location from 'expo-location'
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
 import { useFireStore, type ResolvePhoto } from '@/stores/fireStore'
 import { formatDetectedAt } from '@/utils/format'
+import { colors } from '@/lib/theme'
+
+// Map's "free/burning" red, kept literal so the active-fire icon/badge here match
+// the map markers (FIRE_COLORS.free in MapView).
+const BURNING = '#ef4444'
+
+// shadow can't be expressed as a className faithfully on both platforms — keep it inline
+const cardShadow = {
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
 
 const MAX_PHOTOS = 3
 
@@ -165,10 +178,10 @@ export default function Firespot() {
 
   if (!reservedFire) {
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="flame-outline" size={48} color="#d1d5db" />
-        <Text style={styles.emptyText}>ยังไม่มีไฟที่จอง</Text>
-        <Text style={styles.emptyHint}>กดปุ่ม "จอง" ในรายการไฟบนแผนที่เพื่อรับผิดชอบไฟ</Text>
+      <View className="flex-1 items-center justify-center bg-background p-6">
+        <Ionicons name="flame-outline" size={48} color={colors.gray300} />
+        <Text className="mt-3 text-base font-sans-semibold text-gray-500">ยังไม่มีไฟที่จอง</Text>
+        <Text className="mt-1 text-center text-[13px] font-head text-gray-400">กดปุ่ม "จอง" ในรายการไฟบนแผนที่เพื่อรับผิดชอบไฟ</Text>
       </View>
     )
   }
@@ -177,37 +190,43 @@ export default function Firespot() {
   const statusLabel = isFalse ? 'ไม่ใช่ไฟ' : reservedFire.status ? 'ดับแล้ว' : 'กำลังไหม้'
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
+    <ScrollView className="flex-1 bg-background" contentContainerStyle={{ padding: 16, paddingTop: 48 }}>
+      <View className="mb-4 flex-row items-center">
         <Ionicons
           name={isFalse ? 'close-circle' : reservedFire.status ? 'checkmark-circle' : 'flame'}
           size={28}
-          color={isFalse ? '#6b7280' : reservedFire.status ? '#10b981' : '#ef4444'}
+          color={isFalse ? colors.gray500 : reservedFire.status ? colors.success : BURNING}
         />
-        <Text style={styles.title}>{reservedFire.name}</Text>
+        <Text className="ml-2 shrink text-xl font-sans-bold text-accent">{reservedFire.name}</Text>
         <View
-          style={[
-            styles.badge,
-            isFalse ? styles.badgeFalse : reservedFire.status ? styles.badgeResolved : styles.badgeActive,
-          ]}
+          className={`ml-auto rounded-full px-2.5 py-[3px] ${
+            isFalse ? 'bg-gray-500' : reservedFire.status ? 'bg-success' : 'bg-[#ef4444]'
+          }`}
         >
-          <Text style={styles.badgeText}>{statusLabel}</Text>
+          <Text className="text-xs font-sans-semibold text-white">{statusLabel}</Text>
         </View>
       </View>
 
       {/* how this fire became yours: dispatcher-appointed vs self-reserved */}
-      <View style={[styles.bookingTag, reservedFire.appointed ? styles.bookingTagAppoint : styles.bookingTagSelf]}>
+      <View
+        className={`mb-3 flex-row items-center gap-1 self-start rounded-full px-2.5 py-1 ${
+          reservedFire.appointed ? 'bg-[#e0e7ff]' : 'bg-[#e0f2fe]'
+        }`}
+      >
         <Ionicons
           name={reservedFire.appointed ? 'person-circle-outline' : 'hand-left-outline'}
           size={14}
           color={reservedFire.appointed ? '#4338ca' : '#0369a1'}
         />
-        <Text style={[styles.bookingTagText, { color: reservedFire.appointed ? '#4338ca' : '#0369a1' }]}>
+        <Text
+          className="text-xs font-sans-semibold"
+          style={{ color: reservedFire.appointed ? '#4338ca' : '#0369a1' }}
+        >
           {reservedFire.appointed ? 'มอบหมายโดยผู้ควบคุม' : 'จองเอง'}
         </Text>
       </View>
 
-      <View style={styles.card}>
+      <View className="rounded-2xl bg-foreground px-4" style={cardShadow}>
         <Row label="ตรวจพบเมื่อ" value={formatDetectedAt(reservedFire.detected_at)} />
         <Row label="สถานะ" value={statusLabel} />
         <Row label="ประเภท" value={reservedFire.type} />
@@ -224,28 +243,32 @@ export default function Firespot() {
       {!reservedFire.status && (
         <>
           <TouchableOpacity
-            style={[styles.resolveButton, !online && styles.resolveButtonDisabled]}
+            className={`mt-4 flex-row items-center justify-center rounded-xl py-3.5 ${!online ? 'bg-gray-300' : 'bg-success'}`}
             disabled={!online}
             onPress={openResolveForm}
           >
             <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
-            <Text style={styles.resolveButtonText}>ดับไฟแล้ว</Text>
+            <Text className="ml-2 text-base font-sans-semibold text-white">ดับไฟแล้ว</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.falseButton, !online && styles.falseButtonDisabled]}
+            className={`mt-3 flex-row items-center justify-center rounded-xl border bg-foreground py-3.5 ${!online ? 'border-gray-200' : 'border-gray-300'}`}
             disabled={!online}
             onPress={openFalseForm}
           >
-            <Ionicons name="close-circle-outline" size={20} color={online ? '#6b7280' : '#d1d5db'} />
-            <Text style={[styles.falseButtonText, !online && styles.falseButtonTextDisabled]}>
+            <Ionicons name="close-circle-outline" size={20} color={online ? colors.gray500 : colors.gray300} />
+            <Text className={`ml-2 text-base font-sans-semibold ${!online ? 'text-gray-300' : 'text-gray-500'}`}>
               ไม่ใช่ไฟ (แจ้งเตือนผิดพลาด)
             </Text>
           </TouchableOpacity>
           {/* self-reserved fires can be released; dispatcher-appointed ones cannot */}
           {!reservedFire.appointed && (
-            <TouchableOpacity style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
-              <Ionicons name="arrow-undo-outline" size={20} color="#ef4444" />
-              <Text style={styles.cancelButtonText}>
+            <TouchableOpacity
+              className="mt-3 flex-row items-center justify-center rounded-xl border border-[#FECACA] bg-foreground py-3.5"
+              onPress={confirmCancel}
+              disabled={cancelling}
+            >
+              <Ionicons name="arrow-undo-outline" size={20} color={colors.destructive} />
+              <Text className="ml-2 text-base font-sans-semibold text-destructive">
                 {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิกการจอง'}
               </Text>
             </TouchableOpacity>
@@ -253,7 +276,7 @@ export default function Firespot() {
         </>
       )}
 
-      <Text style={styles.note}>
+      <Text className="mt-3 text-center text-xs font-head text-gray-400">
         {reservedFire.status
           ? isFalse
             ? 'รายงานว่าไม่ใช่ไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
@@ -270,18 +293,18 @@ export default function Firespot() {
         onRequestClose={() => !submitting && setFormVisible(false)}
       >
         <KeyboardAvoidingView
-          style={styles.modalBackdrop}
+          className="flex-1 justify-end bg-black/40"
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           {/* tapping outside the card dismisses (blocked while submitting) */}
           <Pressable
-            style={StyleSheet.absoluteFill}
+            className="absolute inset-0"
             onPress={() => !submitting && setFormVisible(false)}
           />
-          <Animated.View style={styles.modalCard} entering={SlideInDown.duration(250)}>
-            <Text style={styles.modalTitle}>บันทึกการดับไฟ</Text>
+          <Animated.View className="rounded-t-3xl bg-foreground p-5 pb-8" entering={SlideInDown.duration(250)}>
+            <Text className="mb-3 text-lg font-sans-bold text-accent">บันทึกการดับไฟ</Text>
 
-            <Text style={styles.modalLabel}>หมายเหตุ (ไม่บังคับ)</Text>
+            <Text className="mb-1.5 mt-2 text-[13px] font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
             <TextInput
               value={note}
               onChangeText={setNote}
@@ -289,18 +312,19 @@ export default function Firespot() {
               multiline
               maxLength={2000}
               editable={!submitting}
-              style={styles.noteInput}
+              className="min-h-[72px] rounded-[10px] border border-border p-2.5 text-sm font-sans text-card-foreground"
+              style={{ textAlignVertical: 'top' }}
             />
 
-            <Text style={styles.modalLabel}>
+            <Text className="mb-1.5 mt-2 text-[13px] font-head text-gray-500">
               รูปถ่ายหลักฐาน (อย่างน้อย 1 รูป สูงสุด {MAX_PHOTOS} รูป)
             </Text>
-            <View style={styles.photoRow}>
+            <View className="mt-1 flex-row gap-2.5">
               {photos.map((p) => (
-                <View key={p.uri} style={styles.photoWrap}>
-                  <Image source={{ uri: p.uri }} style={styles.photoThumb} />
+                <View key={p.uri} className="relative">
+                  <Image source={{ uri: p.uri }} className="h-[72px] w-[72px] rounded-[10px] bg-muted" />
                   <TouchableOpacity
-                    style={styles.photoRemove}
+                    className="absolute -right-1.5 -top-1.5 h-5 w-5 items-center justify-center rounded-[10px] bg-destructive"
                     onPress={() => removePhoto(p.uri)}
                     disabled={submitting}
                   >
@@ -310,38 +334,44 @@ export default function Firespot() {
               ))}
               {photos.length < MAX_PHOTOS && (
                 <>
-                  <TouchableOpacity style={styles.photoAdd} onPress={takePhoto} disabled={submitting}>
-                    <Ionicons name="camera-outline" size={22} color="#6b7280" />
-                    <Text style={styles.photoAddText}>ถ่ายรูป</Text>
+                  <TouchableOpacity
+                    className="h-[72px] w-[72px] items-center justify-center rounded-[10px] border border-dashed border-border"
+                    onPress={takePhoto}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="camera-outline" size={22} color={colors.gray500} />
+                    <Text className="mt-0.5 text-[11px] font-head text-gray-500">ถ่ายรูป</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.photoAdd} onPress={pickPhoto} disabled={submitting}>
-                    <Ionicons name="images-outline" size={22} color="#6b7280" />
-                    <Text style={styles.photoAddText}>คลังภาพ</Text>
+                  <TouchableOpacity
+                    className="h-[72px] w-[72px] items-center justify-center rounded-[10px] border border-dashed border-border"
+                    onPress={pickPhoto}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="images-outline" size={22} color={colors.gray500} />
+                    <Text className="mt-0.5 text-[11px] font-head text-gray-500">คลังภาพ</Text>
                   </TouchableOpacity>
                 </>
               )}
             </View>
 
-            <View style={styles.modalActions}>
+            <View className="mt-5 flex-row gap-3">
               <TouchableOpacity
-                style={styles.modalCancel}
+                className="flex-1 items-center rounded-xl border border-border p-3.5"
                 onPress={() => setFormVisible(false)}
                 disabled={submitting}
               >
-                <Text style={styles.modalCancelText}>ยกเลิก</Text>
+                <Text className="text-[15px] font-sans-semibold text-gray-500">ยกเลิก</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.modalSubmit,
-                  (photos.length === 0 || submitting) && styles.resolveButtonDisabled,
-                ]}
+                className={`items-center rounded-xl p-3.5 ${photos.length === 0 || submitting ? 'bg-gray-300' : 'bg-success'}`}
+                style={{ flex: 2 }}
                 onPress={submitResolve}
                 disabled={photos.length === 0 || submitting}
               >
                 {submitting ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.modalSubmitText}>ยืนยันการดับไฟ</Text>
+                  <Text className="text-[15px] font-sans-semibold text-white">ยืนยันการดับไฟ</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -356,20 +386,20 @@ export default function Firespot() {
         onRequestClose={() => !falseSubmitting && setFalseFormVisible(false)}
       >
         <KeyboardAvoidingView
-          style={styles.modalBackdrop}
+          className="flex-1 justify-end bg-black/40"
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <Pressable
-            style={StyleSheet.absoluteFill}
+            className="absolute inset-0"
             onPress={() => !falseSubmitting && setFalseFormVisible(false)}
           />
-          <Animated.View style={styles.modalCard} entering={SlideInDown.duration(250)}>
-            <Text style={styles.modalTitle}>แจ้งว่าไม่ใช่ไฟ</Text>
-            <Text style={styles.modalDescription}>
+          <Animated.View className="rounded-t-3xl bg-foreground p-5 pb-8" entering={SlideInDown.duration(250)}>
+            <Text className="mb-3 text-lg font-sans-bold text-accent">แจ้งว่าไม่ใช่ไฟ</Text>
+            <Text className="mb-1 text-[13px] font-head leading-[19px] text-gray-500">
               ใช้เมื่อตรวจสอบแล้วพบว่าไม่มีไฟจริงในจุดนี้ (การแจ้งเตือนผิดพลาด) ไม่ต้องแนบรูปถ่าย
             </Text>
 
-            <Text style={styles.modalLabel}>หมายเหตุ (ไม่บังคับ)</Text>
+            <Text className="mb-1.5 mt-2 text-[13px] font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
             <TextInput
               value={falseNote}
               onChangeText={setFalseNote}
@@ -377,26 +407,28 @@ export default function Firespot() {
               multiline
               maxLength={2000}
               editable={!falseSubmitting}
-              style={styles.noteInput}
+              className="min-h-[72px] rounded-[10px] border border-border p-2.5 text-sm font-sans text-card-foreground"
+              style={{ textAlignVertical: 'top' }}
             />
 
-            <View style={styles.modalActions}>
+            <View className="mt-5 flex-row gap-3">
               <TouchableOpacity
-                style={styles.modalCancel}
+                className="flex-1 items-center rounded-xl border border-border p-3.5"
                 onPress={() => setFalseFormVisible(false)}
                 disabled={falseSubmitting}
               >
-                <Text style={styles.modalCancelText}>ยกเลิก</Text>
+                <Text className="text-[15px] font-sans-semibold text-gray-500">ยกเลิก</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalFalseSubmit, falseSubmitting && styles.resolveButtonDisabled]}
+                className={`items-center rounded-xl p-3.5 ${falseSubmitting ? 'bg-gray-300' : 'bg-gray-500'}`}
+                style={{ flex: 2 }}
                 onPress={submitFalseReport}
                 disabled={falseSubmitting}
               >
                 {falseSubmitting ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.modalSubmitText}>ยืนยันว่าไม่ใช่ไฟ</Text>
+                  <Text className="text-[15px] font-sans-semibold text-white">ยืนยันว่าไม่ใช่ไฟ</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -409,296 +441,9 @@ export default function Firespot() {
 
 function Row({ label, value }: { label: string; value: string | null }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value ?? '-'}</Text>
+    <View className="flex-row justify-between border-b border-border py-3">
+      <Text className="text-sm font-head text-gray-500">{label}</Text>
+      <Text className="ml-4 shrink text-right text-sm font-sans-medium text-card-foreground">{value ?? '-'}</Text>
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  content: {
-    padding: 16,
-    paddingTop: 48,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginLeft: 8,
-    flexShrink: 1,
-  },
-  badge: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    marginLeft: 'auto',
-  },
-  badgeActive: {
-    backgroundColor: '#ef4444',
-  },
-  badgeResolved: {
-    backgroundColor: '#10b981',
-  },
-  badgeFalse: {
-    backgroundColor: '#6b7280',
-  },
-  badgeText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  bookingTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 4,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 12,
-  },
-  bookingTagAppoint: {
-    backgroundColor: '#e0e7ff',
-  },
-  bookingTagSelf: {
-    backgroundColor: '#e0f2fe',
-  },
-  bookingTagText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-  },
-  rowLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    flexShrink: 1,
-    textAlign: 'right',
-    marginLeft: 16,
-  },
-  resolveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10b981',
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginTop: 16,
-  },
-  resolveButtonDisabled: {
-    backgroundColor: '#d1d5db',
-  },
-  resolveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  falseButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    paddingVertical: 14,
-    marginTop: 12,
-  },
-  falseButtonDisabled: {
-    borderColor: '#e5e7eb',
-  },
-  falseButtonText: {
-    color: '#6b7280',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  falseButtonTextDisabled: {
-    color: '#d1d5db',
-  },
-  cancelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    paddingVertical: 14,
-    marginTop: 12,
-  },
-  cancelButtonText: {
-    color: '#ef4444',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  note: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginTop: 12,
-  },
-  emptyHint: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  modalDescription: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginBottom: 4,
-    lineHeight: 19,
-  },
-  modalLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  noteInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    padding: 10,
-    minHeight: 72,
-    textAlignVertical: 'top',
-    fontSize: 14,
-  },
-  photoRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  photoWrap: {
-    position: 'relative',
-  },
-  photoThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#f3f4f6',
-  },
-  photoRemove: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#ef4444',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoAdd: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoAddText: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  modalCancel: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    color: '#6b7280',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  modalSubmit: {
-    flex: 2,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#10b981',
-    alignItems: 'center',
-  },
-  modalFalseSubmit: {
-    flex: 2,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#6b7280',
-    alignItems: 'center',
-  },
-  modalSubmitText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-})

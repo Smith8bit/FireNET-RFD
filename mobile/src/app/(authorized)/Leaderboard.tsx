@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, FlatList, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { api } from '@/lib/api'
 
 type Row = { rank: number; name: string; count: number; is_me: boolean }
 
 const MEDAL = ['🥇', '🥈', '🥉']
+
+// shadow can't be expressed as a className faithfully on both platforms — keep it inline
+const rowShadow = {
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
 
 export default function Leaderboard() {
   const [items, setItems] = useState<Row[]>([])
@@ -20,40 +29,39 @@ export default function Leaderboard() {
   }, [])
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView className="flex-1 bg-background" edges={['bottom']}>
       <FlatList
         data={items}
         keyExtractor={(it) => String(it.rank)}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={{ padding: 16, gap: 8, flexGrow: 1 }}
         ListHeaderComponent={
-          <Text style={styles.subtitle}>จำนวนไฟที่ดับได้เดือนนี้ (ไม่รวมการแจ้งผิดพลาด)</Text>
+          <Text className="mb-2 text-[13px] font-head text-gray-500">จำนวนไฟที่ดับได้เดือนนี้ (ไม่รวมการแจ้งผิดพลาด)</Text>
         }
         ListEmptyComponent={
-          loaded ? <Text style={styles.empty}>ยังไม่มีข้อมูลเดือนนี้</Text> : <ActivityIndicator style={{ marginTop: 48 }} />
+          loaded ? (
+            <Text className="mt-12 text-center font-head text-gray-400">ยังไม่มีข้อมูลเดือนนี้</Text>
+          ) : (
+            <ActivityIndicator style={{ marginTop: 48 }} />
+          )
         }
         renderItem={({ item }) => (
-          <View style={[styles.row, item.is_me && styles.rowMe]}>
-            <Text style={styles.rank}>{MEDAL[item.rank - 1] ?? item.rank}</Text>
-            <Text style={[styles.name, item.is_me && styles.nameMe]} numberOfLines={1}>
+          <View
+            className={`flex-row items-center gap-3 rounded-2xl bg-foreground px-4 py-3.5 ${
+              item.is_me ? 'border-[1.5px] border-primary bg-flame-light' : ''
+            }`}
+            style={rowShadow}
+          >
+            <Text className="w-8 text-center text-base font-sans-bold text-accent">{MEDAL[item.rank - 1] ?? item.rank}</Text>
+            <Text
+              className={`flex-1 shrink text-[15px] ${item.is_me ? 'font-sans-bold text-primary' : 'font-sans text-card-foreground'}`}
+              numberOfLines={1}
+            >
               {item.name}{item.is_me ? ' (คุณ)' : ''}
             </Text>
-            <Text style={styles.count}>{item.count}</Text>
+            <Text className="text-base font-sans-bold text-accent">{item.count}</Text>
           </View>
         )}
       />
     </SafeAreaView>
   )
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  content: { padding: 16, gap: 8, flexGrow: 1 },
-  subtitle: { fontSize: 13, color: '#6b7280', marginBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 16 },
-  rowMe: { borderWidth: 1.5, borderColor: '#10b981' },
-  rank: { fontSize: 16, fontWeight: '700', width: 32, textAlign: 'center' },
-  name: { fontSize: 15, flexShrink: 1, flex: 1 },
-  nameMe: { fontWeight: '700', color: '#047857' },
-  count: { fontSize: 16, fontWeight: '700', color: '#374151' },
-  empty: { textAlign: 'center', color: '#9ca3af', marginTop: 48 },
-})

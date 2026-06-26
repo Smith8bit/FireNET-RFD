@@ -8,6 +8,7 @@ import { useFireStore } from '@/stores/fireStore'
 import { setupNotificationHandlers } from '@/lib/push'
 import { api } from '@/lib/api'
 import { startBackgroundLocation, stopBackgroundLocation } from '@/lib/locationTask'
+import { colors, fonts } from '@/lib/theme'
 
 const DEFAULT_POLL_MIN = 5
 const MIN_POLL_MIN = 1
@@ -113,13 +114,25 @@ export default function AuthorizedLayout() {
     tabBarStyle: { display: 'none' as const },
     headerLeft: () => (
       <Pressable onPress={() => router.back()} style={{ paddingHorizontal: 16 }}>
-        <Ionicons name="chevron-back" size={24} color="#111827" />
+        <Ionicons name="chevron-back" size={24} color={colors.accent} />
       </Pressable>
     ),
+    headerTitleStyle: { fontFamily: fonts.semibold, color: colors.accent },
+    headerStyle: { backgroundColor: colors.foreground },
+    headerShadowVisible: false,
   })
 
   return (
-    <Tabs backBehavior="history" screenOptions={{ headerShown: false }}>
+    <Tabs
+      backBehavior="history"
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.gray400,
+        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 11 },
+        tabBarStyle: { backgroundColor: colors.foreground, borderTopColor: colors.border },
+      }}
+    >
       <Tabs.Screen
         name="MapView"
         options={{

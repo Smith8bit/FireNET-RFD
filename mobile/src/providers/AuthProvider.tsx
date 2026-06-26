@@ -3,6 +3,8 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useState 
 import { api, setOnUnauthorized, loadToken, setToken, clearToken } from '@/lib/api'
 import { registerPushToken, unregisterPushToken } from '@/lib/push'
 
+// opening map view {lng, lat, zoom} for the region this officer covers
+export type Home = { lat: number; lng: number; zoom: number }
 export type AuthUser = {
   id: string
   username: string
@@ -13,6 +15,7 @@ export type AuthUser = {
   name: string | null
   is_admin: boolean
   is_field_officer: boolean
+  home: Home
 }
 export type Province = { id: string; code: string; name_th: string; name_en: string | null; path: string }
 

@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -17,11 +16,22 @@ import { Dropdown } from 'react-native-element-dropdown'
 import { api } from '@/lib/api'
 import { useAuthSession } from '@/providers/AuthProvider'
 import PROVINCES from '@/data/provinces.json'
+import { colors } from '@/lib/theme'
 
 function errMsg(e: any, fallback: string) {
   const d = e?.response?.data?.detail
   return typeof d === 'string' ? d : fallback
 }
+
+// shadow + the Dropdown container can't be className'd — keep them as style objects.
+const cardShadow = {
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
+const dropdownStyle = { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12 }
 
 export default function Account() {
   const { user, refresh } = useAuthSession()
@@ -104,33 +114,33 @@ export default function Account() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <SafeAreaView className="flex-1 bg-background" edges={['bottom']}>
+      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
           <Section title="ชื่อ-นามสกุล / สังกัด">
-            <TextInput value={name} onChangeText={setName} style={styles.input} autoCapitalize="words" />
-            <TextInput value={division} onChangeText={setDivision} style={styles.input}
+            <TextInput value={name} onChangeText={setName} className={inputCls} autoCapitalize="words" />
+            <TextInput value={division} onChangeText={setDivision} className={inputCls}
               placeholder="สังกัด" autoCorrect={false} />
             <SaveButton label="บันทึกข้อมูล" onPress={saveProfile} loading={busy === 'name'} />
           </Section>
 
           <Section title="ชื่อผู้ใช้">
-            <TextInput value={username} onChangeText={setUsername} style={styles.input}
+            <TextInput value={username} onChangeText={setUsername} className={inputCls}
               textContentType="username" autoCapitalize="none" autoCorrect={false} />
             <SaveButton label="บันทึกชื่อผู้ใช้" onPress={saveUsername} loading={busy === 'username'} />
           </Section>
 
           <Section title="เปลี่ยนรหัสผ่าน">
-            <TextInput value={password} onChangeText={setPassword} style={styles.input}
+            <TextInput value={password} onChangeText={setPassword} className={inputCls}
               secureTextEntry placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)" autoCapitalize="none" />
-            <TextInput value={confirm} onChangeText={setConfirm} style={styles.input}
+            <TextInput value={confirm} onChangeText={setConfirm} className={inputCls}
               secureTextEntry placeholder="ยืนยันรหัสผ่านใหม่" autoCapitalize="none" />
             <SaveButton label="เปลี่ยนรหัสผ่าน" onPress={savePassword} loading={busy === 'password'} />
           </Section>
 
           <Section title="ย้ายพื้นที่รับผิดชอบ">
             {pending ? (
-              <Text style={styles.pending}>
+              <Text className="rounded-[10px] bg-[#fffbeb] p-3 text-sm font-head text-[#b45309]">
                 รออนุมัติย้ายไป: {pending.province}
               </Text>
             ) : (
@@ -144,12 +154,12 @@ export default function Account() {
                   searchPlaceholder="ค้นหาจังหวัด..."
                   value={province}
                   onChange={(item: any) => setProvince(item.code)}
-                  style={styles.input}
-                  selectedTextStyle={{ fontSize: 14 }}
+                  style={dropdownStyle}
+                  selectedTextStyle={{ fontSize: 14, color: colors.cardForeground }}
                   placeholderStyle={{ fontSize: 14, color: '#9ca3af' }}
                   inputSearchStyle={{ fontSize: 14, borderRadius: 6 }}
                 />
-                <Text style={styles.hint}>คำขอจะถูกส่งให้ผู้ควบคุมพื้นที่ปลายทางอนุมัติ</Text>
+                <Text className="text-xs font-head text-gray-400">คำขอจะถูกส่งให้ผู้ควบคุมพื้นที่ปลายทางอนุมัติ</Text>
                 <SaveButton label="ส่งคำขอย้ายพื้นที่" onPress={submitRegion} loading={busy === 'region'} />
               </>
             )}
@@ -160,10 +170,13 @@ export default function Account() {
   )
 }
 
+// shared input styling (also mirrored by dropdownStyle for the province picker)
+const inputCls = 'rounded-[10px] border border-border p-3 text-sm font-sans text-card-foreground'
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View className="gap-2.5 rounded-2xl bg-foreground p-4" style={cardShadow}>
+      <Text className="text-[15px] font-sans-bold text-accent">{title}</Text>
       {children}
     </View>
   )
@@ -171,21 +184,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function SaveButton({ label, onPress, loading }: { label: string; onPress: () => void; loading: boolean }) {
   return (
-    <Pressable onPress={onPress} disabled={loading} style={[styles.button, loading && styles.buttonDisabled]}>
-      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{label}</Text>}
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      className={`items-center rounded-xl py-3 ${loading ? 'bg-gray-400' : 'bg-primary'}`}
+    >
+      {loading ? <ActivityIndicator color="#fff" /> : <Text className="text-[15px] font-sans-semibold text-white">{label}</Text>}
     </Pressable>
   )
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  content: { padding: 16, gap: 16 },
-  section: { backgroundColor: '#fff', borderRadius: 12, padding: 16, gap: 10 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#374151' },
-  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, padding: 12, fontSize: 14 },
-  hint: { fontSize: 12, color: '#9ca3af' },
-  pending: { fontSize: 14, color: '#b45309', backgroundColor: '#fffbeb', padding: 12, borderRadius: 10 },
-  button: { backgroundColor: '#10b981', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  buttonDisabled: { backgroundColor: '#9ca3af' },
-  buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-})

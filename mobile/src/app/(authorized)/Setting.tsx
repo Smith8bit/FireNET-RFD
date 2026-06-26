@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuthSession } from '@/providers/AuthProvider'
+import { colors } from '@/lib/theme'
 
 type Row = { icon: keyof typeof Ionicons.glyphMap; label: string; route: string }
 
@@ -12,53 +13,51 @@ const ROWS: Row[] = [
   { icon: 'trophy-outline', label: 'อันดับประจำเดือน', route: '/(authorized)/Leaderboard' },
 ]
 
+// shadow can't be expressed as a className faithfully on both platforms — keep it inline
+const cardShadow = {
+  elevation: 2,
+  shadowColor: '#000',
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
+
 export default function Setting() {
   const { user, signOut } = useAuthSession()
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Ionicons name="person-circle" size={48} color="#10b981" />
-          <View style={{ flexShrink: 1 }}>
-            <Text style={styles.name}>{user?.name ?? 'เจ้าหน้าที่ภาคสนาม'}</Text>
-            <Text style={styles.email}>{user?.username}</Text>
-            {user?.division ? <Text style={styles.email}>{user.division}</Text> : null}
+    <SafeAreaView className="flex-1 bg-background">
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <View className="flex-row items-center gap-3 pt-2">
+          <Ionicons name="person-circle" size={48} color={colors.primary} />
+          <View className="shrink">
+            <Text className="text-lg font-sans-bold text-accent">{user?.name ?? 'เจ้าหน้าที่ภาคสนาม'}</Text>
+            <Text className="text-[13px] font-head text-gray-500">{user?.username}</Text>
+            {user?.division ? <Text className="text-[13px] font-head text-gray-500">{user.division}</Text> : null}
           </View>
         </View>
 
-        <View style={styles.card}>
+        <View className="rounded-2xl bg-foreground px-4" style={cardShadow}>
           {ROWS.map((r, i) => (
             <Pressable
               key={r.route}
               onPress={() => router.push(r.route as never)}
-              style={[styles.row, i > 0 && styles.rowBorder]}
+              className={`flex-row items-center gap-3 py-4 ${i > 0 ? 'border-t border-border' : ''}`}
             >
-              <Ionicons name={r.icon} size={22} color="#6b7280" />
-              <Text style={styles.rowLabel}>{r.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color="#d1d5db" style={{ marginLeft: 'auto' }} />
+              <Ionicons name={r.icon} size={22} color={colors.gray500} />
+              <Text className="text-[15px] font-sans-medium text-card-foreground">{r.label}</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.gray300} style={{ marginLeft: 'auto' }} />
             </Pressable>
           ))}
         </View>
 
-        <Pressable onPress={signOut} style={styles.logout}>
-          <Ionicons name="log-out-outline" size={20} color="#b91c1c" />
-          <Text style={styles.logoutText}>ออกจากระบบ</Text>
+        <Pressable
+          onPress={signOut}
+          className="flex-row items-center justify-center gap-2 rounded-xl border border-[#FECACA] bg-foreground py-3.5"
+        >
+          <Ionicons name="log-out-outline" size={20} color={colors.destructive} />
+          <Text className="text-base font-sans-semibold text-destructive">ออกจากระบบ</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
   )
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  content: { padding: 16, gap: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 8 },
-  name: { fontSize: 18, fontWeight: '700' },
-  email: { fontSize: 13, color: '#6b7280' },
-  card: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16, elevation: 2, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16 },
-  rowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e5e7eb' },
-  rowLabel: { fontSize: 15, fontWeight: '500' },
-  logout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 12, paddingVertical: 14, borderWidth: 1, borderColor: '#fecaca' },
-  logoutText: { color: '#b91c1c', fontSize: 16, fontWeight: '600' },
-})
