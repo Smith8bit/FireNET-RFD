@@ -62,7 +62,8 @@
       "@react-native-firebase/messaging",
       "expo-notifications",
       "expo-build-properties",
-      "./plugins/withGradleMemory"
+      "./plugins/withGradleMemory",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
