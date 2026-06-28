@@ -34,7 +34,13 @@ class Settings(BaseSettings):
     # Secure by default: only an explicit env override may downgrade this, and the
     # cookie carries the session token, so it must not ride over plain HTTP.
     COOKIE_SECURE: bool = True
-    COOKIE_MAX_AGE: int = 86400
+    # Short-lived access token (JWT) — both the web access cookie and the mobile
+    # bearer token. Kept short so a leaked token dies fast; clients silently swap
+    # it for a fresh one via the refresh token (see auth/refresh.py).
+    ACCESS_TOKEN_MAX_AGE: int = 3600  # 1 hour
+    # Long-lived refresh token. Revocable and rotated on every use (DB-backed),
+    # so a lost device or fired officer can be cut off before this elapses.
+    REFRESH_TOKEN_MAX_AGE: int = 2592000  # 30 days
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     # Auth-endpoint rate limit (per client IP, per worker). Tuned so a real user

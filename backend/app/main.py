@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from .auth.authen import auth_backend, bearer_backend, fastapi_users
+from .auth.authen import fastapi_users
 from .config import get_settings
 from .middleware import install_rate_limiting
 from .database import Base, engine
@@ -16,6 +16,7 @@ from . import storage
 from .database.seed import run_all as run_seed
 from .db_control.fires import expire_old_fires, sweep_orphan_images, update_fires
 from .router.audit import router as audit_router
+from .router.auth import router as auth_router
 from .router.fires import router as fires_router
 from .router.regions import router as regions_router
 from .router.officers import router as officers_router
@@ -214,22 +215,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(
-    fastapi_users.get_auth_router(auth_backend),
-    prefix="/auth/cookie",
-    tags=["auth"],
-)
-# mobile bearer-token login (returns {access_token, token_type})
-app.include_router(
-    fastapi_users.get_auth_router(bearer_backend),
-    prefix="/auth/jwt",
-    tags=["auth"],
-)
+# login / refresh / logout for both web (cookie) and mobile (bearer); issues and
+# rotates the refresh token alongside the short-lived access token
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/auth",
     tags=["auth"],
 )
+# our users routes first so static paths (e.g. /users/list) aren't shadowed by
+# fastapi-users' /users/{id} param route
+app.include_router(users_router, prefix="/users", tags=["users"])
 app.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate),
     prefix="/users",
@@ -239,7 +235,6 @@ app.include_router(fires_router, prefix="/fires", tags=["fires"])
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
 app.include_router(officers_router, prefix="/officers", tags=["officers"])
 app.include_router(audit_router, prefix="/audit", tags=["audit"])
-app.include_router(users_router, prefix="/users", tags=["users"])
 app.include_router(ws_router, tags=["ws"])
 
 

@@ -1,6 +1,6 @@
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
-import { api, setOnUnauthorized, loadToken, setToken, clearToken } from '@/lib/api'
+import { api, setOnUnauthorized, loadToken, setToken, clearToken, getRefreshToken } from '@/lib/api'
 import { registerPushToken, unregisterPushToken } from '@/lib/push'
 import { useFireStore } from '@/stores/fireStore'
 
@@ -88,10 +88,10 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const signIn = useCallback(async (username: string, password: string) => {
     const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
     try {
-      const res = await api.post<{ access_token: string }>('/auth/jwt/login', body, {
+      const res = await api.post<{ access_token: string; refresh_token: string }>('/auth/jwt/login', body, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
-      await setToken(res.data.access_token)
+      await setToken(res.data.access_token, res.data.refresh_token)
     } catch {
       throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
     }
@@ -126,7 +126,10 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     // the admin map until the TTL expires. Non-blocking + before clearToken (token
     // still valid); a bad network must not hang logout.
     api.patch('/officers/me/location', { active: false }).catch(() => {})
-    // bearer tokens are stateless — no server logout; just discard it locally
+    // revoke the refresh token server-side so a stolen copy can't be replayed
+    // (best-effort, before clearToken empties it); then discard everything locally
+    const refresh = getRefreshToken()
+    if (refresh) api.post('/auth/jwt/logout', { refresh_token: refresh }).catch(() => {})
     await clearToken()
     // clear the stale online flag so a re-login (shared device) doesn't push the
     // new account's location before loadStatus() reconciles

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore, can } from '../lib/useAuthStore'
-import { API_URL, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { API_URL, apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
 
 const PAGE_SIZE = 20
 
@@ -29,7 +29,7 @@ export default function HistoryPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`${API_URL}/regions/provinces`, { credentials: 'include' })
+        const res = await apiFetch('/regions/provinces')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (!cancelled) setProvinces(data.map((p) => p.name_th))
@@ -53,7 +53,7 @@ export default function HistoryPage() {
     }
     ;(async () => {
       try {
-        const res = await fetch(`${API_URL}/fires/resolutions?${params}`, { credentials: 'include' })
+        const res = await apiFetch(`/fires/resolutions?${params}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (cancelled) return

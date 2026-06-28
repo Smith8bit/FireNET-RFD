@@ -99,3 +99,9 @@ class PushTokenRegister(BaseModel):
 
 class PushTokenDelete(BaseModel):
     token: str
+
+
+# Mobile bearer flow carries the refresh token in the JSON body (web uses an
+# httpOnly cookie instead). 64 raw bytes url-safe-encoded is ~43 chars; cap loose.
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=512)

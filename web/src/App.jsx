@@ -11,9 +11,11 @@ import OfficerPage from './pages/OfficerPage'
 import DispatcherPage from './pages/DispatcherPage'
 import HistoryPage from './pages/HistoryPage'
 import AuditPage from './pages/AuditPage'
+import UsersPage from './pages/UsersPage'
 import MapViewPage from './pages/MapViewPage'
 import { useSocketStore } from './lib/stateStore'
 import { useAuthStore } from './lib/useAuthStore'
+import { refreshSession } from './lib/shared'
 
 import './App.css'
 
@@ -56,6 +58,15 @@ function App() {
   useEffect(() => {
     hydrate()
   }, [hydrate])
+
+  // The access cookie lives 1h, but the WebSocket (cookie-authed at handshake)
+  // can stay open with no HTTP calls to trigger a refresh. Proactively rotate
+  // every 45 min while authed so the cookie is always fresh for a WS reconnect.
+  useEffect(() => {
+    if (status !== 'authed') return
+    const id = setInterval(refreshSession, 45 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [status])
 
   const wsUrl = import.meta.env.VITE_WS_URL
     ?? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
@@ -105,6 +116,7 @@ function App() {
             <Route path="/dispatchers" element={<DispatcherPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            <Route path="/access" element={<UsersPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

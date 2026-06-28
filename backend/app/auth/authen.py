@@ -17,7 +17,7 @@ settings = get_settings()
 # Web console: httpOnly cookie (browser-managed, CSRF-resistant via SameSite).
 cookie_transport = CookieTransport(
     cookie_name="firenet_auth",
-    cookie_max_age=settings.COOKIE_MAX_AGE,
+    cookie_max_age=settings.ACCESS_TOKEN_MAX_AGE,
     cookie_secure=settings.COOKIE_SECURE,
     cookie_httponly=True,
     cookie_samesite="lax",
@@ -29,7 +29,7 @@ bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 
 
 def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.JWT_SECRET, lifetime_seconds=settings.COOKIE_MAX_AGE)
+    return JWTStrategy(secret=settings.JWT_SECRET, lifetime_seconds=settings.ACCESS_TOKEN_MAX_AGE)
 
 
 auth_backend = AuthenticationBackend(

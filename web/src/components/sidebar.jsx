@@ -7,10 +7,11 @@ import {
   ShieldCheckIcon,
   ClockIcon,
   ClipboardDocumentListIcon,
+  NoSymbolIcon,
   ViewColumnsIcon as SidebarToggleIcon,
   ArrowRightOnRectangleIcon as LogoutIcon,
 } from "@heroicons/react/24/outline";
-import { API_URL } from "../lib/shared";
+import { apiFetch } from "../lib/shared";
 import { useAuthStore, can } from "../lib/useAuthStore";
 
 export default function Sidebar() {
@@ -34,7 +35,7 @@ export default function Sidebar() {
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     if (!user?.is_superuser) return
-    fetch(`${API_URL}/officers/location-poll-interval`, { credentials: 'include' })
+    apiFetch('/officers/location-poll-interval')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setPoll(String(d.minutes)))
       .catch(() => {})
@@ -45,9 +46,8 @@ export default function Sidebar() {
     if (!(minutes > 0) || saving) return
     setSaving(true)
     setTimeout(() => setSaving(false), 2000) // keep disabled while the "saved" animation shows
-    const r = await fetch(`${API_URL}/officers/location-poll-interval`, {
+    const r = await apiFetch('/officers/location-poll-interval', {
       method: 'PATCH',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ minutes }),
     })
@@ -66,6 +66,7 @@ export default function Sidebar() {
     can(user, 'dispatchers.view') && { name: 'ผู้ดูแล', path: '/dispatchers', icon: ShieldCheckIcon },
     can(user, 'fires.history') && { name: 'ประวัติการดับไฟ', path: '/history', icon: ClockIcon },
     user?.is_superuser && { name: 'บันทึกเหตุการณ์', path: '/audit', icon: ClipboardDocumentListIcon },
+    user?.is_superuser && { name: 'จัดการสิทธิ์ผู้ใช้', path: '/access', icon: NoSymbolIcon },
   ].filter(Boolean)
 
   const handleLogout = async () => {
