@@ -4,7 +4,7 @@ import { useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
-import { API_URL, ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, errorText } from '../lib/shared'
+import { apiFetch, ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
 
 const regionLabel = (r) => r.name_th
 
@@ -197,7 +197,7 @@ export default function DispatcherPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`${API_URL}/regions`, { credentials: 'include' })
+        const res = await apiFetch('/regions')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (!cancelled) setRegions([...data].sort(byRegion))
@@ -217,6 +217,7 @@ export default function DispatcherPage() {
 
   const createDispatcher = (e) => {
     e.preventDefault()
+    if (!isValidUsername(newUsername)) { toast.error(ERROR_MESSAGES.invalid_username); return }
     if (!newRegion) { toast.error(ERROR_MESSAGES.invalid_region); return }
     setCreating(true)
     send({ type: 'create_dispatcher', username: newUsername, password: newPassword, name: newName, division: newDivision, region_id: newRegion, permissions: newPerms })
@@ -238,6 +239,7 @@ export default function DispatcherPage() {
   }
 
   const saveEdit = (d) => {
+    if (!isValidUsername(editUsername)) { toast.error(ERROR_MESSAGES.invalid_username); return }
     setSavingId(d.user_id)
     const payload = { type: 'update_dispatcher', user_id: d.user_id, name: editName, username: editUsername, division: editDivision, permissions: editPerms }
     if (editRegion) payload.region_id = editRegion
@@ -302,23 +304,25 @@ export default function DispatcherPage() {
           <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
             <p className="font-medium text-accent text-lg whitespace-nowrap">ผู้ควบคุมประจำพื้นที่ ({dispatchers?.length ?? 0})</p>
             <div className="flex flex-row items-center gap-2">
-              <select
-                value={sort}
-                onChange={(e) => { setSort(e.target.value); setPage(0) }}
-                title="เรียงลำดับ"
-                className={`${SELECT_CLS} max-w-fit text-accent`}
-              >
-                <option value="name">ตามชื่อ</option>
-                <option value="new">ตามเวลาที่เพิ่ม</option>
-              </select>
-              <button
-                type="button"
-                onClick={() => { setDir((d) => (d === 'asc' ? 'desc' : 'asc')); setPage(0) }}
-                title={dir === 'asc' ? 'จากน้อยไปมาก' : 'จากมากไปน้อย'}
-                className="px-2 py-1.5 rounded-lg border border-gray-300 text-accent hover:bg-gray-50"
-              >
-                {dir === 'asc' ? '↑' : '↓'}
-              </button>
+              <div className="flex flex-row gap-2 border border-gray-300 p-1.5 rounded-xl">
+                <select
+                  value={sort}
+                  onChange={(e) => { setSort(e.target.value); setPage(0) }}
+                  title="เรียงลำดับ"
+                  className={`${SELECT_CLS} w-fit! text-accent`}
+                >
+                  <option value="name">ตามชื่อ</option>
+                  <option value="new">ตามเวลาที่เพิ่ม</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setDir((d) => (d === 'asc' ? 'desc' : 'asc')); setPage(0) }}
+                  title={dir === 'asc' ? 'จากน้อยไปมาก' : 'จากมากไปน้อย'}
+                  className="px-2 py-1.5 rounded-lg border border-gray-300 text-accent hover:bg-gray-50"
+                >
+                  {dir === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
               <input
                 type="text"
                 value={query}
@@ -366,6 +370,10 @@ export default function DispatcherPage() {
                               onChange={(e) => setEditUsername(e.target.value)}
                               placeholder="ชื่อผู้ใช้"
                               autoComplete="off"
+                              minLength={3}
+                              maxLength={32}
+                              pattern={USERNAME_PATTERN}
+                              title={ERROR_MESSAGES.invalid_username}
                               className={INPUT_CLS}
                             />
                             <input
@@ -520,6 +528,10 @@ export default function DispatcherPage() {
                   placeholder="ชื่อผู้ใช้"
                   autoComplete="off"
                   required
+                  minLength={3}
+                  maxLength={32}
+                  pattern={USERNAME_PATTERN}
+                  title={ERROR_MESSAGES.invalid_username}
                   className={INPUT_CLS}
                 />
                 <input

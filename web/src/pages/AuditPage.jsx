@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/useAuthStore'
-import { API_URL, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
 
 const PAGE_SIZE = 20
 
@@ -28,6 +28,8 @@ const ACTION_LABELS = {
   'settings.location_poll': 'ตั้งค่ารอบส่งตำแหน่ง',
   'auth.login': 'เข้าสู่ระบบ',
   'auth.register': 'สมัครบัญชี',
+  'auth.revoke_user': 'ระงับสิทธิ์ผู้ใช้',
+  'auth.restore_user': 'คืนสิทธิ์ผู้ใช้',
 }
 
 const ACTION_COLORS = {
@@ -94,6 +96,9 @@ function summarize(item, names = {}) {
     }
     case 'settings.location_poll':
       return d.minutes != null ? `ทุก ${d.minutes} นาที` : ''
+    case 'auth.revoke_user':
+    case 'auth.restore_user':
+      return d.name ?? ''
     case 'officer.verify':
       return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.province_path)}`
     case 'officer.delete':
@@ -154,7 +159,7 @@ export default function AuditPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`${API_URL}/regions`, { credentials: 'include' })
+        const res = await apiFetch('/regions')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (cancelled) return
@@ -182,7 +187,7 @@ export default function AuditPage() {
     }
     ;(async () => {
       try {
-        const res = await fetch(`${API_URL}/audit?${params}`, { credentials: 'include' })
+        const res = await apiFetch(`/audit?${params}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         if (cancelled) return

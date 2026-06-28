@@ -1,21 +1,32 @@
-import React, { useCallback, useMemo, useRef, useEffect, useState } from 'react';
-import { Map, Camera, GeoJSONSource, Layer, type CameraRef, type StyleSpecification } from '@maplibre/maplibre-react-native'
-import base from '@/assets/layers/base.json'
-import { View, Text, StyleSheet, Pressable, useWindowDimensions, TouchableOpacity, Alert, Switch } from 'react-native';
-import * as Location from 'expo-location';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import BottomSheet, { BottomSheetFlatList, type BottomSheetFlatListMethods } from '@gorhom/bottom-sheet';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useFireStore, type Fire } from '@/stores/fireStore';
+import base from '@/assets/layers/base.json';
+import { colors } from '@/lib/theme';
+import { toast } from '@/lib/toastStore';
 import { useAuthSession } from '@/providers/AuthProvider';
+import { useFireStore, type Fire } from '@/stores/fireStore';
 import { formatDetectedAt } from '@/utils/format';
+import { Ionicons } from '@expo/vector-icons';
+import BottomSheet, { BottomSheetFlatList, type BottomSheetFlatListMethods } from '@gorhom/bottom-sheet';
+import { Camera, GeoJSONSource, Layer, Map, UserLocation, type CameraRef, type StyleSpecification } from '@maplibre/maplibre-react-native';
+import * as Location from 'expo-location';
+import { router } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const MAP_STYLE = base as unknown as StyleSpecification
+
+// floating map controls' shadow — kept inline since it has no faithful className
+const floatShadow = {
+  elevation: 4,
+  shadowColor: '#000',
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
 const FIRE_COLORS = {
-  resolved: '#22c55e', // ดับแล้ว
+  resolved: '#d1d5dc', // ดับแล้ว
   held: '#f97316', // ไฟที่เราจอง
   booked: '#facc15', // ถูกเจ้าหน้าที่ท่านอื่นจอง
   free: '#ef4444', // ไฟอิสระ กำลังไหม้
@@ -47,7 +58,7 @@ function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCol
   }
 }
 
-const ROW_HEIGHT = 64
+const ROW_HEIGHT = 96
 
 type FireRowProps = {
   item: Fire
@@ -75,26 +86,37 @@ const FireRow = React.memo(function FireRow({
 }: FireRowProps) {
   return (
     <Pressable
-      style={[styles.fireRow, selected && styles.fireRowSelected, !online && styles.fireRowOffline]}
+      className={`flex-row items-center border-b-[0.75px] border-border px-6 ${selected ? 'bg-flame-light' : ''} ${!online ? 'opacity-50' : ''}`}
+      style={{ height: ROW_HEIGHT }} // must match getItemLayout
       disabled={!online}
       onPress={() => onFocus(item)}
     >
-      <View style={[styles.fireDot, { backgroundColor: color }]} />
-      <View style={styles.fireInfo}>
-        <Text style={[styles.fireName, selected && styles.fireNameSelected]}>
+      <View className="flex-1">
+        <Text className={`text-lg  font-sans-medium ${selected ? 'text-primary' : 'text-card-foreground'}`}>
           {item.name}
         </Text>
-        <Text style={styles.fireTime}>{formatDetectedAt(item.detected_at)}</Text>
-      </View>
-      <TouchableOpacity
-        style={[styles.reserveButton, disabled && !isHeld && styles.reserveButtonDisabled]}
-        disabled={disabled}
-        onPress={() => onReserve(item)}
-      >
-        <Text style={styles.reserveButtonText}>
-          {item.status ? 'ดับแล้ว' : isHeld ? 'จองแล้ว' : bookedByOther ? 'ถูกจอง' : 'ว่าง'}
+        <Text className="mt-1 text-sm font-head text-gray-500" numberOfLines={1}>
+          {[item.tumboon, item.aumper, item.province].filter(Boolean).join(' · ') || '-'}
         </Text>
-      </TouchableOpacity>
+        
+        <View className='mt-1 flex-row align-middle gap-2'>
+          <Text className={`text-md font-sans-semibold ${item.status ? 'text-gray-400' : isHeld ? 'text-orange-500' : bookedByOther ? 'text-amber-400' : 'text-primary'}`}>
+            {item.status ? 'ดับแล้ว' : isHeld ? 'จองแล้ว' : bookedByOther ? 'ถูกจอง' : 'ว่าง'}
+          </Text>
+          <Text className='text-sm'>·</Text>
+          <Text className="text-sm font-head text-gray-500">{formatDetectedAt(item.detected_at)}</Text>
+        </View>
+      </View>
+
+      {!disabled && !isHeld && (
+        <TouchableOpacity
+          className='items-center justify-center '
+          disabled={disabled}
+          onPress={() => onReserve(item)}
+        >
+          <Ionicons name="arrow-forward-outline" size={32} color="#FF4000" />
+        </TouchableOpacity>
+      )}
     </Pressable>
   )
 })
@@ -109,7 +131,7 @@ export default function MapView() {
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
   const online = useFireStore((s) => s.online)
   const setOnline = useFireStore((s) => s.setOnline)
-  const { refresh } = useAuthSession()
+  const { user, refresh } = useAuthSession()
 
   // reload covers all three tabs: fire list (map), reserved fire (Firespot), profile (Setting)
   const reloadAll = useCallback(() => {
@@ -130,6 +152,12 @@ export default function MapView() {
     loadFires()
     loadReservedFire()
   }, [loadFires, loadReservedFire])
+
+  // ask for location permission on mount so the blue "you are here" puck can
+  // render (like Google Maps) without waiting for the officer to go online
+  useEffect(() => {
+    Location.requestForegroundPermissionsAsync().catch(() => {})
+  }, [])
 
   // จอง is locked while the officer holds an unresolved fire
   const heldFireId = reservedFire != null && !reservedFire.status ? reservedFire.id : null
@@ -162,7 +190,27 @@ export default function MapView() {
     },
     [sortBy],
   )
-  const snapPoints = useMemo(() => ['14%', '60%'], [])
+  const snapPoints = useMemo(() => ['5%', '60%', ], [])
+
+  // open the map on the officer's own region (served by /users/me/profile);
+  // initialViewState is read once on mount, and the layout guard guarantees
+  // `user` is loaded by then. Fall back to a whole-Thailand view.
+  const initialViewState = useMemo(() => {
+    const home = user?.home
+    return {
+      center: home ? ([home.lng, home.lat] as [number, number]) : THAILAND_CENTER,
+      zoom: home?.zoom ?? 6,
+    }
+  }, [user?.home])
+
+  // fly back to the officer's region (the same view the map opened on)
+  const recenter = useCallback(() => {
+    cameraRef.current?.flyTo({
+      center: initialViewState.center,
+      zoom: initialViewState.zoom,
+      duration: 1000,
+    })
+  }, [initialViewState])
 
   const toggleOnline = useCallback(
     async (value: boolean) => {
@@ -171,7 +219,7 @@ export default function MapView() {
         if (value) {
           const { status } = await Location.requestForegroundPermissionsAsync()
           if (status !== 'granted') {
-            Alert.alert('ไม่สามารถออนไลน์ได้', 'กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
+            toast.error('กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
             return
           }
           // go online immediately; the layout poll pushes the first GPS fix
@@ -187,10 +235,7 @@ export default function MapView() {
           await setOnline(false, coords)
         }
       } catch (e) {
-        Alert.alert(
-          'เปลี่ยนสถานะไม่สำเร็จ',
-          e instanceof Error ? e.message : 'ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง',
-        )
+        toast.error(e instanceof Error ? e.message : 'ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง')
       } finally {
         setToggling(false)
       }
@@ -230,10 +275,7 @@ export default function MapView() {
         await reserveFire(fire)
         router.push('/Firespot')
       } catch (e) {
-        Alert.alert(
-          'จองไม่สำเร็จ',
-          e instanceof Error ? e.message : 'ไม่สามารถจองไฟนี้ได้ กรุณาลองใหม่อีกครั้ง',
-        )
+        toast.error(e instanceof Error ? e.message : 'ไม่สามารถจองไฟนี้ได้ กรุณาลองใหม่อีกครั้ง')
       }
     },
     [reserveFire],
@@ -269,14 +311,14 @@ export default function MapView() {
   )
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
 
       <Map
-        style={styles.container}
+        style={{ flex: 1 }}
         mapStyle={MAP_STYLE}
         onPress={() => selectFire(null)}
       >
-        <Camera ref={cameraRef} initialViewState={{ center: THAILAND_CENTER, zoom: 6 }} />
+        <Camera ref={cameraRef} initialViewState={initialViewState} />
         <GeoJSONSource
           id="fires"
           data={firesGeoJSON}
@@ -320,13 +362,34 @@ export default function MapView() {
             }}
           />
         </GeoJSONSource>
+
+        {/* blue "you are here" puck, like Google Maps; renders once location
+            permission is granted. Placed last so it draws above the fire dots. */}
+        <UserLocation animated accuracy />
       </Map>
-      <TouchableOpacity style={styles.reloadButton} onPress={reloadAll}>
-        <Ionicons name="refresh" size={20} color="#000000" />
+
+      <TouchableOpacity
+        className="absolute z-10 bottom-4 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
+        style={floatShadow}
+        onPress={reloadAll}
+      >
+        <Ionicons name="refresh" size={26} color={'#FFFFFF'} />
       </TouchableOpacity>
-      <View style={styles.onlineToggle}>
-        <View style={[styles.onlineDot, { backgroundColor: online ? '#22c55e' : '#9ca3af' }]} />
-        <Text style={styles.onlineLabel}>{online ? 'ออนไลน์' : 'ออฟไลน์'}</Text>
+
+      <TouchableOpacity
+        className="absolute left-5 top-10 h-10 w-10 items-center justify-center rounded-full bg-white"
+        style={floatShadow}
+        onPress={recenter}
+      >
+        <Ionicons name="locate" size={20} color={colors.accent} />
+      </TouchableOpacity>
+
+      <View
+        className="absolute self-center top-10 flex-row items-center rounded-3xl bg-white px-3.5 py-1.5"
+        style={floatShadow}
+      >
+        <View className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: online ? '#22c55e' : '#9ca3af' }} />
+        <Text className="mr-2.5 text-sm font-sans-semibold text-accent">{online ? 'ออนไลน์' : 'ออฟไลน์'}</Text>
         <Switch
           value={online}
           onValueChange={toggleOnline}
@@ -335,30 +398,32 @@ export default function MapView() {
           thumbColor={online ? '#22c55e' : '#f4f4f5'}
         />
       </View>
+
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
         snapPoints={snapPoints}
         enableDynamicSizing={false}
+        handleStyle={{padding: 20}}
       >
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>รายการไฟ ({fires.length})</Text>
-          <View style={styles.sortGroup}>
-            <Text style={styles.sortLabel}>เรียงตาม</Text>
+        <View className="flex-row items-center justify-between px-4 pb-4 border-gray-300 border-b">
+          <Text className="text-xl font-sans-semibold text-accent">รายการไฟ ({fires.length})</Text>
+          <View className="flex-row items-center">
+            <Text className="mr-1.5 text-sm font-head text-gray-500">เรียงตาม</Text>
             <TouchableOpacity
-              style={[styles.sortButton, sortBy === 'time' && styles.sortButtonActive]}
+              className={`ml-1.5 flex-row items-center gap-0.5 rounded-xl px-2.5 py-1 ${sortBy === 'time' ? 'bg-primary' : 'bg-muted'}`}
               onPress={() => changeSort('time')}
             >
-              <Text style={[styles.sortText, sortBy === 'time' && styles.sortTextActive]}>เวลา</Text>
+              <Text className={`text-sm font-sans-semibold ${sortBy === 'time' ? 'text-white' : 'text-gray-500'}`}>เวลา</Text>
               {sortBy === 'time' && (
                 <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={12} color="#ffffff" />
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.sortButton, sortBy === 'name' && styles.sortButtonActive]}
+              className={`ml-1.5 flex-row items-center gap-0.5 rounded-xl px-2.5 py-1 ${sortBy === 'name' ? 'bg-primary' : 'bg-muted'}`}
               onPress={() => changeSort('name')}
             >
-              <Text style={[styles.sortText, sortBy === 'name' && styles.sortTextActive]}>ชื่อ</Text>
+              <Text className={`text-sm font-sans-semibold ${sortBy === 'name' ? 'text-white' : 'text-gray-500'}`}>ชื่อ</Text>
               {sortBy === 'name' && (
                 <Ionicons name={sortAsc ? 'arrow-up' : 'arrow-down'} size={12} color="#ffffff" />
               )}
@@ -375,157 +440,10 @@ export default function MapView() {
           maxToRenderPerBatch={12}
           initialNumToRender={12}
           removeClippedSubviews
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={<Text style={styles.emptyText}>No active fires</Text>}
+          // contentContainerStyle={{ paddingBottom: 24 }}
+          ListEmptyComponent={<Text className="py-6 text-center font-head text-gray-400">No active fires</Text>}
         />
       </BottomSheet>
     </GestureHandlerRootView>
   )
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  reloadButton: {
-    position: 'absolute',
-    top: 40,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  onlineToggle: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  onlineLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 10,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  sheetTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sortGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sortLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginRight: 6,
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: '#f3f4f6',
-    marginLeft: 6,
-  },
-  sortButtonActive: {
-    backgroundColor: '#f59e0b',
-  },
-  sortText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  sortTextActive: {
-    color: '#ffffff',
-  },
-  listContent: {
-    paddingBottom: 24,
-  },
-  fireRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: ROW_HEIGHT, // must match getItemLayout
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-  },
-  fireRowSelected: {
-    backgroundColor: '#fef3c7',
-  },
-  fireRowOffline: {
-    opacity: 0.5,
-  },
-  fireDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 12,
-  },
-  fireName: {
-    fontSize: 15,
-  },
-  fireNameSelected: {
-    fontWeight: '600',
-  },
-  fireTime: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  fireInfo: {
-    flex: 1,
-  },
-  reserveButton: {
-    backgroundColor: '#f59e0b',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginLeft: 12,
-  },
-  reserveButtonDisabled: {
-    backgroundColor: '#d1d5db',
-  },
-  reserveButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  emptyText: {
-    textAlign: 'center',
-    paddingVertical: 24,
-    color: '#9ca3af',
-  },
-})

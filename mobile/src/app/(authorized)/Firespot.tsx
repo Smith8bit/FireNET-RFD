@@ -1,26 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  TouchableOpacity,
-  Modal,
-  TextInput,
-  Image,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-} from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
-import Animated, { SlideInDown } from 'react-native-reanimated'
-import * as ImagePicker from 'expo-image-picker'
-import * as Location from 'expo-location'
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
+import { colors } from '@/lib/theme'
+import { toast } from '@/lib/toastStore'
 import { useFireStore, type ResolvePhoto } from '@/stores/fireStore'
 import { formatDetectedAt } from '@/utils/format'
+import { Ionicons } from '@expo/vector-icons'
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
+import * as ImagePicker from 'expo-image-picker'
+import * as Location from 'expo-location'
+import { StatusBar } from 'expo-status-bar'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Keyboard,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native'
+import Animated, { SlideInDown } from 'react-native-reanimated'
+
+// Map's "free/burning" red, kept literal so the active-fire icon/badge here match
+// the map markers (FIRE_COLORS.free in MapView).
+const BURNING = '#ef4444'
 
 const MAX_PHOTOS = 3
 
@@ -32,6 +39,24 @@ function gpsFromExif(exif: Record<string, any> | null | undefined): ResolvePhoto
   if (exif.GPSLatitudeRef === 'S' && lat > 0) lat = -lat
   if (exif.GPSLongitudeRef === 'W' && lng > 0) lng = -lng
   return { latitude: lat, longitude: lng }
+}
+
+// React Native's Modal renders in its own native window on Android that doesn't
+// resize for the keyboard, so KeyboardAvoidingView has nothing to push against.
+// Track the keyboard height from the global Keyboard events instead.
+function useKeyboardHeight() {
+  const [height, setHeight] = useState(0)
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const show = Keyboard.addListener(showEvent, (e) => setHeight(e.endCoordinates.height))
+    const hide = Keyboard.addListener(hideEvent, () => setHeight(0))
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
+  return height
 }
 
 export default function Firespot() {
@@ -52,10 +77,26 @@ export default function Firespot() {
   const [falseSubmitting, setFalseSubmitting] = useState(false)
   // fallback GPS for photos without EXIF coordinates (e.g. library picks)
   const deviceGps = useRef<ResolvePhoto['gps']>(null)
+  const keyboardHeight = useKeyboardHeight()
 
   useEffect(() => {
     loadReservedFire()
   }, [loadReservedFire])
+
+  // open Google Maps turn-by-turn navigation to the fire. On Android the
+  // google.navigation: scheme launches directions straight into the Google Maps
+  // app; everywhere else the universal maps URL opens the app (or the browser).
+  const navigate = useCallback(() => {
+    if (!reservedFire) return
+    const { lat, lng } = reservedFire
+    const universal = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`
+    const url = Platform.OS === 'android' ? `google.navigation:q=${lat},${lng}` : universal
+    Linking.openURL(url).catch(() =>
+      Linking.openURL(universal).catch(() =>
+        toast.error('ไม่พบแอปแผนที่บนอุปกรณ์นี้'),
+      ),
+    )
+  }, [reservedFire])
 
   const openResolveForm = useCallback(() => {
     setNote('')
@@ -83,7 +124,7 @@ export default function Firespot() {
   const takePhoto = useCallback(async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync()
     if (status !== 'granted') {
-      Alert.alert('ไม่สามารถถ่ายรูปได้', 'กรุณาอนุญาตให้แอปใช้กล้อง')
+      toast.error('กรุณาอนุญาตให้แอปใช้กล้อง')
       return
     }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 1, exif: true })
@@ -93,7 +134,7 @@ export default function Firespot() {
   const pickPhoto = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (status !== 'granted') {
-      Alert.alert('ไม่สามารถเลือกรูปได้', 'กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ')
+      toast.error('กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ')
       return
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 1, exif: true })
@@ -106,7 +147,7 @@ export default function Firespot() {
 
   const submitResolve = useCallback(async () => {
     if (photos.length === 0) {
-      Alert.alert('ต้องแนบรูปถ่าย', 'กรุณาถ่ายรูปหลักฐานการดับไฟอย่างน้อย 1 รูป')
+      toast.error('กรุณาถ่ายรูปหลักฐานการดับไฟอย่างน้อย 1 รูป')
       return
     }
     setSubmitting(true)
@@ -114,10 +155,7 @@ export default function Firespot() {
       await resolveFire(note, photos)
       setFormVisible(false)
     } catch (e) {
-      Alert.alert(
-        'ไม่สำเร็จ',
-        e instanceof Error ? e.message : 'ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง',
-      )
+      toast.error(e instanceof Error ? e.message : 'ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
@@ -134,7 +172,7 @@ export default function Firespot() {
           try {
             await cancelReservation()
           } catch (e) {
-            Alert.alert('ไม่สำเร็จ', e instanceof Error ? e.message : 'ไม่สามารถยกเลิกการจองได้')
+            toast.error(e instanceof Error ? e.message : 'ไม่สามารถยกเลิกการจองได้')
           } finally {
             setCancelling(false)
           }
@@ -154,10 +192,7 @@ export default function Firespot() {
       await reportFalseFire(falseNote)
       setFalseFormVisible(false)
     } catch (e) {
-      Alert.alert(
-        'ไม่สำเร็จ',
-        e instanceof Error ? e.message : 'ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง',
-      )
+      toast.error(e instanceof Error ? e.message : 'ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       setFalseSubmitting(false)
     }
@@ -165,51 +200,43 @@ export default function Firespot() {
 
   if (!reservedFire) {
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="flame-outline" size={48} color="#d1d5db" />
-        <Text style={styles.emptyText}>ยังไม่มีไฟที่จอง</Text>
-        <Text style={styles.emptyHint}>กดปุ่ม "จอง" ในรายการไฟบนแผนที่เพื่อรับผิดชอบไฟ</Text>
+      <View className="flex-1 items-center justify-center bg-background p-6">
+        <StatusBar style="dark" />
+        <Ionicons name="flame-outline" size={48} color={colors.gray400} />
+        <Text className="mt-3 text-base font-sans-semibold text-accent">ยังไม่มีไฟที่จอง</Text>
+        <Text className="mt-1 text-center text-[13px] font-head text-gray-500">กดปุ่ม "จอง" ในรายการไฟบนแผนที่เพื่อรับผิดชอบไฟ</Text>
       </View>
     )
   }
 
-  const isFalse = reservedFire.status && reservedFire.false_alarm
-  const statusLabel = isFalse ? 'ไม่ใช่ไฟ' : reservedFire.status ? 'ดับแล้ว' : 'กำลังไหม้'
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Ionicons
-          name={isFalse ? 'close-circle' : reservedFire.status ? 'checkmark-circle' : 'flame'}
-          size={28}
-          color={isFalse ? '#6b7280' : reservedFire.status ? '#10b981' : '#ef4444'}
-        />
-        <Text style={styles.title}>{reservedFire.name}</Text>
+    <ScrollView className="flex-1 bg-foreground" contentContainerStyle={{ padding: 16, paddingTop: 48 }}>
+      <StatusBar style="dark" />
+      <View className="mb-2 flex-row items-center bg-secondary p-3 rounded-full">
+        <Ionicons name="flame-outline" size={28} color={'#FFFFFF'} />
+        <Text className="ml-2 shrink text-xl font-sans-semibold text-white">{reservedFire.name}</Text>
+        
         <View
-          style={[
-            styles.badge,
-            isFalse ? styles.badgeFalse : reservedFire.status ? styles.badgeResolved : styles.badgeActive,
-          ]}
+          className={`ml-auto flex-row items-center gap-1 self-start rounded-full px-3 py-1.5 ${
+            reservedFire.appointed ? 'bg-brand' : 'bg-white'
+          }`}
         >
-          <Text style={styles.badgeText}>{statusLabel}</Text>
+          <Ionicons
+            name={reservedFire.appointed ? 'person-circle-outline' : 'hand-left-outline'}
+            size={14}
+            color={reservedFire.appointed ? '#FFFFFF' : '#6366f1'}
+          />
+          <Text
+            className={`text-sm font-sans-semibold ${reservedFire.appointed ? 'text-white' : 'text-indigo-500'}`}
+          >
+            {reservedFire.appointed ? 'มอบหมายโดยผู้ดูแล' : 'จอง'}
+          </Text>
         </View>
-      </View>
+        
+      </View>      
 
-      {/* how this fire became yours: dispatcher-appointed vs self-reserved */}
-      <View style={[styles.bookingTag, reservedFire.appointed ? styles.bookingTagAppoint : styles.bookingTagSelf]}>
-        <Ionicons
-          name={reservedFire.appointed ? 'person-circle-outline' : 'hand-left-outline'}
-          size={14}
-          color={reservedFire.appointed ? '#4338ca' : '#0369a1'}
-        />
-        <Text style={[styles.bookingTagText, { color: reservedFire.appointed ? '#4338ca' : '#0369a1' }]}>
-          {reservedFire.appointed ? 'มอบหมายโดยผู้ควบคุม' : 'จองเอง'}
-        </Text>
-      </View>
-
-      <View style={styles.card}>
+      <View className="bg-foreground p-2" >
         <Row label="ตรวจพบเมื่อ" value={formatDetectedAt(reservedFire.detected_at)} />
-        <Row label="สถานะ" value={statusLabel} />
         <Row label="ประเภท" value={reservedFire.type} />
         <Row label="ตำบล" value={reservedFire.tumboon} />
         <Row label="อำเภอ" value={reservedFire.aumper} />
@@ -221,46 +248,58 @@ export default function Firespot() {
         />
       </View>
 
-      {!reservedFire.status && (
-        <>
+      <View className='mt-4 flex-1 gap-3'>
+        <TouchableOpacity
+          className="flex-row items-center justify-center rounded-full bg-blue-400 py-4"
+          onPress={navigate}
+        >
+          <Ionicons name="navigate" size={20} color="#ffffff" />
+          <Text className="ml-2 text-md font-sans-semibold text-white">นำทางด้วย Google Maps</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className={`flex-row items-center justify-center rounded-xl py-4 ${!online ? 'bg-gray-300' : 'bg-success'}`}
+          disabled={!online}
+          onPress={openResolveForm}
+        >
+          <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
+          <Text className="ml-2 text-md font-sans-semibold text-white">ดับไฟแล้ว</Text>
+        </TouchableOpacity>
+
+        <View className='flex-row justify-between'>
           <TouchableOpacity
-            style={[styles.resolveButton, !online && styles.resolveButtonDisabled]}
-            disabled={!online}
-            onPress={openResolveForm}
-          >
-            <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
-            <Text style={styles.resolveButtonText}>ดับไฟแล้ว</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.falseButton, !online && styles.falseButtonDisabled]}
+            className={` flex-row items-center justify-center rounded-xl border-2 bg-foreground py-3.5 ${!online ? 'border-gray-200' : 'border-gray-300'} ${!reservedFire.appointed ? 'w-64': 'w-full'}`}
             disabled={!online}
             onPress={openFalseForm}
           >
-            <Ionicons name="close-circle-outline" size={20} color={online ? '#6b7280' : '#d1d5db'} />
-            <Text style={[styles.falseButtonText, !online && styles.falseButtonTextDisabled]}>
-              ไม่ใช่ไฟ (แจ้งเตือนผิดพลาด)
+            <Ionicons name="close-circle-outline" size={20} color={online ? colors.gray500 : colors.gray300} />
+            <Text className={`ml-2 text-md font-sans-semibold ${!online ? 'text-gray-300' : 'text-gray-500'}`}>
+              ไม่ใช่ไฟ 
             </Text>
           </TouchableOpacity>
-          {/* self-reserved fires can be released; dispatcher-appointed ones cannot */}
+
           {!reservedFire.appointed && (
-            <TouchableOpacity style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
-              <Ionicons name="arrow-undo-outline" size={20} color="#ef4444" />
-              <Text style={styles.cancelButtonText}>
-                {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิกการจอง'}
+            <TouchableOpacity
+              className={`flex-row items-center justify-center rounded-xl border-2 w-1/3 bg-foreground py-3.5 ${!online ? 'border-gray-200' : 'border-destructive'} `}
+              onPress={confirmCancel}
+              disabled={cancelling || !online}
+            >
+              {!cancelling && (
+                <Ionicons name="arrow-undo-outline" size={20} color={!online ? colors.gray300 : colors.destructive } />
+              )}
+              <Text className={`ml-2 text-md font-sans-semibold  ${!online ? 'text-gray-300' : 'text-destructive'}`}>
+                {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิก'}
               </Text>
             </TouchableOpacity>
           )}
-        </>
-      )}
+        </View>
 
-      <Text style={styles.note}>
-        {reservedFire.status
-          ? isFalse
-            ? 'รายงานว่าไม่ใช่ไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
-            : 'ดับไฟเรียบร้อยแล้ว คุณสามารถจองจุดไฟใหม่ได้จากแผนที่'
-          : online
-            ? 'เจ้าหน้าที่ 1 คน จองได้ครั้งละ 1 จุดไฟ ต้องดับไฟเดิมหรือแจ้งว่าไม่ใช่ไฟก่อนจึงจะจองจุดใหม่ได้'
-            : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกผลได้'}
+      </View>      
+
+      <Text className="mt-3 text-center text-xs font-head text-gray-500">
+        {online
+          ? 'จองได้ครั้งละ 1 จุดไฟ หากไฟถูกหมอบหมายให้ไม่สามารถยกเลิกได้'
+          : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกผลได้'}
       </Text>
 
       <Modal
@@ -269,19 +308,20 @@ export default function Firespot() {
         transparent
         onRequestClose={() => !submitting && setFormVisible(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <View className="flex-1 justify-end bg-black/40">
           {/* tapping outside the card dismisses (blocked while submitting) */}
           <Pressable
-            style={StyleSheet.absoluteFill}
+            className="absolute inset-0"
             onPress={() => !submitting && setFormVisible(false)}
           />
-          <Animated.View style={styles.modalCard} entering={SlideInDown.duration(250)}>
-            <Text style={styles.modalTitle}>บันทึกการดับไฟ</Text>
+          <Animated.View
+            className="rounded-t-3xl bg-foreground p-5"
+            entering={SlideInDown.duration(250)}
+            style={{ marginBottom: keyboardHeight }}
+          >
+            <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">บันทึกการดับไฟ</Text>
 
-            <Text style={styles.modalLabel}>หมายเหตุ (ไม่บังคับ)</Text>
+            <Text className="mb-0.5 mt-2 text-md font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
             <TextInput
               value={note}
               onChangeText={setNote}
@@ -289,18 +329,19 @@ export default function Firespot() {
               multiline
               maxLength={2000}
               editable={!submitting}
-              style={styles.noteInput}
+              className="min-h-20 rounded-md border border-border p-2.5 text-sm font-sans text-card-foreground"
+              style={{ textAlignVertical: 'top' }}
             />
 
-            <Text style={styles.modalLabel}>
+            <Text className="mb-0.5 mt-2 text-sm font-head text-gray-500">
               รูปถ่ายหลักฐาน (อย่างน้อย 1 รูป สูงสุด {MAX_PHOTOS} รูป)
             </Text>
-            <View style={styles.photoRow}>
+            <View className="mt-1 flex-row gap-2.5">
               {photos.map((p) => (
-                <View key={p.uri} style={styles.photoWrap}>
-                  <Image source={{ uri: p.uri }} style={styles.photoThumb} />
+                <View key={p.uri} className="relative">
+                  <Image source={{ uri: p.uri }} className="h-20 w-20 rounded-md bg-muted" />
                   <TouchableOpacity
-                    style={styles.photoRemove}
+                    className="absolute -right-1.5 -top-1.5 h-7 w-7 items-center justify-center rounded-full bg-destructive"
                     onPress={() => removePhoto(p.uri)}
                     disabled={submitting}
                   >
@@ -310,43 +351,49 @@ export default function Firespot() {
               ))}
               {photos.length < MAX_PHOTOS && (
                 <>
-                  <TouchableOpacity style={styles.photoAdd} onPress={takePhoto} disabled={submitting}>
-                    <Ionicons name="camera-outline" size={22} color="#6b7280" />
-                    <Text style={styles.photoAddText}>ถ่ายรูป</Text>
+                  <TouchableOpacity
+                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
+                    onPress={takePhoto}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="camera-outline" size={22} color={colors.gray500} />
+                    <Text className="mt-0.5 text-sm font-head text-gray-500">ถ่ายรูป</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.photoAdd} onPress={pickPhoto} disabled={submitting}>
-                    <Ionicons name="images-outline" size={22} color="#6b7280" />
-                    <Text style={styles.photoAddText}>คลังภาพ</Text>
+                  <TouchableOpacity
+                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
+                    onPress={pickPhoto}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="images-outline" size={22} color={colors.gray500} />
+                    <Text className="mt-0.5 text-sm font-head text-gray-500">คลังภาพ</Text>
                   </TouchableOpacity>
                 </>
               )}
             </View>
 
-            <View style={styles.modalActions}>
+            <View className="mt-5 flex-row gap-3">
               <TouchableOpacity
-                style={styles.modalCancel}
+                className="flex-1 items-center rounded-xl border-2 border-border p-3.5"
                 onPress={() => setFormVisible(false)}
                 disabled={submitting}
               >
-                <Text style={styles.modalCancelText}>ยกเลิก</Text>
+                <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.modalSubmit,
-                  (photos.length === 0 || submitting) && styles.resolveButtonDisabled,
-                ]}
+                className={`items-center rounded-xl p-3.5 ${photos.length === 0 || submitting ? 'bg-gray-300' : 'bg-success'}`}
+                style={{ flex: 2 }}
                 onPress={submitResolve}
                 disabled={photos.length === 0 || submitting}
               >
                 {submitting ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.modalSubmitText}>ยืนยันการดับไฟ</Text>
+                  <Text className="text-lg font-sans-semibold text-white">ยืนยันการดับไฟ</Text>
                 )}
               </TouchableOpacity>
             </View>
           </Animated.View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       <Modal
@@ -355,21 +402,22 @@ export default function Firespot() {
         transparent
         onRequestClose={() => !falseSubmitting && setFalseFormVisible(false)}
       >
-        <KeyboardAvoidingView
-          style={styles.modalBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <View className="flex-1 justify-end bg-black/40">
           <Pressable
-            style={StyleSheet.absoluteFill}
+            className="absolute inset-0"
             onPress={() => !falseSubmitting && setFalseFormVisible(false)}
           />
-          <Animated.View style={styles.modalCard} entering={SlideInDown.duration(250)}>
-            <Text style={styles.modalTitle}>แจ้งว่าไม่ใช่ไฟ</Text>
-            <Text style={styles.modalDescription}>
-              ใช้เมื่อตรวจสอบแล้วพบว่าไม่มีไฟจริงในจุดนี้ (การแจ้งเตือนผิดพลาด) ไม่ต้องแนบรูปถ่าย
+          <Animated.View
+            className="rounded-t-3xl bg-foreground p-5"
+            entering={SlideInDown.duration(250)}
+            style={{ marginBottom: keyboardHeight }}
+          >
+            <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">แจ้งว่าไม่ใช่ไฟ</Text>
+            <Text className="mb-1 text-md text-center font-head text-accent">
+              ใช้เฉพาะเมื่อตรวจสอบแล้วพบว่าไม่มีไฟจริงในจุดนี้
             </Text>
 
-            <Text style={styles.modalLabel}>หมายเหตุ (ไม่บังคับ)</Text>
+            <Text className="mb-0.5 mt-2 text-md font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
             <TextInput
               value={falseNote}
               onChangeText={setFalseNote}
@@ -377,31 +425,33 @@ export default function Firespot() {
               multiline
               maxLength={2000}
               editable={!falseSubmitting}
-              style={styles.noteInput}
+              className="min-h-20 rounded-md border border-border p-2.5 text-sm font-sans text-card-foreground"
+              style={{ textAlignVertical: 'top' }}
             />
 
-            <View style={styles.modalActions}>
+            <View className="mt-5 flex-row gap-3">
               <TouchableOpacity
-                style={styles.modalCancel}
+                className="flex-1 items-center rounded-xl border-2 border-border p-3.5"
                 onPress={() => setFalseFormVisible(false)}
                 disabled={falseSubmitting}
               >
-                <Text style={styles.modalCancelText}>ยกเลิก</Text>
+                <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalFalseSubmit, falseSubmitting && styles.resolveButtonDisabled]}
+                className={`items-center rounded-xl p-3.5 ${falseSubmitting ? 'bg-gray-300' : 'bg-gray-500'}`}
+                style={{ flex: 2 }}
                 onPress={submitFalseReport}
                 disabled={falseSubmitting}
               >
                 {falseSubmitting ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.modalSubmitText}>ยืนยันว่าไม่ใช่ไฟ</Text>
+                  <Text className="text-lg font-sans-semibold text-white">ยืนยันว่าไม่ใช่ไฟ</Text>
                 )}
               </TouchableOpacity>
             </View>
           </Animated.View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </ScrollView>
   )
@@ -409,296 +459,9 @@ export default function Firespot() {
 
 function Row({ label, value }: { label: string; value: string | null }) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value ?? '-'}</Text>
+    <View className="flex-row  justify-between border-b border-border py-3">
+      <Text className="text-md font-sans text-gray-500">{label}</Text>
+      <Text className="shrink text-right text-md font-head-medium text-card-foreground">{value ?? '-'}</Text>
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  content: {
-    padding: 16,
-    paddingTop: 48,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginLeft: 8,
-    flexShrink: 1,
-  },
-  badge: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    marginLeft: 'auto',
-  },
-  badgeActive: {
-    backgroundColor: '#ef4444',
-  },
-  badgeResolved: {
-    backgroundColor: '#10b981',
-  },
-  badgeFalse: {
-    backgroundColor: '#6b7280',
-  },
-  badgeText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  bookingTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 4,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 12,
-  },
-  bookingTagAppoint: {
-    backgroundColor: '#e0e7ff',
-  },
-  bookingTagSelf: {
-    backgroundColor: '#e0f2fe',
-  },
-  bookingTagText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-  },
-  rowLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    flexShrink: 1,
-    textAlign: 'right',
-    marginLeft: 16,
-  },
-  resolveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10b981',
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginTop: 16,
-  },
-  resolveButtonDisabled: {
-    backgroundColor: '#d1d5db',
-  },
-  resolveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  falseButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    paddingVertical: 14,
-    marginTop: 12,
-  },
-  falseButtonDisabled: {
-    borderColor: '#e5e7eb',
-  },
-  falseButtonText: {
-    color: '#6b7280',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  falseButtonTextDisabled: {
-    color: '#d1d5db',
-  },
-  cancelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    paddingVertical: 14,
-    marginTop: 12,
-  },
-  cancelButtonText: {
-    color: '#ef4444',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  note: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginTop: 12,
-  },
-  emptyHint: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  modalDescription: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginBottom: 4,
-    lineHeight: 19,
-  },
-  modalLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  noteInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    padding: 10,
-    minHeight: 72,
-    textAlignVertical: 'top',
-    fontSize: 14,
-  },
-  photoRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  photoWrap: {
-    position: 'relative',
-  },
-  photoThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#f3f4f6',
-  },
-  photoRemove: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#ef4444',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoAdd: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoAddText: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  modalCancel: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    color: '#6b7280',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  modalSubmit: {
-    flex: 2,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#10b981',
-    alignItems: 'center',
-  },
-  modalFalseSubmit: {
-    flex: 2,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#6b7280',
-    alignItems: 'center',
-  },
-  modalSubmitText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-})

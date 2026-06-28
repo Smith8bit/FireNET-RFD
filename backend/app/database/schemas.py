@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field, StringConstraints
 
 # Login identity is a free-form username, not an email. fastapi-users hardwires the
 # identity column/field name to `email`, so we keep that name internally (it never
-# surfaces to users) but accept a plain username: letters + digits, 3–32 chars.
-Username = Annotated[str, StringConstraints(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9]+$")]
+# surfaces to users) but accept a plain username: letters + digits + . _ - @ +, 3–32 chars.
+Username = Annotated[str, StringConstraints(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9._@+-]+$")]
 
-_USERNAME_RE = re.compile(r"^[A-Za-z0-9]{3,32}$")
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9._@+-]{3,32}$")
 
 
 def valid_username(value: str | None) -> bool:
@@ -99,3 +99,9 @@ class PushTokenRegister(BaseModel):
 
 class PushTokenDelete(BaseModel):
     token: str
+
+
+# Mobile bearer flow carries the refresh token in the JSON body (web uses an
+# httpOnly cookie instead). 64 raw bytes url-safe-encoded is ~43 chars; cap loose.
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=512)

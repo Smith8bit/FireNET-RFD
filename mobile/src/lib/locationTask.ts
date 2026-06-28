@@ -39,7 +39,13 @@ export async function startBackgroundLocation(intervalMs: number): Promise<boole
   // foreground service keeps the task alive either way, so don't hard-fail on deny
   await Location.requestBackgroundPermissionsAsync().catch(() => {})
 
-  if (await hasStarted()) await Location.stopLocationUpdatesAsync(LOCATION_TASK)
+  // Already looping: return without restarting so the AppState re-arm doesn't
+  // reset the timeInterval countdown (rapid foreground/background switching would
+  // otherwise starve the periodic push) or churn the foreground-service GPS.
+  // ponytail: trusts hasStarted() to read false after Doze kills the task. If a
+  // device reports stale `true` and recovery breaks, gate the restart on elapsed
+  // time since last start instead. MUST be verified on-device under forced Doze.
+  if (await hasStarted()) return true
   await Location.startLocationUpdatesAsync(LOCATION_TASK, {
     // Balanced (~100m) not High: the heartbeat only places an officer on the admin
     // map and gates province-level booking — 10m GPS is wasted battery here.
@@ -59,7 +65,12 @@ export async function startBackgroundLocation(intervalMs: number): Promise<boole
 }
 
 export async function stopBackgroundLocation(): Promise<void> {
-  if (await hasStarted()) await Location.stopLocationUpdatesAsync(LOCATION_TASK)
+  // "task not found" (never registered in this JS context, or already stopped) is
+  // benign here — swallow it so a stop on a non-running task isn't an uncaught
+  // rejection. hasStarted() can report a stale true after the OS reclaims the task.
+  try {
+    if (await hasStarted()) await Location.stopLocationUpdatesAsync(LOCATION_TASK)
+  } catch {}
 }
 
 async function hasStarted(): Promise<boolean> {

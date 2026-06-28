@@ -58,11 +58,20 @@
         }
       ],
       "expo-image",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to save fire evidence photos to your gallery.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save fire evidence photos to your gallery.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       "expo-notifications",
       "expo-build-properties",
-      "./plugins/withGradleMemory"
+      "./plugins/withGradleMemory",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

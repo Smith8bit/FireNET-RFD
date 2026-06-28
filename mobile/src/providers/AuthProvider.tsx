@@ -1,8 +1,12 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
-import { api, setOnUnauthorized, loadToken, setToken, clearToken } from '@/lib/api'
+import { api, setOnUnauthorized, loadToken, setToken, clearToken, getRefreshToken, getToken } from '@/lib/api'
 import { registerPushToken, unregisterPushToken } from '@/lib/push'
+import { useFireStore } from '@/stores/fireStore'
 
+// opening map view {lng, lat, zoom} for the region this officer covers
+export type Home = { lat: number; lng: number; zoom: number }
 export type AuthUser = {
   id: string
   username: string
@@ -13,6 +17,7 @@ export type AuthUser = {
   name: string | null
   is_admin: boolean
   is_field_officer: boolean
+  home: Home
 }
 export type Province = { id: string; code: string; name_th: string; name_en: string | null; path: string }
 
@@ -48,6 +53,24 @@ async function fetchMe(): Promise<AuthUser | null> {
   }
 }
 
+// Last-known profile, so the app opens to the map when launched offline instead
+// of bouncing to Login. Not secret (no token), so AsyncStorage not the keystore.
+const USER_KEY = 'tfms_user'
+async function cacheUser(u: AuthUser | null): Promise<void> {
+  try {
+    if (u) await AsyncStorage.setItem(USER_KEY, JSON.stringify(u))
+    else await AsyncStorage.removeItem(USER_KEY)
+  } catch {}
+}
+async function loadCachedUser(): Promise<AuthUser | null> {
+  try {
+    const raw = await AsyncStorage.getItem(USER_KEY)
+    return raw ? (JSON.parse(raw) as AuthUser) : null
+  } catch {
+    return null
+  }
+}
+
 // a verified field officer can receive appointments → register this device for push
 function maybeRegisterPush(user: AuthUser | null) {
   if (user?.is_field_officer && user.is_verified) {
@@ -72,11 +95,19 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
       // a non-officer account (admin/dispatcher) doesn't belong in the mobile app
       if (me && !me.is_field_officer) {
         await clearToken()
+        await cacheUser(null)
         setUser(null)
-      } else {
+      } else if (me) {
         setUser(me)
+        cacheUser(me)
         maybeRegisterPush(me)
+      } else if (getToken()) {
+        // profile fetch failed but the token is intact → we're offline (a 401 would
+        // have cleared the token via onUnauthorized). Fall back to the cached
+        // profile so the app still opens; loadFires/etc. retry when back online.
+        setUser(await loadCachedUser())
       }
+      // else: session expired — onUnauthorized already cleared token + redirected
       setIsLoading(false)
     })()
   }, [])
@@ -84,10 +115,10 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const signIn = useCallback(async (username: string, password: string) => {
     const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
     try {
-      const res = await api.post<{ access_token: string }>('/auth/jwt/login', body, {
+      const res = await api.post<{ access_token: string; refresh_token: string }>('/auth/jwt/login', body, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
-      await setToken(res.data.access_token)
+      await setToken(res.data.access_token, res.data.refresh_token)
     } catch {
       throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
     }
@@ -95,10 +126,12 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
     if (me && !me.is_field_officer) {
       // logged in fine, but this is an admin/dispatcher account — block mobile access
       await clearToken()
+      await cacheUser(null)
       setUser(null)
       throw new Error('บัญชีนี้เป็นผู้ดูแลระบบ กรุณาใช้งานผ่านเว็บ')
     }
     setUser(me)
+    cacheUser(me)
     maybeRegisterPush(me)
     router.replace('/') // guard sends unverified users to /Pending
   }, [])
@@ -118,14 +151,31 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const signOut = useCallback(async () => {
     // drop this device's push token first, while the token is still valid
     await unregisterPushToken()
-    // bearer tokens are stateless — no server logout; just discard it locally
+    // best-effort: drop server-side online so the officer doesn't show online on
+    // the admin map until the TTL expires. Non-blocking + before clearToken (token
+    // still valid); a bad network must not hang logout.
+    api.patch('/officers/me/location', { active: false }).catch(() => {})
+    // revoke the refresh token server-side so a stolen copy can't be replayed
+    // (best-effort, before clearToken empties it); then discard everything locally
+    const refresh = getRefreshToken()
+    if (refresh) api.post('/auth/jwt/logout', { refresh_token: refresh }).catch(() => {})
     await clearToken()
+    await cacheUser(null)
+    // clear stale state so a re-login (shared device) doesn't briefly show the
+    // previous account's profile/fires before the fresh fetches reconcile
+    useFireStore.setState({ online: false, fires: [], reservedFire: null })
     setUser(null)
     router.replace('/Login')
   }, [])
 
   const refresh = useCallback(async () => {
-    setUser(await fetchMe())
+    const me = await fetchMe()
+    // offline/failed fetch returns null — keep the current user rather than
+    // nulling it (which would bounce an in-app refresh to Login)
+    if (me) {
+      setUser(me)
+      cacheUser(me)
+    }
   }, [])
 
   return (
