@@ -21,6 +21,11 @@ export async function loadToken(): Promise<string | null> {
   return accessToken
 }
 
+/** The in-memory bearer token, for callers that build their own requests (e.g. <Image> headers). */
+export function getToken(): string | null {
+  return accessToken
+}
+
 export async function setToken(token: string): Promise<void> {
   accessToken = token
   await SecureStore.setItemAsync(TOKEN_KEY, token)

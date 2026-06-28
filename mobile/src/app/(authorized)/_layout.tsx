@@ -1,14 +1,14 @@
-import { useEffect } from 'react'
-import { Redirect, Tabs, router } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
-import { ActivityIndicator, AppState, Pressable, View } from 'react-native'
-import * as Location from 'expo-location'
-import { useAuthSession } from '@/providers/AuthProvider'
-import { useFireStore } from '@/stores/fireStore'
-import { setupNotificationHandlers } from '@/lib/push'
 import { api } from '@/lib/api'
 import { startBackgroundLocation, stopBackgroundLocation } from '@/lib/locationTask'
+import { setupNotificationHandlers } from '@/lib/push'
 import { colors, fonts } from '@/lib/theme'
+import { useAuthSession } from '@/providers/AuthProvider'
+import { useFireStore } from '@/stores/fireStore'
+import { Ionicons } from '@expo/vector-icons'
+import * as Location from 'expo-location'
+import { Redirect, Tabs, router } from 'expo-router'
+import { useEffect } from 'react'
+import { ActivityIndicator, AppState, Pressable, View } from 'react-native'
 
 const DEFAULT_POLL_MIN = 5
 const MIN_POLL_MIN = 1
@@ -55,31 +55,48 @@ export default function AuthorizedLayout() {
       return
     }
     let cancelled = false
+    let arming = false
     const arm = async () => {
-      // immediate fix so the map updates without waiting a whole interval
+      // serialize: arm() runs on mount and on every AppState→active, so overlapping
+      // runs would race startBackgroundLocation's stop/start and churn the
+      // foreground-service notification. Drop any call while one is in flight.
+      if (arming) return
+      arming = true
       try {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-        await pushLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
-      } catch {
-        // skip; the background task will catch up
-      }
-      let minutes = DEFAULT_POLL_MIN
-      try {
-        const res = await api.get<{ minutes: number }>('/officers/location-poll-interval')
-        if (res.data?.minutes > 0) minutes = res.data.minutes
-      } catch {
-        // fall back to the default cadence
-      }
-      if (cancelled) return
-      // Android forbids starting a foreground-service task from the background. The
-      // awaits above (GPS fix + interval fetch) leave a window where the app can be
-      // backgrounded, so re-check here and bail if so — the AppState 'active'
-      // listener below re-arms when the officer returns to the app.
-      if (AppState.currentState !== 'active') return
-      try {
-        await startBackgroundLocation(Math.max(minutes, MIN_POLL_MIN) * 60 * 1000)
-      } catch {
-        // OS refused the start (e.g. raced into the background); next resume re-arms
+        // Opportunistic immediate fix so the map updates without waiting a whole
+        // interval — fire-and-forget. It must NEVER gate the heartbeat start below:
+        // getCurrentPositionAsync has no timeout and can hang indefinitely on a
+        // cold/indoor GPS, and a wedged fix would mean the task never starts, no
+        // heartbeats are sent, and the server drops the officer past the online TTL
+        // while the UI still shows them online. The task emits its own first fix.
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+          .then((pos) => pushLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
+          .catch(() => {}) // skip; the background task catches up on its first tick
+
+        let minutes = DEFAULT_POLL_MIN
+        try {
+          // bounded: axios has no default timeout, so a stalled request would also
+          // wedge the start — fall back to the default cadence instead
+          const res = await api.get<{ minutes: number }>('/officers/location-poll-interval', {
+            timeout: 8000,
+          })
+          if (res.data?.minutes > 0) minutes = res.data.minutes
+        } catch {
+          // fall back to the default cadence
+        }
+        if (cancelled) return
+        // Android forbids starting a foreground-service task from the background. The
+        // await above leaves a window where the app can be backgrounded, so re-check
+        // here and bail if so — the AppState 'active' listener below re-arms when the
+        // officer returns to the app.
+        if (AppState.currentState !== 'active') return
+        try {
+          await startBackgroundLocation(Math.max(minutes, MIN_POLL_MIN) * 60 * 1000)
+        } catch {
+          // OS refused the start (e.g. raced into the background); next resume re-arms
+        }
+      } finally {
+        arming = false
       }
     }
     arm()
@@ -129,8 +146,9 @@ export default function AuthorizedLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray400,
-        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 11 },
-        tabBarStyle: { backgroundColor: colors.foreground, borderTopColor: colors.border },
+        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 12 },
+        tabBarStyle: { backgroundColor: colors.foreground, borderTopColor: colors.border, height: 80 },
+        tabBarItemStyle: { paddingBottom: 8 },
       }}
     >
       <Tabs.Screen
@@ -155,8 +173,8 @@ export default function AuthorizedLayout() {
         }}
       />
       <Tabs.Screen name="Account" options={detailOptions('บัญชีของฉัน')} />
+      <Tabs.Screen name="RegionChange" options={detailOptions('ย้ายพื้นที่รับผิดชอบ')} />
       <Tabs.Screen name="History" options={detailOptions('ประวัติการดับไฟ')} />
-      <Tabs.Screen name="Leaderboard" options={detailOptions('อันดับประจำเดือน')} />
     </Tabs>
   )
 }

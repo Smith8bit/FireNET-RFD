@@ -82,10 +82,14 @@ _LOCATION_POLL_KEY = "location_poll_minutes"
 
 
 def _effective_poll_minutes(raw: str | None) -> float:
-    """Superuser's value if set, else the default — never below the floor (a
-    0.5-min override is served as the 1-min floor). Pure, so it's unit-testable."""
+    """Superuser's value if set, else the default — clamped to a usable range.
+    Floor: the 1-min minimum (a 0.5-min override is served as 1 min). Ceiling:
+    TTL/2 — a tick can land ~2x late under Doze/jitter, so a cadence at or above
+    OFFICER_ONLINE_TTL_MINUTES would let a genuinely-online officer age past the
+    TTL and flicker offline. Pure, so it's unit-testable."""
     minutes = float(raw) if raw is not None else settings.LOCATION_POLL_DEFAULT_MINUTES
-    return max(minutes, settings.LOCATION_POLL_MIN_MINUTES)
+    ceiling = settings.OFFICER_ONLINE_TTL_MINUTES / 2
+    return min(max(minutes, settings.LOCATION_POLL_MIN_MINUTES), ceiling)
 
 
 async def _location_poll_minutes(session: AsyncSession) -> float:

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
 import * as ImagePicker from 'expo-image-picker'
 import * as Location from 'expo-location'
+import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
@@ -189,6 +190,7 @@ export default function Firespot() {
   if (!reservedFire) {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
+        <StatusBar style="dark" />
         <Ionicons name="flame-outline" size={48} color={colors.gray400} />
         <Text className="mt-3 text-base font-sans-semibold text-accent">ยังไม่มีไฟที่จอง</Text>
         <Text className="mt-1 text-center text-[13px] font-head text-gray-500">กดปุ่ม "จอง" ในรายการไฟบนแผนที่เพื่อรับผิดชอบไฟ</Text>
@@ -198,6 +200,7 @@ export default function Firespot() {
 
   return (
     <ScrollView className="flex-1 bg-foreground" contentContainerStyle={{ padding: 16, paddingTop: 48 }}>
+      <StatusBar style="dark" />
       <View className="mb-2 flex-row items-center bg-secondary p-3 rounded-full">
         <Ionicons name="flame-outline" size={28} color={'#FFFFFF'} />
         <Text className="ml-2 shrink text-xl font-sans-semibold text-white">{reservedFire.name}</Text>
@@ -262,7 +265,9 @@ export default function Firespot() {
               onPress={confirmCancel}
               disabled={cancelling || !online}
             >
-              <Ionicons name="arrow-undo-outline" size={20} color={!online ? colors.gray300 : colors.destructive } />
+              {!cancelling && (
+                <Ionicons name="arrow-undo-outline" size={20} color={!online ? colors.gray300 : colors.destructive } />
+              )}
               <Text className={`ml-2 text-md font-sans-semibold  ${!online ? 'text-gray-300' : 'text-destructive'}`}>
                 {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิก'}
               </Text>

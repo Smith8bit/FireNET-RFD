@@ -1,16 +1,17 @@
-import { Ionicons } from '@expo/vector-icons'
-import { router } from 'expo-router'
-import { Pressable, ScrollView, Text, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { useAuthSession } from '@/providers/AuthProvider'
 import { colors } from '@/lib/theme'
+import { useAuthSession } from '@/providers/AuthProvider'
+import { Ionicons } from '@expo/vector-icons'
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback, useState } from 'react'
+import { Pressable, Text, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 type Row = { icon: keyof typeof Ionicons.glyphMap; label: string; route: string }
 
 const ROWS: Row[] = [
   { icon: 'person-circle-outline', label: 'บัญชีของฉัน', route: '/(authorized)/Account' },
+  { icon: 'swap-horizontal-outline', label: 'ย้ายพื้นที่รับผิดชอบ', route: '/(authorized)/RegionChange' },
   { icon: 'time-outline', label: 'ประวัติการดับไฟ', route: '/(authorized)/History' },
-  { icon: 'trophy-outline', label: 'อันดับประจำเดือน', route: '/(authorized)/Leaderboard' },
 ]
 
 // shadow can't be expressed as a className faithfully on both platforms — keep it inline
@@ -22,42 +23,62 @@ const cardShadow = {
   shadowOffset: { width: 0, height: 2 },
 }
 
+function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  useFocusEffect(useCallback(() => () => setExpanded(false), []))
+  return (
+    <View className="mt-auto mb-6 items-end">
+      {expanded ? (
+        <Pressable
+          onPress={onConfirm}
+          className="flex-row items-center justify-center gap-2 w-full rounded-full bg-destructive py-3.5"
+        >
+          <Ionicons name="log-out-outline" size={20} color="#fff" />
+          <Text className="text-base font-sans-semibold text-white">ออกจากระบบ</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={() => setExpanded(true)}
+          className="items-center justify-center rounded-full bg-destructive"
+          style={{ width: 52, height: 52 }}
+        >
+          <Ionicons name="log-out-outline" size={22} color="#fff" />
+        </Pressable>
+      )}
+    </View>
+  )
+}
+
 export default function Setting() {
   const { user, signOut } = useAuthSession()
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-        <View className="flex-row items-center gap-3 pt-2">
-          <Ionicons name="person-circle" size={48} color={colors.primary} />
+    <SafeAreaView className="flex-1 bg-foreground">
+      <View style={{ flex: 1, padding: 12, gap: 12 }}>
+        <View className="flex-row items-center p-3 gap-3 rounded-2xl bg-foreground border-border" style={cardShadow}>
+          <Ionicons name="person-circle" size={64} color={colors.primary} />
           <View className="shrink">
-            <Text className="text-lg font-sans-bold text-accent">{user?.name ?? 'เจ้าหน้าที่ภาคสนาม'}</Text>
-            <Text className="text-[13px] font-head text-gray-500">{user?.username}</Text>
-            {user?.division ? <Text className="text-[13px] font-head text-gray-500">{user.division}</Text> : null}
+            <Text className="text-xl font-sans-bold text-accent">{user?.name ?? 'เจ้าหน้าที่ภาคสนาม'}</Text>
+            {user?.division ? <Text className="text-md font-head-medium text-gray-500">สังกัด: {user.division}</Text> : null}
           </View>
         </View>
 
-        <View className="rounded-2xl bg-foreground px-4" style={cardShadow}>
+        <View className="rounded-2xl bg-foreground px-4 flex-1">
           {ROWS.map((r, i) => (
             <Pressable
               key={r.route}
               onPress={() => router.push(r.route as never)}
-              className={`flex-row items-center gap-3 py-4 ${i > 0 ? 'border-t border-border' : ''}`}
+              className={`flex-row items-center gap-3 py-5 ${i < ROWS.length - 1 ? 'border-b border-border' : ''}`}
             >
-              <Ionicons name={r.icon} size={22} color={colors.gray500} />
-              <Text className="text-[15px] font-sans-medium text-card-foreground">{r.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.gray300} style={{ marginLeft: 'auto' }} />
+              <Ionicons name={r.icon} size={24} color={colors.gray500} />
+              <Text className="text-md font-sans-medium text-card-foreground">{r.label}</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.gray400} style={{ marginLeft: 'auto' }} />
             </Pressable>
           ))}
+          <LogoutButton onConfirm={signOut} />
         </View>
 
-        <Pressable
-          onPress={signOut}
-          className="flex-row items-center justify-center gap-2 rounded-xl border border-[#FECACA] bg-foreground py-3.5"
-        >
-          <Ionicons name="log-out-outline" size={20} color={colors.destructive} />
-          <Text className="text-base font-sans-semibold text-destructive">ออกจากระบบ</Text>
-        </Pressable>
-      </ScrollView>
+
+      </View>
     </SafeAreaView>
   )
 }

@@ -25,7 +25,7 @@ const floatShadow = {
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
 const FIRE_COLORS = {
-  resolved: '#22c55e', // ดับแล้ว
+  resolved: '#d1d5dc', // ดับแล้ว
   held: '#f97316', // ไฟที่เราจอง
   booked: '#facc15', // ถูกเจ้าหน้าที่ท่านอื่นจอง
   free: '#ef4444', // ไฟอิสระ กำลังไหม้
@@ -183,7 +183,7 @@ export default function MapView() {
     },
     [sortBy],
   )
-  const snapPoints = useMemo(() => ['16%', '60%', ], [])
+  const snapPoints = useMemo(() => ['5%', '60%', ], [])
 
   // open the map on the officer's own region (served by /users/me/profile);
   // initialViewState is read once on mount, and the layout guard guarantees
@@ -399,6 +399,7 @@ export default function MapView() {
         index={0}
         snapPoints={snapPoints}
         enableDynamicSizing={false}
+        handleStyle={{padding: 20}}
       >
         <View className="flex-row items-center justify-between px-4 pb-4 border-gray-300 border-b">
           <Text className="text-xl font-sans-semibold text-accent">รายการไฟ ({fires.length})</Text>
