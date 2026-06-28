@@ -1,10 +1,20 @@
+import PROVINCES from '@/data/provinces.json'
+import { api } from '@/lib/api'
+import { Ionicons } from '@expo/vector-icons'
+import { useFocusEffect } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { useFocusEffect } from 'expo-router'
 import { Dropdown } from 'react-native-element-dropdown'
-import { api } from '@/lib/api'
-import PROVINCES from '@/data/provinces.json'
+import { SafeAreaView } from 'react-native-safe-area-context'
+
+// floating refresh button's shadow — kept inline since it has no faithful className
+const floatShadow = {
+  elevation: 4,
+  shadowColor: '#000',
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
 
 function errMsg(e: any, fallback: string) {
   const d = e?.response?.data?.detail
@@ -23,16 +33,26 @@ export default function RegionChange() {
   const [province, setProvince] = useState<string | null>(null)
   const [pending, setPending] = useState<{ status: string; province: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // re-check whether a region-change request is still pending; a decided
+  // (approved/rejected) one clears `pending` so the dropdown returns
+  const loadPending = useCallback(
+    () =>
+      api.get('/officers/me/region-change').then((r) => {
+        setPending(r.data?.status === 'pending' ? r.data : null)
+      }).catch(() => {}),
+    [],
+  )
 
   // refresh on every focus so the screen resets to the default dropdown once a
   // request is decided (approved/rejected) — a still-pending one keeps disabling resubmit
-  useFocusEffect(
-    useCallback(() => {
-      api.get('/officers/me/region-change').then((r) => {
-        setPending(r.data?.status === 'pending' ? r.data : null)
-      }).catch(() => {})
-    }, []),
-  )
+  useFocusEffect(useCallback(() => { loadPending() }, [loadPending]))
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true)
+    loadPending().finally(() => setRefreshing(false))
+  }, [loadPending])
 
   const submitRegion = async () => {
     if (!province) return Alert.alert('กรุณาเลือกจังหวัด')
@@ -95,6 +115,16 @@ export default function RegionChange() {
           </>
         )}
       </ScrollView>
+
+      <Pressable
+        className="absolute bottom-12 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
+        style={floatShadow}
+        onPress={onRefresh}
+        disabled={refreshing}
+        hitSlop={8}
+      >
+        {refreshing ? <ActivityIndicator color={'#FFFFFF'} /> : <Ionicons name="refresh" size={26} color={'#FFFFFF'} />}
+      </Pressable>
     </SafeAreaView>
   )
 }

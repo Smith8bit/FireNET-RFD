@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
   Keyboard,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -80,6 +81,21 @@ export default function Firespot() {
   useEffect(() => {
     loadReservedFire()
   }, [loadReservedFire])
+
+  // open Google Maps turn-by-turn navigation to the fire. On Android the
+  // google.navigation: scheme launches directions straight into the Google Maps
+  // app; everywhere else the universal maps URL opens the app (or the browser).
+  const navigate = useCallback(() => {
+    if (!reservedFire) return
+    const { lat, lng } = reservedFire
+    const universal = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`
+    const url = Platform.OS === 'android' ? `google.navigation:q=${lat},${lng}` : universal
+    Linking.openURL(url).catch(() =>
+      Linking.openURL(universal).catch(() =>
+        Alert.alert('ไม่สามารถเปิดแผนที่ได้', 'ไม่พบแอปแผนที่บนอุปกรณ์นี้'),
+      ),
+    )
+  }, [reservedFire])
 
   const openResolveForm = useCallback(() => {
     setNote('')
@@ -238,6 +254,14 @@ export default function Firespot() {
       </View>
 
       <View className='mt-4 flex-1 gap-3'>
+        <TouchableOpacity
+          className="flex-row items-center justify-center rounded-full bg-blue-400 py-4"
+          onPress={navigate}
+        >
+          <Ionicons name="navigate" size={20} color="#ffffff" />
+          <Text className="ml-2 text-md font-sans-semibold text-white">นำทางด้วย Google Maps</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           className={`flex-row items-center justify-center rounded-xl py-4 ${!online ? 'bg-gray-300' : 'bg-success'}`}
           disabled={!online}

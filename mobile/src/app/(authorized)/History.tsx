@@ -37,6 +37,15 @@ const cardShadow = {
   shadowOffset: { width: 0, height: 2 },
 }
 
+// floating refresh button's shadow — kept inline since it has no faithful className
+const floatShadow = {
+  elevation: 4,
+  shadowColor: '#000',
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+}
+
 export default function History() {
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
@@ -144,6 +153,16 @@ export default function History() {
           </View>
         )}
       />
+
+      <Pressable
+        className="absolute bottom-12 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
+        style={floatShadow}
+        onPress={() => load(0)}
+        disabled={loading}
+        hitSlop={8}
+      >
+        {loading ? <ActivityIndicator color={'#FFFFFF'} /> : <Ionicons name="refresh" size={26} color={'#FFFFFF'} />}
+      </Pressable>
 
       <Modal visible={viewer !== null} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <Pressable className="flex-1 items-center justify-center bg-black/90" onPress={() => setViewer(null)}>

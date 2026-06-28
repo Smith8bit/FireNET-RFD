@@ -5,7 +5,7 @@ import { useFireStore, type Fire } from '@/stores/fireStore';
 import { formatDetectedAt } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, { BottomSheetFlatList, type BottomSheetFlatListMethods } from '@gorhom/bottom-sheet';
-import { Camera, GeoJSONSource, Layer, Map, type CameraRef, type StyleSpecification } from '@maplibre/maplibre-react-native';
+import { Camera, GeoJSONSource, Layer, Map, UserLocation, type CameraRef, type StyleSpecification } from '@maplibre/maplibre-react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -151,6 +151,12 @@ export default function MapView() {
     loadFires()
     loadReservedFire()
   }, [loadFires, loadReservedFire])
+
+  // ask for location permission on mount so the blue "you are here" puck can
+  // render (like Google Maps) without waiting for the officer to go online
+  useEffect(() => {
+    Location.requestForegroundPermissionsAsync().catch(() => {})
+  }, [])
 
   // จอง is locked while the officer holds an unresolved fire
   const heldFireId = reservedFire != null && !reservedFire.status ? reservedFire.id : null
@@ -361,18 +367,22 @@ export default function MapView() {
             }}
           />
         </GeoJSONSource>
+
+        {/* blue "you are here" puck, like Google Maps; renders once location
+            permission is granted. Placed last so it draws above the fire dots. */}
+        <UserLocation animated accuracy />
       </Map>
 
       <TouchableOpacity
-        className="absolute left-5 top-10 h-10 w-10 items-center justify-center rounded-full bg-white"
+        className="absolute z-10 bottom-4 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
         style={floatShadow}
         onPress={reloadAll}
       >
-        <Ionicons name="refresh" size={20} color={colors.accent} />
+        <Ionicons name="refresh" size={26} color={'#FFFFFF'} />
       </TouchableOpacity>
 
       <TouchableOpacity
-        className="absolute left-5 top-24 h-10 w-10 items-center justify-center rounded-full bg-white"
+        className="absolute left-5 top-10 h-10 w-10 items-center justify-center rounded-full bg-white"
         style={floatShadow}
         onPress={recenter}
       >

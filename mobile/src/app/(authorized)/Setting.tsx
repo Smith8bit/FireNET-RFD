@@ -27,7 +27,7 @@ function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
   const [expanded, setExpanded] = useState(false)
   useFocusEffect(useCallback(() => () => setExpanded(false), []))
   return (
-    <View className="mt-auto mb-6 items-end">
+    <View className="mt-1 items-end">
       {expanded ? (
         <Pressable
           onPress={onConfirm}
