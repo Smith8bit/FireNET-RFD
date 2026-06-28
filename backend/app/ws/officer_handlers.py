@@ -320,6 +320,7 @@ def _map_subset(officers: list[dict]) -> list[dict]:
         {
             "field_officer_id": o["field_officer_id"],
             "name": o["name"],
+            "division": o["division"],
             "active": o["active"],
             "busy": o["fire_id"] is not None,  # already holds a fire → not appointable
             "last_updated": o["last_updated"],

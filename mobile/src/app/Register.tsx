@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { Dropdown } from 'react-native-element-dropdown'
 import { Province, useAuthSession } from '@/providers/AuthProvider'
+import { api } from '@/lib/api'
 import PROVINCES from '@/data/provinces.json'
 
 // Smoothly animate the card's height as it grows/shrinks between steps.
@@ -64,8 +65,29 @@ export default function Register() {
     return true
   }
 
-  const next = () => {
-    if (validateStep()) setStep((s) => Math.min(s + 1, STEPS.length - 1))
+  const [checking, setChecking] = useState(false)
+
+  const next = async () => {
+    if (!validateStep()) return
+    // On the username step, make sure it isn't already taken before moving on.
+    if (step === 0) {
+      setChecking(true)
+      try {
+        const { data } = await api.get('/officers/username-available', {
+          params: { username: username.trim() },
+        })
+        if (!data.available) {
+          setError('ชื่อผู้ใช้นี้ถูกใช้งานแล้ว')
+          return
+        }
+      } catch {
+        setError('ตรวจสอบชื่อผู้ใช้ไม่สำเร็จ กรุณาลองใหม่')
+        return
+      } finally {
+        setChecking(false)
+      }
+    }
+    setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
 
   const back = () => {
@@ -236,9 +258,14 @@ export default function Register() {
         {step < STEPS.length - 1 ? (
           <TouchableOpacity
             onPress={next}
-            className="h-16 w-16 items-center justify-center rounded-full bg-primary"
+            disabled={checking}
+            className={`h-16 w-16 items-center justify-center rounded-full bg-primary ${checking ? 'opacity-60' : ''}`}
           >
-            <Ionicons name="arrow-forward" size={24} color="#ffffff" />
+            {checking ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Ionicons name="arrow-forward" size={24} color="#ffffff" />
+            )}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity

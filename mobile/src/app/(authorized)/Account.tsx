@@ -1,9 +1,9 @@
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toastStore'
 import { useAuthSession } from '@/providers/AuthProvider'
 import { useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -29,10 +29,19 @@ export default function Account() {
   const [busy, setBusy] = useState<string | null>(null)
 
   const saveAll = async () => {
-    if (!name.trim()) return Alert.alert('กรุณากรอกชื่อ')
+    if (!name.trim()) {
+      toast.error('กรุณากรอกชื่อ')
+      return
+    }
     if (password) {
-      if (password.length < 8) return Alert.alert('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
-      if (password !== confirm) return Alert.alert('รหัสผ่านไม่ตรงกัน')
+      if (password.length < 8) {
+        toast.error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร')
+        return
+      }
+      if (password !== confirm) {
+        toast.error('รหัสผ่านไม่ตรงกัน')
+        return
+      }
     }
     setBusy('save')
     try {
@@ -43,9 +52,9 @@ export default function Account() {
         setConfirm('')
       }
       await refresh()
-      Alert.alert('บันทึกข้อมูลแล้ว')
+      toast.success('บันทึกข้อมูลแล้ว')
     } catch (e) {
-      Alert.alert('ไม่สำเร็จ', errMsg(e, 'ไม่สามารถบันทึกข้อมูลได้'))
+      toast.error(errMsg(e, 'ไม่สามารถบันทึกข้อมูลได้'))
     } finally {
       setBusy(null)
     }

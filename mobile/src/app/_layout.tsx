@@ -13,6 +13,7 @@ import { Sarabun_500Medium } from "@expo-google-fonts/sarabun/500Medium";
 import { Sarabun_600SemiBold } from "@expo-google-fonts/sarabun/600SemiBold";
 import { Sarabun_700Bold } from "@expo-google-fonts/sarabun/700Bold";
 import AuthProvider from "@/providers/AuthProvider";
+import Toaster from "@/components/Toaster";
 import { requestNotificationPermission } from "@/lib/push";
 import "@/lib/locationTask"; // registers the background location task at every (incl. headless) launch
 
@@ -49,6 +50,7 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <Stack screenOptions={{ headerShown: false }} />
+      <Toaster />
     </AuthProvider>
   );
 }

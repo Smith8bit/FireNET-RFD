@@ -109,16 +109,30 @@ async def get_fire_image(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    await _visible_fire_or_404(fire_id, user, session)
-    image = (
+    fire = await session.get(Firespot, fire_id)
+    if fire is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
+    row = (
         await session.execute(
-            select(FireResolutionImage)
+            select(FireResolutionImage, FireResolution.officer_id)
             .join(FireResolution, FireResolution.id == FireResolutionImage.resolution_id)
             .where(FireResolution.fire_id == fire_id, FireResolutionImage.id == image_id)
         )
-    ).scalar_one_or_none()
-    if image is None:
+    ).first()
+    if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "image not found")
+    image, officer_id = row
+    # access: visible in the viewer's current region, or the officer who resolved it —
+    # history follows a reassigned officer, but the fire's region may no longer be theirs
+    region_path = (
+        await session.execute(select(Region.path).where(Region.id == fire.region_id))
+    ).scalar_one()
+    if not await fire_visible(user, str(region_path), session):
+        my_officer_id = (
+            await session.execute(select(FieldOfficer.id).where(FieldOfficer.user_id == user.id))
+        ).scalar_one_or_none()
+        if my_officer_id != officer_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "fire outside your assigned region")
     try:
         data = await storage.get_object(image.object_key)
     except Exception as exc:

@@ -1,4 +1,5 @@
 import { colors } from '@/lib/theme'
+import { toast } from '@/lib/toastStore'
 import { useFireStore, type ResolvePhoto } from '@/stores/fireStore'
 import { formatDetectedAt } from '@/utils/format'
 import { Ionicons } from '@expo/vector-icons'
@@ -92,7 +93,7 @@ export default function Firespot() {
     const url = Platform.OS === 'android' ? `google.navigation:q=${lat},${lng}` : universal
     Linking.openURL(url).catch(() =>
       Linking.openURL(universal).catch(() =>
-        Alert.alert('ไม่สามารถเปิดแผนที่ได้', 'ไม่พบแอปแผนที่บนอุปกรณ์นี้'),
+        toast.error('ไม่พบแอปแผนที่บนอุปกรณ์นี้'),
       ),
     )
   }, [reservedFire])
@@ -123,7 +124,7 @@ export default function Firespot() {
   const takePhoto = useCallback(async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync()
     if (status !== 'granted') {
-      Alert.alert('ไม่สามารถถ่ายรูปได้', 'กรุณาอนุญาตให้แอปใช้กล้อง')
+      toast.error('กรุณาอนุญาตให้แอปใช้กล้อง')
       return
     }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 1, exif: true })
@@ -133,7 +134,7 @@ export default function Firespot() {
   const pickPhoto = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (status !== 'granted') {
-      Alert.alert('ไม่สามารถเลือกรูปได้', 'กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ')
+      toast.error('กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ')
       return
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 1, exif: true })
@@ -146,7 +147,7 @@ export default function Firespot() {
 
   const submitResolve = useCallback(async () => {
     if (photos.length === 0) {
-      Alert.alert('ต้องแนบรูปถ่าย', 'กรุณาถ่ายรูปหลักฐานการดับไฟอย่างน้อย 1 รูป')
+      toast.error('กรุณาถ่ายรูปหลักฐานการดับไฟอย่างน้อย 1 รูป')
       return
     }
     setSubmitting(true)
@@ -154,10 +155,7 @@ export default function Firespot() {
       await resolveFire(note, photos)
       setFormVisible(false)
     } catch (e) {
-      Alert.alert(
-        'ไม่สำเร็จ',
-        e instanceof Error ? e.message : 'ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง',
-      )
+      toast.error(e instanceof Error ? e.message : 'ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
@@ -174,7 +172,7 @@ export default function Firespot() {
           try {
             await cancelReservation()
           } catch (e) {
-            Alert.alert('ไม่สำเร็จ', e instanceof Error ? e.message : 'ไม่สามารถยกเลิกการจองได้')
+            toast.error(e instanceof Error ? e.message : 'ไม่สามารถยกเลิกการจองได้')
           } finally {
             setCancelling(false)
           }
@@ -194,10 +192,7 @@ export default function Firespot() {
       await reportFalseFire(falseNote)
       setFalseFormVisible(false)
     } catch (e) {
-      Alert.alert(
-        'ไม่สำเร็จ',
-        e instanceof Error ? e.message : 'ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง',
-      )
+      toast.error(e instanceof Error ? e.message : 'ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       setFalseSubmitting(false)
     }

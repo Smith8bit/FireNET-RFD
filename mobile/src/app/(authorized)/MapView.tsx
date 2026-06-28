@@ -1,5 +1,6 @@
 import base from '@/assets/layers/base.json';
 import { colors } from '@/lib/theme';
+import { toast } from '@/lib/toastStore';
 import { useAuthSession } from '@/providers/AuthProvider';
 import { useFireStore, type Fire } from '@/stores/fireStore';
 import { formatDetectedAt } from '@/utils/format';
@@ -9,7 +10,7 @@ import { Camera, GeoJSONSource, Layer, Map, UserLocation, type CameraRef, type S
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Pressable, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const MAP_STYLE = base as unknown as StyleSpecification
@@ -218,7 +219,7 @@ export default function MapView() {
         if (value) {
           const { status } = await Location.requestForegroundPermissionsAsync()
           if (status !== 'granted') {
-            Alert.alert('ไม่สามารถออนไลน์ได้', 'กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
+            toast.error('กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
             return
           }
           // go online immediately; the layout poll pushes the first GPS fix
@@ -234,10 +235,7 @@ export default function MapView() {
           await setOnline(false, coords)
         }
       } catch (e) {
-        Alert.alert(
-          'เปลี่ยนสถานะไม่สำเร็จ',
-          e instanceof Error ? e.message : 'ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง',
-        )
+        toast.error(e instanceof Error ? e.message : 'ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่อีกครั้ง')
       } finally {
         setToggling(false)
       }
@@ -277,10 +275,7 @@ export default function MapView() {
         await reserveFire(fire)
         router.push('/Firespot')
       } catch (e) {
-        Alert.alert(
-          'จองไม่สำเร็จ',
-          e instanceof Error ? e.message : 'ไม่สามารถจองไฟนี้ได้ กรุณาลองใหม่อีกครั้ง',
-        )
+        toast.error(e instanceof Error ? e.message : 'ไม่สามารถจองไฟนี้ได้ กรุณาลองใหม่อีกครั้ง')
       }
     },
     [reserveFire],

@@ -151,14 +151,16 @@ export default function HistoryPage() {
             <div className="flex-1 min-h-0 overflow-auto minimal-scrollbar">
               <table className="w-full table-fixed text-left border-collapse">
                 <colgroup>
+                  <col className="w-24" />
                   <col className="w-32" />
+                  <col className="w-64" />
                   <col className="w-48" />
-                  <col className="w-28" />
                   <col />
                   <col className="w-32" />
                 </colgroup>
                 <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
                   <tr className="text-accent text-sm">
+                    <th className="px-3 py-2 font-medium">สถานะ</th>
                     <th className="px-3 py-2 font-medium">จุดไฟ</th>
                     <th className="px-3 py-2 font-medium">ที่ตั้ง</th>
                     <th className="px-3 py-2 font-medium">ดับโดย</th>
@@ -173,7 +175,9 @@ export default function HistoryPage() {
                         <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${it.false_alarm ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
                           {it.false_alarm ? 'ไม่ใช่ไฟ' : 'ดับแล้ว'}
                         </span>
-                        <p className="mt-1 text-sm font-medium text-gray-900">{it.name}</p>
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-sm font-medium text-gray-900 wrap-break-word">
+                        {it.name}
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light wrap-break-word">
                         {[it.tumboon, it.aumper, it.province].filter(Boolean).join(' · ') || '—'}

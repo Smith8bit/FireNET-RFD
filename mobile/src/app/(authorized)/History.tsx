@@ -1,11 +1,12 @@
 import { api, getToken } from '@/lib/api'
+import { toast } from '@/lib/toastStore'
 import { formatDetectedAt } from '@/utils/format'
 import { Ionicons } from '@expo/vector-icons'
 import { File, Paths } from 'expo-file-system'
 import { Image } from 'expo-image'
 import * as MediaLibrary from 'expo-media-library'
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, Text, View } from 'react-native'
+import { ActivityIndicator, FlatList, Modal, Pressable, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 type Item = {
@@ -64,7 +65,7 @@ export default function History() {
     try {
       const granted = perm?.granted ? perm : await requestPerm()
       if (!granted.granted) {
-        Alert.alert('ไม่ได้รับอนุญาต', 'กรุณาอนุญาตให้แอปบันทึกรูปภาพลงในคลังภาพ')
+        toast.error('กรุณาอนุญาตให้แอปบันทึกรูปภาพลงในคลังภาพ')
         return
       }
       const dest = new File(Paths.cache, `fire-${imageId}.jpg`)
@@ -75,9 +76,9 @@ export default function History() {
         { headers: { Authorization: `Bearer ${getToken() ?? ''}` } },
       )
       await MediaLibrary.Asset.create(file.uri)
-      Alert.alert('บันทึกแล้ว', 'บันทึกรูปภาพลงในคลังภาพเรียบร้อยแล้ว')
+      toast.success('บันทึกรูปภาพลงในคลังภาพเรียบร้อยแล้ว')
     } catch {
-      Alert.alert('บันทึกไม่สำเร็จ', 'ไม่สามารถบันทึกรูปภาพได้ กรุณาลองใหม่อีกครั้ง')
+      toast.error('ไม่สามารถบันทึกรูปภาพได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       try { file?.delete() } catch {} // best-effort cleanup of the temp copy
       setSaving(false)

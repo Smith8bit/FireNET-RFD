@@ -1,9 +1,10 @@
 import PROVINCES from '@/data/provinces.json'
 import { api } from '@/lib/api'
+import { toast } from '@/lib/toastStore'
 import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
 import { Dropdown } from 'react-native-element-dropdown'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -55,14 +56,17 @@ export default function RegionChange() {
   }, [loadPending])
 
   const submitRegion = async () => {
-    if (!province) return Alert.alert('กรุณาเลือกจังหวัด')
+    if (!province) {
+      toast.error('กรุณาเลือกจังหวัด')
+      return
+    }
     setBusy(true)
     try {
       const r = await api.post('/officers/me/region-change', { province_code: province })
       setPending({ status: 'pending', province: r.data.province })
-      Alert.alert('ส่งคำขอแล้ว', 'คำขอย้ายพื้นที่จะถูกส่งให้ผู้ควบคุมอนุมัติ')
+      toast.success('ส่งคำขอแล้ว คำขอย้ายพื้นที่จะถูกส่งให้ผู้ควบคุมอนุมัติ')
     } catch (e) {
-      Alert.alert('ไม่สำเร็จ', errMsg(e, 'ไม่สามารถส่งคำขอได้'))
+      toast.error(errMsg(e, 'ไม่สามารถส่งคำขอได้'))
     } finally {
       setBusy(false)
     }

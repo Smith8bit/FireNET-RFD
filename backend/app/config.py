@@ -65,14 +65,20 @@ class Settings(BaseSettings):
     INGEST_LOOKBACK_DAYS: int = 1  # re-fetch yesterday too, so a midnight gap can't drop fires
     INGEST_TIMEZONE: str = "Asia/Bangkok"
 
-    # an officer stops showing as online after this long without a location update
-    OFFICER_ONLINE_TTL_MINUTES: int = 15
+    # an officer stops showing as online after this long without a location update.
+    # 20 = 2x the 10-min poll ceiling, so a tick landing ~2x late under Doze still
+    # beats the TTL (keep this ≥ 2x LOCATION_POLL_MAX_MINUTES).
+    OFFICER_ONLINE_TTL_MINUTES: int = 20
 
     # how often the mobile app pushes an officer's location while online. The
     # superuser can override the default from the console; the effective value is
-    # never allowed below MIN (battery/server-load floor) — see officers router.
+    # clamped to [MIN, MAX] (battery/server-load floor; upper bound) — see officers router.
     LOCATION_POLL_DEFAULT_MINUTES: float = 5
     LOCATION_POLL_MIN_MINUTES: float = 1
+    # upper bound on the cadence. Keep ≤ OFFICER_ONLINE_TTL_MINUTES/2 for the 2x
+    # margin that stops a late tick aging an officer past the TTL; at 10 vs TTL 15
+    # the margin is only 1.5x.
+    LOCATION_POLL_MAX_MINUTES: float = 10
 
     # admin officer lists (positions / online status) are refreshed on this cadence
     # rather than per location ping — see ws/pg_listener.py. Routine 5-min pings from

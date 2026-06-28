@@ -2,6 +2,7 @@ import { router } from 'expo-router'
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react'
 import { api, setOnUnauthorized, loadToken, setToken, clearToken } from '@/lib/api'
 import { registerPushToken, unregisterPushToken } from '@/lib/push'
+import { useFireStore } from '@/stores/fireStore'
 
 // opening map view {lng, lat, zoom} for the region this officer covers
 export type Home = { lat: number; lng: number; zoom: number }
@@ -121,8 +122,15 @@ export default function AuthProvider({ children }: { children: ReactNode }): Rea
   const signOut = useCallback(async () => {
     // drop this device's push token first, while the token is still valid
     await unregisterPushToken()
+    // best-effort: drop server-side online so the officer doesn't show online on
+    // the admin map until the TTL expires. Non-blocking + before clearToken (token
+    // still valid); a bad network must not hang logout.
+    api.patch('/officers/me/location', { active: false }).catch(() => {})
     // bearer tokens are stateless — no server logout; just discard it locally
     await clearToken()
+    // clear the stale online flag so a re-login (shared device) doesn't push the
+    // new account's location before loadStatus() reconciles
+    useFireStore.setState({ online: false })
     setUser(null)
     router.replace('/Login')
   }, [])

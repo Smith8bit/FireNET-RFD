@@ -109,6 +109,9 @@ export default function AuthorizedLayout() {
     return () => {
       cancelled = true
       sub.remove()
+      // runs on online→false AND on unmount (logout); without this the
+      // foreground-service GPS loop keeps running after logout
+      stopBackgroundLocation()
     }
   }, [online, pushLocation])
 

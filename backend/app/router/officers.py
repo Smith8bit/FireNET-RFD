@@ -78,18 +78,32 @@ async def register_officer(
     return user
 
 
+# ---- public: check a username is free before the client commits to registering ----
+@router.get("/username-available")
+async def username_available(
+    username: str,
+    session: AsyncSession = Depends(get_async_session),
+):
+    # username is stored as User.email; match case-insensitively like fastapi-users does on create.
+    exists = (
+        await session.execute(
+            select(User.id).where(func.lower(User.email) == username.strip().lower())
+        )
+    ).scalar_one_or_none()
+    return {"available": exists is None}
+
+
 _LOCATION_POLL_KEY = "location_poll_minutes"
 
 
 def _effective_poll_minutes(raw: str | None) -> float:
-    """Superuser's value if set, else the default — clamped to a usable range.
+    """Superuser's value if set, else the default — clamped to [MIN, MAX].
     Floor: the 1-min minimum (a 0.5-min override is served as 1 min). Ceiling:
-    TTL/2 — a tick can land ~2x late under Doze/jitter, so a cadence at or above
-    OFFICER_ONLINE_TTL_MINUTES would let a genuinely-online officer age past the
-    TTL and flicker offline. Pure, so it's unit-testable."""
+    LOCATION_POLL_MAX_MINUTES. A tick can land ~2x late under Doze/jitter, so MAX
+    is kept ≤ OFFICER_ONLINE_TTL_MINUTES/2 (10 vs TTL 20) — a late tick still beats
+    the TTL instead of flickering the officer offline. Pure, so it's unit-testable."""
     minutes = float(raw) if raw is not None else settings.LOCATION_POLL_DEFAULT_MINUTES
-    ceiling = settings.OFFICER_ONLINE_TTL_MINUTES / 2
-    return min(max(minutes, settings.LOCATION_POLL_MIN_MINUTES), ceiling)
+    return min(max(minutes, settings.LOCATION_POLL_MIN_MINUTES), settings.LOCATION_POLL_MAX_MINUTES)
 
 
 async def _location_poll_minutes(session: AsyncSession) -> float:
@@ -118,15 +132,18 @@ async def set_location_poll_interval(
 ):
     if not user.is_superuser:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "superuser only")
+    # store the raw value (read-time clamping preserves intent if MIN/MAX change),
+    # but audit + return the effective value so the trail matches what officers get
+    effective = _effective_poll_minutes(str(body.minutes))
     await session.execute(
         insert(AppSetting)
         .values(key=_LOCATION_POLL_KEY, value=str(body.minutes))
         .on_conflict_do_update(index_elements=["key"], set_={"value": str(body.minutes)})
     )
     audit(session, actor=user, action="settings.location_poll", entity_type="settings",
-          entity_id=_LOCATION_POLL_KEY, detail={"minutes": body.minutes})
+          entity_id=_LOCATION_POLL_KEY, detail={"minutes": effective})
     await session.commit()
-    return {"minutes": await _location_poll_minutes(session)}
+    return {"minutes": effective}
 
 
 # ---- field officer: update own location / online status ----

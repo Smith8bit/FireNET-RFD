@@ -126,7 +126,7 @@ export default function ExpandedCard({ fire, officers }) {
                         type="button"
                         disabled={cancelling}
                         onClick={cancelBooking}
-                        className="mt-3 w-full py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded-lg disabled:opacity-50 transition-colors"
+                        className="mt-3 w-full py-2 text-sm font-medium text-red-600 border-2 border-red-200 hover:bg-red-50 rounded-lg disabled:opacity-50 transition-colors"
                     >
                         {cancelling ? 'กำลังยกเลิก…' : 'ยกเลิกการจอง'}
                     </button>
@@ -163,7 +163,7 @@ export default function ExpandedCard({ fire, officers }) {
                                     </span>
                                 </div>
                             </div>
-                            <p className="text-sm text-gray-500 mt-0.5">{o.province_name_th}</p>
+                            <p className="text-sm text-gray-500 mt-0.5">{o.division ? `${o.division} · ${o.province_name_th}` : o.province_name_th}</p>
                         </button>
                     ))
                 )}
