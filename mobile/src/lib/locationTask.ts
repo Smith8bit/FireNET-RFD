@@ -65,7 +65,12 @@ export async function startBackgroundLocation(intervalMs: number): Promise<boole
 }
 
 export async function stopBackgroundLocation(): Promise<void> {
-  if (await hasStarted()) await Location.stopLocationUpdatesAsync(LOCATION_TASK)
+  // "task not found" (never registered in this JS context, or already stopped) is
+  // benign here — swallow it so a stop on a non-running task isn't an uncaught
+  // rejection. hasStarted() can report a stale true after the OS reclaims the task.
+  try {
+    if (await hasStarted()) await Location.stopLocationUpdatesAsync(LOCATION_TASK)
+  } catch {}
 }
 
 async function hasStarted(): Promise<boolean> {

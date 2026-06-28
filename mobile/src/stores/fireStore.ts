@@ -1,5 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import axios from 'axios'
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { api } from '@/lib/api'
 
 export type ResolvePhoto = {
@@ -43,7 +45,9 @@ type FireState = {
   pushLocation: (coords: { latitude: number; longitude: number }) => Promise<void>
 }
 
-export const useFireStore = create<FireState>((set, get) => ({
+export const useFireStore = create<FireState>()(
+  persist(
+    (set, get) => ({
   fires: [],
   selectedFireId: null,
   reservedFire: null,
@@ -181,4 +185,14 @@ export const useFireStore = create<FireState>((set, get) => ({
       set({ online: res.data.active })
     } catch {}
   },
-}))
+    }),
+    {
+      // Stale fire list + reserved fire survive a restart so the app is usable
+      // offline. `online` is server-authoritative (loadStatus reconciles it), so
+      // it's left out — a persisted `true` could wrongly show online past the TTL.
+      name: 'tfms-fire-store',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (s) => ({ fires: s.fires, reservedFire: s.reservedFire }),
+    },
+  ),
+)

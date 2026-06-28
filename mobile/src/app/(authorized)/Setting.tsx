@@ -1,9 +1,11 @@
+import { downloadHomePack, homePackSize } from '@/lib/offlineMap'
 import { colors } from '@/lib/theme'
-import { useAuthSession } from '@/providers/AuthProvider'
+import { toast } from '@/lib/toastStore'
+import { useAuthSession, type Home } from '@/providers/AuthProvider'
 import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
-import { useCallback, useState } from 'react'
-import { Pressable, Text, View } from 'react-native'
+import { useCallback, useEffect, useState } from 'react'
+import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 type Row = { icon: keyof typeof Ionicons.glyphMap; label: string; route: string }
@@ -21,6 +23,54 @@ const cardShadow = {
   shadowOpacity: 0.08,
   shadowRadius: 4,
   shadowOffset: { width: 0, height: 2 },
+}
+
+const fmtMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MB`
+
+// Pre-download the officer's home region so the map works with no signal.
+function OfflineMapButton({ home }: { home: Home }) {
+  const [percent, setPercent] = useState<number | null>(null)
+  const [size, setSize] = useState<number | null>(null)
+  useEffect(() => { homePackSize().then(setSize).catch(() => {}) }, [])
+
+  const busy = percent !== null
+  const download = async () => {
+    if (busy) return
+    setPercent(0)
+    try {
+      await downloadHomePack(home, (p) => setPercent(Math.round(p)))
+      setSize(await homePackSize())
+      toast.success('ดาวน์โหลดแผนที่ออฟไลน์เรียบร้อยแล้ว')
+    } catch {
+      toast.error('ดาวน์โหลดแผนที่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setPercent(null)
+    }
+  }
+
+  return (
+    <Pressable
+      onPress={download}
+      disabled={busy}
+      className="flex-row items-center gap-3 py-5"
+    >
+      <Ionicons name="cloud-download-outline" size={24} color={colors.gray500} />
+      <Text className="text-md font-sans-medium text-card-foreground">
+        {busy
+          ? `กำลังดาวน์โหลด... ${percent}%`
+          : size != null
+            ? `ดาวน์โหลดแผนที่ออฟไลน์ (${fmtMB(size)})`
+            : 'ดาวน์โหลดแผนที่ออฟไลน์'}
+      </Text>
+      {busy ? (
+        <ActivityIndicator style={{ marginLeft: 'auto' }} color={colors.primary} />
+      ) : size != null ? (
+        <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.gray400} style={{ marginLeft: 'auto' }} />
+      )}
+    </Pressable>
+  )
 }
 
 function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
@@ -63,17 +113,18 @@ export default function Setting() {
         </View>
 
         <View className="rounded-2xl bg-foreground px-4 flex-1">
-          {ROWS.map((r, i) => (
+          {ROWS.map((r) => (
             <Pressable
               key={r.route}
               onPress={() => router.push(r.route as never)}
-              className={`flex-row items-center gap-3 py-5 ${i < ROWS.length - 1 ? 'border-b border-border' : ''}`}
+              className="flex-row items-center gap-3 py-5 border-b border-border"
             >
               <Ionicons name={r.icon} size={24} color={colors.gray500} />
               <Text className="text-md font-sans-medium text-card-foreground">{r.label}</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.gray400} style={{ marginLeft: 'auto' }} />
             </Pressable>
           ))}
+          {user && <OfflineMapButton home={user.home} />}
           <LogoutButton onConfirm={signOut} />
         </View>
 

@@ -241,3 +241,31 @@ app.include_router(ws_router, tags=["ws"])
 @app.get("/")
 def read_root():
     return {"service": "firenet", "status": "ok"}
+
+
+# MapLibre's offline pack downloader fetches the style by URL through its own HTTP
+# stack (no bearer token), so this must be public. ponytail: kept in sync by hand
+# with mobile/assets/layers/base.json — only the raster tile URLs need to match
+# (the offline cache keys tiles by URL), and they change ~never.
+_MAP_STYLE = {
+    "version": 8,
+    "sources": {
+        "raster-tiles": {
+            "type": "raster",
+            "tiles": [
+                "https://mt0.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+                "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+                "https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+                "https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+            ],
+            "tileSize": 256,
+            "attribution": "&copy; <a href='https://maps.google.com'>Google Maps</a> contributors",
+        }
+    },
+    "layers": [{"id": "raster-layer", "type": "raster", "source": "raster-tiles"}],
+}
+
+
+@app.get("/map-style.json")
+def map_style():
+    return _MAP_STYLE
