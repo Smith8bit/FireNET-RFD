@@ -6,8 +6,11 @@ machinery:
   - /auth/cookie/*  web console — httpOnly access + refresh cookies
   - /auth/jwt/*     mobile — access + refresh tokens in the JSON body
 
-The refresh cookie is scoped to path=/auth/cookie so the browser only ever sends
-it to these endpoints, not to every API call.
+The refresh cookie is path=/ (like the access cookie) so it reaches the auth
+endpoints regardless of where the app is reverse-proxied. ponytail: scoping it to
+/auth/cookie broke logout/refresh once the app moved under a /firenet/api prefix —
+the browser stopped sending it. Re-scope only via a configured base-path env var,
+never a hardcoded prefix.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -25,7 +28,7 @@ settings = get_settings()
 router = APIRouter()
 
 REFRESH_COOKIE = "firenet_refresh"
-REFRESH_COOKIE_PATH = "/auth/cookie"
+REFRESH_COOKIE_PATH = "/"
 
 # fastapi-users uses this exact code for a failed credential check; the web/mobile
 # clients map it to a localized message, so keep it identical.

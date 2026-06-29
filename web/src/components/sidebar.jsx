@@ -12,6 +12,7 @@ import {
   ArrowRightOnRectangleIcon as LogoutIcon,
 } from "@heroicons/react/24/outline";
 import { apiFetch } from "../lib/shared";
+import appIcon from "../assets/icon.png";
 import { useAuthStore, can } from "../lib/useAuthStore";
 
 export default function Sidebar() {
@@ -88,13 +89,11 @@ export default function Sidebar() {
         <div
           className={`absolute flex items-center transition-opacity duration-250 ${collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
         >
-          <div
-            role="img"
-            aria-label="Logo placeholder"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[28%] bg-primary text-base font-bold text-white"
-          >
-            ?
-          </div>
+          <img
+            src={appIcon}
+            alt="FireNET"
+            className="h-10 w-10 shrink-0 rounded-[28%] object-cover"
+          />
           <div className="flex-col ml-2">
             <p className=" text-xl font-semibold tracking-tight text-primary leading-none">
               FireNET

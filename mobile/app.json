@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "FireNet",
-    "slug": "tfms-mobile",
+    "name": "FireNET",
+    "slug": "FireNET",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

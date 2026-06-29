@@ -129,7 +129,7 @@ function MetricCard({ icon: Icon, title, value, detail, tone = 'forest' }) {
 
 function Panel({ title, subtitle, icon: Icon, children }) {
   return (
-    <section className="flex min-h-0 flex-col rounded-2xl bg-foreground shadow-md">
+    <section className="flex min-h-0 flex-col rounded-2xl bg-foreground shadow-md p-2">
       <div className="flex items-center justify-between gap-3 border-b border-gray-300 px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold text-accent">{title}</h2>

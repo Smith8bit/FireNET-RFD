@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
 import forestPlaceholder from '../assets/forest_placeholder.jpg'
+import appIcon from '../assets/icon.png'
 
 // Map backend/auth error codes to Thai messages. Anything unrecognized falls
 // back to a generic message so raw codes (e.g. LOGIN_USER_NOT_VERIFIED) or
@@ -54,13 +55,11 @@ export default function LoginPage() {
       <div id='login' className="relative z-10  bg-foreground w-full max-w-md flex flex-col justify-center py-8 px-10 shadow-2xl">
         <div className='flex flex-col'>
           <div className="w-full flex items-center gap-4 mb-8">
-            <div
-              role="img"
-              aria-label="Logo placeholder"
-              className="inline-flex items-center justify-center w-24 h-24 shrink-0 bg-primary rounded-[28%] text-white text-2xl font-bold"
-            >
-              ? 
-            </div>
+            <img
+              src={appIcon}
+              alt="FireNET"
+              className="w-24 h-24 shrink-0 rounded-[28%] object-cover"
+            />
             <div>
               <h1 className="text-4xl font-bold text-primary">FireNET</h1>
               <h1 className="text-3xl font-medium text-gray-500">ระบบจัดการไฟป่า</h1>

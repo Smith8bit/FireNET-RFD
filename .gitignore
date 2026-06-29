@@ -213,3 +213,6 @@ backend/app/database/seed_mock_officers_bulk.py
 backend/app/database/seed_mock_pending.py
 backend/app/database/seed_mock_region_change.py
 backend/.env.prod.bak
+
+# Local-only env files
+.env.server
