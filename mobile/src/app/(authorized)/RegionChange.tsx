@@ -1,4 +1,4 @@
-import PROVINCES from '@/data/provinces.json'
+﻿import PROVINCES from '@/data/provinces.json'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toastStore'
 import { Ionicons } from '@expo/vector-icons'
@@ -64,7 +64,7 @@ export default function RegionChange() {
     try {
       const r = await api.post('/officers/me/region-change', { province_code: province })
       setPending({ status: 'pending', province: r.data.province })
-      toast.success('ส่งคำขอแล้ว คำขอย้ายพื้นที่จะถูกส่งให้ผู้ควบคุมอนุมัติ')
+      toast.success('ส่งคำขอแล้ว คำขอย้ายพื้นที่จะถูกส่งให้ผู้ดูแลอนุมัติ')
     } catch (e) {
       toast.error(errMsg(e, 'ไม่สามารถส่งคำขอได้'))
     } finally {
@@ -114,7 +114,7 @@ export default function RegionChange() {
                 }}
               />
             </FieldBox>
-            <Text className="text-sm font-head text-muted-foreground">คำขอจะถูกส่งให้ผู้ควบคุมพื้นที่ปลายทางอนุมัติ</Text>
+            <Text className="text-sm font-head text-muted-foreground">คำขอจะถูกส่งให้ผู้ดูแลพื้นที่ปลายทางอนุมัติ</Text>
             <SaveButton label="ส่งคำขอย้ายพื้นที่" onPress={submitRegion} loading={busy} />
           </>
         )}

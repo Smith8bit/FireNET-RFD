@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
@@ -167,20 +167,20 @@ export default function DispatcherPage() {
     setCreating(false)
     setNewUsername(''); setNewName(''); setNewDivision(''); setNewPassword(''); setNewRegion('')
     setNewPerms(DISPATCHER_DEFAULT)
-    toast.success('สร้างผู้ควบคุมสำเร็จ')
+    toast.success('สร้างผู้ดูแลสำเร็จ')
   })
 
   useMessageEffect(updatedMsg, () => {
     setEditingId(null)
     setSavingId(null)
-    toast.success('บันทึกข้อมูลผู้ควบคุมแล้ว')
+    toast.success('บันทึกข้อมูลผู้ดูแลแล้ว')
   })
 
   useMessageEffect(deletedMsg, (m) => {
     setDispatchers((prev) => prev ? prev.filter((d) => d.user_id !== m.user_id) : prev)
     setEditingId(null)
     setDeletingId(null)
-    toast.success('ลบผู้ควบคุมแล้ว')
+    toast.success('ลบผู้ดูแลแล้ว')
   })
 
   useMessageEffect(errorMsg, (m) => {
@@ -248,7 +248,7 @@ export default function DispatcherPage() {
   }
 
   const removeDispatcher = (d) => {
-    if (!window.confirm(`ลบผู้ควบคุม ${d.name ?? d.username}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
+    if (!window.confirm(`ลบผู้ดูแล ${d.name ?? d.username}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
     setDeletingId(d.user_id)
     send({ type: 'delete_dispatcher', user_id: d.user_id })
   }
@@ -292,7 +292,7 @@ export default function DispatcherPage() {
       {/* Page header and description */}
       <div className='flex flex-row gap-4 items-center'>
         <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>ผู้ดูแล</h1>
-        <p className='font-medium text-md text-accent'>ผู้ควบคุมประจำพื้นที่ (สร้าง แก้ไข และลบบัญชี)</p>
+        <p className='font-medium text-md text-accent'>ผู้ดูแลประจำพื้นที่ (สร้าง แก้ไข และลบบัญชี)</p>
       </div>
 
       <div className="flex-1 min-h-0 w-full flex flex-row gap-4 ">
@@ -302,7 +302,7 @@ export default function DispatcherPage() {
 
           {/* Title + search */}
           <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
-            <p className="font-medium text-accent text-lg whitespace-nowrap">ผู้ควบคุมประจำพื้นที่ ({dispatchers?.length ?? 0})</p>
+            <p className="font-medium text-accent text-lg whitespace-nowrap">ผู้ดูแลประจำพื้นที่ ({dispatchers?.length ?? 0})</p>
             <div className="flex flex-row items-center gap-2">
               <div className="flex flex-row gap-2 border border-gray-300 p-1.5 rounded-xl">
                 <select
@@ -342,11 +342,11 @@ export default function DispatcherPage() {
               </div>
             ) : dispatchers.length === 0 ? (
               <div className="h-full flex justify-center items-center">
-                <p className="text-gray-400">ยังไม่มีผู้ควบคุม</p>
+                <p className="text-gray-400">ยังไม่มีผู้ดูแล</p>
               </div>
             ) : filteredDispatchers.length === 0 ? (
               <div className="h-full flex justify-center items-center">
-                <p className="text-gray-400">ไม่พบผู้ควบคุมที่ตรงกับการค้นหา</p>
+                <p className="text-gray-400">ไม่พบผู้ดูแลที่ตรงกับการค้นหา</p>
               </div>
             ) : (
               <table className="w-full table-fixed text-left border-collapse">
@@ -380,7 +380,7 @@ export default function DispatcherPage() {
                               type="text"
                               value={editName}
                               onChange={(e) => setEditName(e.target.value)}
-                              placeholder="ชื่อผู้ควบคุม"
+                              placeholder="ชื่อผู้ดูแล"
                               className={INPUT_CLS}
                             />
                             <input
@@ -415,7 +415,7 @@ export default function DispatcherPage() {
                                 disabled={deletingId === d.user_id}
                                 className="text-sm text-destructive hover:text-white hover:bg-destructive border-2 rounded-full px-3 py-1.5 disabled:opacity-50"
                               >
-                                {deletingId === d.user_id ? 'กำลังลบ…' : 'ลบผู้ควบคุม'}
+                                {deletingId === d.user_id ? 'กำลังลบ…' : 'ลบผู้ดูแล'}
                               </button>
                               <div className="flex gap-2">
                                 <button
@@ -516,7 +516,7 @@ export default function DispatcherPage() {
 
             {/* Title */}
             <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
-              <p className="font-medium text-accent text-lg">สร้างผู้ควบคุมใหม่</p>
+              <p className="font-medium text-accent text-lg">สร้างผู้ดูแลใหม่</p>
             </div>
 
             <div className="flex-1 min-h-0 px-2">
@@ -583,7 +583,7 @@ export default function DispatcherPage() {
                     disabled={creating}
                     className="bg-primary hover:bg-brand text-white rounded-xl px-4 py-1.5 text-sm disabled:opacity-50"
                   >
-                    {creating ? 'กำลังสร้าง…' : 'สร้างผู้ควบคุม'}
+                    {creating ? 'กำลังสร้าง…' : 'สร้างผู้ดูแล'}
                   </button>
                 </div>
               </form>

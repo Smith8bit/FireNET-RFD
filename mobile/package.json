@@ -1,5 +1,5 @@
 {
-  "name": "tfms-mobile",
+  "name": "firenet-mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {

@@ -6,8 +6,8 @@ if (!API_URL) {
   throw new Error('EXPO_PUBLIC_API_URL is not set — add it to mobile/.env')
 }
 
-const TOKEN_KEY = 'tfms_access_token'
-const REFRESH_KEY = 'tfms_refresh_token'
+const TOKEN_KEY = 'firenet_access_token'
+const REFRESH_KEY = 'firenet_refresh_token'
 
 export const api = axios.create({ baseURL: API_URL })
 

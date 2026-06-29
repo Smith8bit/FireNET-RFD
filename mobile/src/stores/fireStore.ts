@@ -100,7 +100,7 @@ export const useFireStore = create<FireState>()(
       get().loadFires() // refresh booked flags for the list
     } catch (e) {
       if (axios.isAxiosError(e) && e.response?.status === 403) {
-        throw new Error('ไฟนี้ผู้ควบคุมเป็นผู้มอบหมาย ต้องให้ผู้ควบคุมยกเลิกเท่านั้น')
+        throw new Error('ไฟนี้ผู้ดูแลเป็นผู้มอบหมาย ต้องให้ผู้ดูแลยกเลิกเท่านั้น')
       }
       throw new Error('ไม่สามารถยกเลิกการจองได้ กรุณาลองใหม่อีกครั้ง')
     }
@@ -190,7 +190,7 @@ export const useFireStore = create<FireState>()(
       // Stale fire list + reserved fire survive a restart so the app is usable
       // offline. `online` is server-authoritative (loadStatus reconciles it), so
       // it's left out — a persisted `true` could wrongly show online past the TTL.
-      name: 'tfms-fire-store',
+      name: 'firenet-fire-store',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({ fires: s.fires, reservedFire: s.reservedFire }),
     },

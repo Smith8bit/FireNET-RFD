@@ -1,4 +1,4 @@
-# Setup and start all TFMS components:
+# Setup and start all FireNET components:
 #   backend  -> postgres (docker) + FastAPI on 0.0.0.0:8000  (via backend\start.ps1)
 #   web      -> Vite dev server (npm run dev)
 #   mobile   -> Expo dev server (npx expo start), .env pointed at this machine's LAN IP

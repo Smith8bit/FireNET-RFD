@@ -55,7 +55,7 @@ async function fetchMe(): Promise<AuthUser | null> {
 
 // Last-known profile, so the app opens to the map when launched offline instead
 // of bouncing to Login. Not secret (no token), so AsyncStorage not the keystore.
-const USER_KEY = 'tfms_user'
+const USER_KEY = 'firenet_user'
 async function cacheUser(u: AuthUser | null): Promise<void> {
   try {
     if (u) await AsyncStorage.setItem(USER_KEY, JSON.stringify(u))

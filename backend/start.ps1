@@ -4,11 +4,11 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
 # Start postgres if not already running
-$running = docker ps --filter "name=tfms-postgres" --filter "status=running" -q
+$running = docker ps --filter "name=firenet-postgres" --filter "status=running" -q
 if (-not $running) {
-    $exists = docker ps -a --filter "name=tfms-postgres" -q
+    $exists = docker ps -a --filter "name=firenet-postgres" -q
     if ($exists) {
-        docker start tfms-postgres
+        docker start firenet-postgres
     } else {
         docker compose -f "$scriptDir\..\docker-compose.yml" up -d
     }
@@ -16,7 +16,7 @@ if (-not $running) {
     Write-Host "Waiting for postgres..."
     $ready = $false
     for ($i = 0; $i -lt 15; $i++) {
-        $check = docker exec tfms-postgres pg_isready -U tfms 2>&1
+        $check = docker exec firenet-postgres pg_isready -U firenet 2>&1
         if ($check -match "accepting connections") { $ready = $true; break }
         Start-Sleep -Seconds 1
     }
@@ -26,9 +26,9 @@ if (-not $running) {
 
 # Drop & recreate the database for a clean run: .\start.ps1 -Fresh
 if ($Fresh) {
-    Write-Host "Resetting database (dropping and recreating 'tfms')..."
-    docker exec tfms-postgres psql -U tfms -d postgres -c "DROP DATABASE IF EXISTS tfms WITH (FORCE);"
-    docker exec tfms-postgres psql -U tfms -d postgres -c "CREATE DATABASE tfms OWNER tfms;"
+    Write-Host "Resetting database (dropping and recreating 'firenet')..."
+    docker exec firenet-postgres psql -U firenet -d postgres -c "DROP DATABASE IF EXISTS firenet WITH (FORCE);"
+    docker exec firenet-postgres psql -U firenet -d postgres -c "CREATE DATABASE firenet OWNER firenet;"
     Write-Host "Database reset complete. Tables and seed data will be rebuilt on startup."
 }
 

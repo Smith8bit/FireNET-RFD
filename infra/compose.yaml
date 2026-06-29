@@ -1,6 +1,6 @@
-# FireNet on the Traefik-routed host. Traefik (compose project "wildfire") owns
+# FireNET on the Traefik-routed host. Traefik (compose project "wildfire") owns
 # 80/443 and routes by container labels on the external `wildfire_default` network,
-# TLS via the `letsencrypt` resolver. FireNet joins that network for routing and
+# TLS via the `letsencrypt` resolver. FireNET joins that network for routing and
 # keeps db/minio on a private `internal` network (no host ports).
 #
 #   cp .env.example .env   # POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD

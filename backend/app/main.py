@@ -193,7 +193,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="FireNet API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="FireNET API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 # Throttle credential brute force / registration abuse on the auth endpoints.
 # Registered BEFORE CORS so that CORS ends up the outermost middleware: Starlette

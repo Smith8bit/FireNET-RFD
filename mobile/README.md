@@ -1,56 +1,126 @@
-# Welcome to your Expo app 👋
+# FireNET — Field-officer app
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The companion mobile app for [FireNET](../README.md), carried by field officers
+in the wildfire response: register and await approval, see assigned firespots on
+a map, share live location while on duty, and close out a fire with notes and
+photos. Built with Expo (React Native) and file-based routing via Expo Router.
 
-## Get started
+See the [root README](../README.md) for the full system overview.
 
-1. Install dependencies
+## Stack
 
-   ```bash
-   npm install
-   ```
+Expo SDK 56 · React Native 0.85 · Expo Router · MapLibre · NativeWind ·
+Zustand · React Native Firebase (FCM push) · expo-location / -notifications /
+-task-manager (background location) · Kanit + Sarabun (Thai fonts)
 
-2. Start the app
+## Features
 
-   ```bash
-   npx expo start
-   ```
+### Onboarding & access
+- **Login** with username + password (tokens kept in the device keystore via
+  `expo-secure-store`).
+- **Multi-step registration** ([`Register.tsx`](src/app/Register.tsx)) with a
+  progress indicator and province selection.
+- **Approval gate** ([`Pending.tsx`](src/app/Pending.tsx)) — new officers wait for
+  a dispatcher to verify them before gaining access.
 
-In the output, you'll find options to open the app in a
+### Map View
+- MapLibre map of firespots **colored by status** (ว่าง / ถูกจอง / จองแล้ว / ดับแล้ว),
+  with the officer's currently held fire highlighted; the selected dot is enlarged
+  with a white stroke. Fires are rendered as a GeoJSONsource for smooth updates.
+- **Opens on the officer's home region** (from their profile), falling back to a
+  whole-Thailand view; a **recenter** button flies back to that view, and a
+  **refresh** button reloads fires, the held fire, and profile in one tap.
+- **Online/offline toggle** — switching online requests location permission and
+  starts location sharing; while offline the fire list is dimmed and
+  non-interactive.
+- **Bottom-sheet fire list** — sortable by **time** or **name** (tap the active
+  chip again to flip direction), virtualized for long lists.
+- **List ⇆ map sync** — tapping a dot focuses it and scrolls the list to that
+  row; selecting a row flies the camera to the fire.
+- **Reserve (จอง)** from a row jumps to the Firespot screen; locked while the officer
+  already holds an unresolved fire, for fires booked by another officer, and when offline.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Resolve a fire
+- **Claim/hold** a firespot, then **resolve** it (ดับไฟแล้ว) with a note and photos.
+- Photos from **camera or gallery**, with **EXIF GPS** pulled off the image
+  (falling back to the device's current position) so a resolution carries the
+  location it was taken. At least 1 photo required, up to 3.
+- **Navigate** opens turn-by-turn directions to the fire in Google Maps.
+- **Cancel reservation** (ยกเลิกการจอง) — release the fire back to free for
+  another officer, behind a confirm dialog. Hidden when the fire was **appointed
+  by a dispatcher** (those can be cancelled only by dispatcher).
+- **Report "not a fire"** (ไม่ใช่ไฟ) — flag a false alarm with an optional note
+  when there's no real fire at the spot.
+- Online/offline aware: all actions are disabled while offline so an officer
+  knows a submit won't go through.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### Live location
+- **Background location updates** via an `expo-task-manager` headless task and a
+  foreground service, so position keeps flowing when the app is backgrounded.
+- Cadence is **configurable by the superuser** and re-armed on app-state changes;
+  each tick pushes the freshest fix in the batch (a coords-only heartbeat that
+  never flips the officer's active state). Auth token is rehydrated from the
+  keystore inside the headless context.
 
-## Get a fresh project
+### Offline map
+- **Pre-download the home region's map tiles** (MapLibre OfflineManager) from
+  Settings, with a size estimate and a download progress percentage, so the map
+  still renders with no signal in the field.
 
-When you're ready, run:
+### History
+- The officer's resolved-fire history, with **auth-gated evidence photos**
+  downloaded on demand and viewable in a gallery.
+
+### Region change
+- Request a move to another province; shows the pending request's status.
+
+### Account & settings
+- Edit profile fields; offline-map download; logout.
+
+### Push notifications 
+- **FCM** (React Native Firebase v22 modular API) for appointment alerts on a
+  HIGH-importance Android channel (heads-up banner). Foreground messages are
+  re-presented as local notifications so they surface over the open app.
+
+## Develop
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+> **Requires a development build, not Expo Go.** The app uses native modules
+> (React Native Firebase, MapLibre, background location) that Expo Go can't
+> load. Build and run on a device/emulator with `npm run android` (`expo
+> run:android`) or `npm run ios`.
 
-### Other setup steps
+### Configuration
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Set the backend the app talks to in `mobile/.env`:
 
-## Learn more
+```
+EXPO_PUBLIC_API_URL=http://<your-LAN-IP>:8000
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+[`src/lib/api.ts`](src/lib/api.ts) throws on startup if it's missing. On Windows,
+the repo's [`all-start.ps1`](../all-start.ps1) auto-detects your LAN IP and
+writes this for you. `npm run lint` runs `expo lint`.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+> ⚠️ **Expo SDK 56 changed APIs.** Check the versioned docs at
+> <https://docs.expo.dev/versions/v56.0.0/> before writing native code — see
+> [`AGENTS.md`](AGENTS.md).
 
-## Join the community
+## Layout
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/
+├── app/                  # Expo Router routes
+│   ├── index, Login, Register, Pending   # auth + approval gate
+│   └── (authorized)/     # MapView, Firespot, History, RegionChange, Account, Setting
+├── lib/                  # api, background locationTask, offlineMap, push, theme, toastStore
+├── stores/               # Zustand state (fireStore: fires, held fire, online status)
+├── providers/            # AuthProvider
+├── components/           # Toast, Toaster
+├── utils/                # format helpers
+└── data/                 # provinces.json
+```
