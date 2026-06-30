@@ -1,4 +1,7 @@
-from sqlalchemy import select, text
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.models import Region, User, UserRegion
@@ -206,6 +209,24 @@ def filter_fires(user_paths: list[str], fires: list[dict], superuser: bool) -> l
         if p in exact or any(p.startswith(pref) for pref in prefixes):
             out.append(fire)
     return out
+
+
+async def update_user_region(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    old_region_id: UUID,
+    ur_obj: UserRegion,
+    **values: Any,
+) -> None:
+    """ponytail: expunge + raw UPDATE because region_id is part of the composite PK;
+    SQLAlchemy's identity map cannot track a PK change in-place."""
+    session.expunge(ur_obj)
+    await session.execute(
+        update(UserRegion)
+        .where(UserRegion.user_id == user_id, UserRegion.region_id == old_region_id)
+        .values(**values)
+    )
 
 
 if __name__ == "__main__":  # python -m app.db_control.permission

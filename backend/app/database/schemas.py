@@ -1,5 +1,6 @@
 import re
 import uuid
+from enum import StrEnum
 from typing import Annotated
 
 from fastapi_users import schemas
@@ -11,6 +12,12 @@ from pydantic import BaseModel, Field, StringConstraints
 Username = Annotated[str, StringConstraints(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9._@+-]+$")]
 
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9._@+-]{3,32}$")
+
+
+class UserRole(StrEnum):
+    ADMIN = "admin"
+    DISPATCHER = "dispatcher"
+    FIELD_OFFICER = "field_officer"
 
 
 def valid_username(value: str | None) -> bool:

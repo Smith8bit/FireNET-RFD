@@ -18,6 +18,8 @@ from ..database.models import RefreshToken
 
 settings = get_settings()
 
+_TOKEN_URL_SAFE_BYTES = 32  # 256-bit raw entropy
+
 
 def _hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -26,7 +28,7 @@ def _hash(raw: str) -> str:
 async def issue_refresh_token(session: AsyncSession, user_id: uuid.UUID) -> str:
     """Mint a new refresh token, queue its row on the caller's session, return the raw value.
     The caller commits."""
-    raw = secrets.token_urlsafe(32)
+    raw = secrets.token_urlsafe(_TOKEN_URL_SAFE_BYTES)
     session.add(
         RefreshToken(
             user_id=user_id,

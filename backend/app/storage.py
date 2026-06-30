@@ -2,8 +2,10 @@
 every call is pushed to a thread to keep the event loop free."""
 
 import asyncio
+import json
 from io import BytesIO
 
+from fastapi import HTTPException, UploadFile, status as http_status
 from minio import Minio
 
 from .config import get_settings
@@ -74,3 +76,75 @@ async def list_keys(prefix: str) -> list[str]:
         ]
 
     return await asyncio.to_thread(_list)
+
+
+# ---- image upload utilities ----
+
+IMAGE_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+
+
+async def read_capped(upload: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks; raises 400 the moment it exceeds max_bytes.
+
+    Bounds peak memory to roughly max_bytes + one chunk, so a large body is
+    never fully buffered before the size check runs.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(settings.IMAGE_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "photo too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def sniff_image(data: bytes) -> str | None:
+    """Identify image type from magic bytes (headers can lie)."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def parse_image_gps(image_gps: str | None, count: int) -> list[dict[str, float] | None]:
+    """Parse a JSON GPS coordinate array aligned with uploaded images.
+
+    Returns a list of {latitude, longitude} dicts (one per image) or None
+    for missing/invalid entries. Raises 400 if the JSON itself is malformed.
+    """
+    if not image_gps:
+        return [None] * count
+    try:
+        parsed = json.loads(image_gps)
+        assert isinstance(parsed, list)
+    except (ValueError, AssertionError):
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "invalid image_gps")
+    parsed = parsed[:count] + [None] * (count - len(parsed))
+    out: list[dict[str, float] | None] = []
+    for item in parsed:
+        if isinstance(item, dict) and "latitude" in item and "longitude" in item:
+            try:
+                lat = float(item["latitude"])
+                lng = float(item["longitude"])
+            except (TypeError, ValueError):
+                out.append(None)
+                continue
+            out.append(
+                {"latitude": lat, "longitude": lng}
+                if -90 <= lat <= 90 and -180 <= lng <= 180
+                else None
+            )
+        else:
+            out.append(None)
+    return out

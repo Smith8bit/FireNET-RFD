@@ -5,14 +5,14 @@ from fastapi import WebSocket
 from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists
 from fastapi_users.password import PasswordHelper
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 
 from ..database import async_session_maker
 from ..database.models import Region, User, UserRegion
 from ..database.schemas import UserCreate, valid_username
 from ..db_control.audit import audit
-from ..db_control.permission import GRANTABLE, PRESETS, has_perm_anywhere, user_region_paths
+from ..db_control.permission import GRANTABLE, PRESETS, has_perm_anywhere, update_user_region, user_region_paths
 from ..db_control.users import UserManager
 
 logger = logging.getLogger("firenet.dispatchers")
@@ -252,14 +252,16 @@ async def handle_update_dispatcher(ws: WebSocket, actor: User, data: dict) -> No
 
         # region_id is part of the composite PK — move the row via UPDATE, not ORM identity
         if new_region is not None:
-            old_region_id = ur_row.region_id
             new_name_value = new_name if "name" in changes else ur_row.name
             new_perms_value = new_permissions if "permissions" in changes else ur_row.permissions
-            session.expunge(ur_row)
-            await session.execute(
-                update(UserRegion)
-                .where(UserRegion.user_id == user_id, UserRegion.region_id == old_region_id)
-                .values(region_id=new_region.id, name=new_name_value, permissions=new_perms_value)
+            await update_user_region(
+                session,
+                user_id=user_id,
+                old_region_id=ur_row.region_id,
+                ur_obj=ur_row,
+                region_id=new_region.id,
+                name=new_name_value,
+                permissions=new_perms_value,
             )
         else:
             if "name" in changes:

@@ -18,8 +18,12 @@ FIXTURE = Path(__file__).resolve().parent.parent / "database" / "seedbag" / "reg
 # how tight the opening view sits, by region level
 ZOOM_BY_LEVEL = {"national": 5.5, "regional": 8.0, "province": 9.0}
 
+_FALLBACK_LAT = 13.05    # geographic center of Thailand
+_FALLBACK_LNG = 101.45
+_COORD_DECIMALS = 4      # decimal places for computed region centroids (~11 m precision)
+
 # used when a user has no region (or an unknown one): the whole country
-_FALLBACK = {"lat": 13.05, "lng": 101.45, "zoom": ZOOM_BY_LEVEL["national"]}
+_FALLBACK = {"lat": _FALLBACK_LAT, "lng": _FALLBACK_LNG, "zoom": ZOOM_BY_LEVEL["national"]}
 
 
 @lru_cache(maxsize=1)
@@ -48,8 +52,8 @@ def _centers() -> dict[str, dict]:
         if code is None:
             continue
         out[code] = {
-            "lat": round(sum(c["lat"] for c in centers) / len(centers), 4),
-            "lng": round(sum(c["lng"] for c in centers) / len(centers), 4),
+            "lat": round(sum(c["lat"] for c in centers) / len(centers), _COORD_DECIMALS),
+            "lng": round(sum(c["lng"] for c in centers) / len(centers), _COORD_DECIMALS),
             "zoom": ZOOM_BY_LEVEL["regional"],
         }
 

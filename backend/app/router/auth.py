@@ -35,6 +35,15 @@ REFRESH_COOKIE_PATH = "/"
 BAD_CREDENTIALS = "LOGIN_BAD_CREDENTIALS"
 
 
+async def _issue_tokens(session, user) -> tuple[str, str]:
+    """Mint access + refresh tokens, audit the login, and commit — shared by both login routes."""
+    access = await get_jwt_strategy().write_token(user)
+    refresh = await issue_refresh_token(session, user.id)
+    audit(session, actor=user, action="auth.login", entity_type="user", entity_id=str(user.id))
+    await session.commit()
+    return access, refresh
+
+
 def _set_refresh_cookie(response: Response, raw: str) -> None:
     response.set_cookie(
         REFRESH_COOKIE,
@@ -74,10 +83,7 @@ async def jwt_login(
 ):
     user = await _authenticate(manager, credentials)
     session = manager.user_db.session
-    access = await get_jwt_strategy().write_token(user)
-    refresh = await issue_refresh_token(session, user.id)
-    audit(session, actor=user, action="auth.login", entity_type="user", entity_id=str(user.id))
-    await session.commit()
+    access, refresh = await _issue_tokens(session, user)
     return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
 
 
@@ -117,10 +123,7 @@ async def cookie_login(
 ):
     user = await _authenticate(manager, credentials)
     session = manager.user_db.session
-    access = await get_jwt_strategy().write_token(user)
-    refresh = await issue_refresh_token(session, user.id)
-    audit(session, actor=user, action="auth.login", entity_type="user", entity_id=str(user.id))
-    await session.commit()
+    access, refresh = await _issue_tokens(session, user)
     response = await cookie_transport.get_login_response(access)
     _set_refresh_cookie(response, refresh)
     return response

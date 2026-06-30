@@ -12,33 +12,35 @@ from ..ws.dispatcher_handlers import (
     handle_list_dispatchers,
     handle_update_dispatcher,
 )
-from ..ws.officer_handlers import (
+from ..ws.officers import (
     handle_appoint_officer,
     handle_cancel_booking,
     handle_decide_region_request,
     handle_delete_officer,
     handle_list_officers,
+    handle_list_officers_MAP,
     handle_list_pending,
     handle_list_region_requests,
     handle_update_officer,
     handle_verify_officer,
-    handle_list_officers_MAP
 )
 
 router = APIRouter()
 logger = logging.getLogger("firenet.ws")
+
+_WS_POLICY_VIOLATION = 1008  # RFC 6455 §7.4.1 — server-side policy rejection
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     user = await get_user_from_ws(ws)
     if user is None:
-        await ws.close(code=1008)
+        await ws.close(code=_WS_POLICY_VIOLATION)
         return
     # the web app is admin/dispatcher only; field officers use the mobile app
     async with async_session_maker() as session:
         if not await is_admin_user(user, session):
-            await ws.close(code=1008)
+            await ws.close(code=_WS_POLICY_VIOLATION)
             return
         # resolve the visibility scope once, here, so recurring broadcasts can
         # bucket by it instead of re-deriving paths per connection on every tick

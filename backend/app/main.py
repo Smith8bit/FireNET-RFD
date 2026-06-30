@@ -45,6 +45,10 @@ scheduler = AsyncIOScheduler(timezone=settings.INGEST_TIMEZONE)
 # audit M5 — this is the in-stack, zero-dependency guard.)
 BOOTSTRAP_LOCK_KEY = 845_173_001
 
+_ORPHAN_SWEEP_HOURS = 24
+_WS_SNAPSHOT_VERSION = 8   # MapLibre GL Style Spec v8
+_MAP_TILE_SIZE = 256        # pixels; standard for web map raster tiles
+
 # upgrade a pre-existing non-unique index to unique (first-come-first-served จอง);
 # no-op once the unique index is in place
 _UNIQUE_FIRE_INDEX_SQL = """
@@ -181,7 +185,7 @@ async def lifespan(app: FastAPI):
         # ponytail: held on app.state so the task isn't GC'd mid-flight.
         app.state.boot_ingest = asyncio.create_task(_ingest_tick())
         scheduler.add_job(_ingest_tick, "interval", minutes=settings.INGEST_INTERVAL_MINUTES)
-        scheduler.add_job(_safe_sweep_orphans, "interval", hours=24)
+        scheduler.add_job(_safe_sweep_orphans, "interval", hours=_ORPHAN_SWEEP_HOURS)
         scheduler.start()
     await pg_listener.start()
     # prime the fire registry so the first change after boot sends a minimal
@@ -248,7 +252,7 @@ def read_root():
 # with mobile/assets/layers/base.json — only the raster tile URLs need to match
 # (the offline cache keys tiles by URL), and they change ~never.
 _MAP_STYLE = {
-    "version": 8,
+    "version": _WS_SNAPSHOT_VERSION,
     "sources": {
         "raster-tiles": {
             "type": "raster",
@@ -258,7 +262,7 @@ _MAP_STYLE = {
                 "https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
                 "https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
             ],
-            "tileSize": 256,
+            "tileSize": _MAP_TILE_SIZE,
             "attribution": "&copy; <a href='https://maps.google.com'>Google Maps</a> contributors",
         }
     },

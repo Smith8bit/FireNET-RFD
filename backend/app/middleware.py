@@ -11,8 +11,10 @@ import time
 from collections import defaultdict, deque
 from threading import Lock
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+
+_LOG_EVERY_N_OPS = 1000
 
 # POST endpoints where a flood is almost always abuse. Tuned generously so a real
 # user fumbling a password is never blocked, while a scripted attack is.
@@ -57,7 +59,7 @@ class SlidingWindowRateLimiter:
         # drop keys idle past the window so distinct attacker IPs can't grow the
         # map without bound; runs occasionally, under the lock
         self._ops += 1
-        if self._ops % 1000:
+        if self._ops % _LOG_EVERY_N_OPS:
             return
         stale = [k for k, dq in self._hits.items() if not dq or dq[-1] <= cutoff]
         for k in stale:
@@ -85,7 +87,7 @@ def install_rate_limiting(app: FastAPI, *, limit: int = 10, window_seconds: floa
             if not allowed:
                 return JSONResponse(
                     {"detail": "โปรดรอสักครู่แล้วลองใหม่อีกครั้ง"},
-                    status_code=429,
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     headers={"Retry-After": str(retry_after)},
                 )
         return await call_next(request)

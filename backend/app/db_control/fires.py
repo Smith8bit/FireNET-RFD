@@ -3,9 +3,10 @@ import json
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, TypedDict
 from zoneinfo import ZoneInfo
 
-from geoalchemy2.shape import from_shape
+from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import Point
 from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
@@ -18,11 +19,55 @@ from ..database.models.fire_resolution import FireResolution, FireResolutionImag
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
+from ..database.models.user import User
 from .audit import audit
 from .firefetch import fetch_live_fires
 
 
 _REGIONS_PATH = Path(__file__).resolve().parents[1] / "database" / "seedbag" / "regions_info.json"
+
+
+class FireDetail(TypedDict):
+    id: str
+    name: str | None
+    detected_at: str
+    status: bool
+    expired: bool
+    false_alarm: bool
+    booked: bool
+    appointed: bool
+    lat: float
+    lng: float
+    tumboon: str | None
+    aumper: str | None
+    province: str | None
+    type: str | None
+    satellite: str | None
+
+
+def build_fire_detail(
+    fire: Firespot, booked: bool = True, appointed: bool = False
+) -> FireDetail:
+    """Serialize a Firespot for the officer-facing API (own reserved/resolved fire)."""
+    pt = to_shape(fire.location)
+    detail = fire.detail or {}
+    return {
+        "id": str(fire.id),
+        "name": fire.name,
+        "detected_at": fire.detected_at.isoformat(),
+        "status": fire.status,
+        "expired": fire.expired,
+        "false_alarm": fire.false_alarm,
+        "booked": booked,
+        "appointed": appointed,
+        "lat": pt.y,
+        "lng": pt.x,
+        "tumboon": detail.get("TUMBON"),
+        "aumper": detail.get("AUMPER"),
+        "province": detail.get("PROVINCE"),
+        "type": detail.get("NAME"),
+        "satellite": detail.get("SATELLITE"),
+    }
 
 # the wildfire feed reports detection times in Thai local time
 _INGEST_TZ = ZoneInfo(get_settings().INGEST_TIMEZONE)
@@ -212,10 +257,8 @@ async def get_fires(
     region_path: str | None = None,
     status: bool | None = None,
     on_date: date | None = None,
-    user=None,
-) -> list[dict]:
-    from geoalchemy2.shape import to_shape
-    from ..database.models.region import Region
+    user: User | None = None,
+) -> list[dict[str, Any]]:
     from .permission import user_region_paths
 
     async with async_session_maker() as session:
@@ -319,13 +362,16 @@ async def get_fires(
 
 
 async def get_resolution_history(
-    user=None, limit: int = 20, offset: int = 0,
+    user: User | None = None,
+    limit: int = 20,
+    offset: int = 0,
     false_alarm: bool | None = None,
-    since: datetime | None = None, until: datetime | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
     province: str | None = None,
     search: str | None = None,
-    officer_id=None,
-) -> dict:
+    officer_id: Any = None,
+) -> dict[str, Any]:
     """Resolved fires that have officer evidence, newest first, region-scoped, paged.
     Auto-expired fires have no resolution row, so they don't appear."""
     from .permission import user_region_paths

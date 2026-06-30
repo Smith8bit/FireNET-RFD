@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     RESOLVE_MAX_IMAGES: int = 3
     RESOLVE_MAX_IMAGE_MB: int = 5
     RESOLVE_NOTE_MAX_CHARS: int = 2000
+    # idempotent resolve retry window: a re-submit within this many minutes is success
+    RESOLVE_RETRY_MINUTES: int = 10
+    # upload chunk size for image reads (bounds peak memory to ~this + one chunk per file)
+    IMAGE_CHUNK_BYTES: int = 65536
 
     # Push notifications (Firebase Cloud Messaging, direct via firebase-admin).
     # Until FCM_CREDENTIALS_FILE points at a service-account JSON, sends are
