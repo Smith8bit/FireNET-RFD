@@ -11,7 +11,6 @@ from ..database.models import AuditLog, User
 router = APIRouter()
 
 
-# regional scoping deferred — the trail is superuser-only for now
 @router.get("")
 async def list_audit(
     actor: str | None = Query(None, description="actor username substring"),
@@ -29,10 +28,9 @@ async def list_audit(
     if actor:
         stmt = stmt.where(AuditLog.actor_email.ilike(f"%{actor}%"))
     if action:
-        # a bare category ("fire") matches all of its actions; a full
-        # "fire.reserve" still matches exactly. ponytail: prefix filter
         stmt = stmt.where(
-            AuditLog.action == action if "." in action
+            AuditLog.action == action
+            if "." in action
             else AuditLog.action.like(f"{action}.%")
         )
     if entity_type:
@@ -43,13 +41,18 @@ async def list_audit(
         stmt = stmt.where(AuditLog.at >= since)
     if until:
         stmt = stmt.where(AuditLog.at < until)
-
     total = (
         await session.execute(select(func.count()).select_from(stmt.subquery()))
     ).scalar_one()
     rows = (
-        await session.execute(stmt.order_by(AuditLog.at.desc()).limit(limit).offset(offset))
-    ).scalars().all()
+        (
+            await session.execute(
+                stmt.order_by(AuditLog.at.desc()).limit(limit).offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {
         "total": total,
         "limit": limit,

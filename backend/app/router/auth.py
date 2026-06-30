@@ -1,24 +1,13 @@
-"""Login / refresh / logout for both clients.
-
-Replaces fastapi-users' stock auth routers so login can issue a refresh token
-alongside the access token in one atomic transaction. Two surfaces over the same
-machinery:
-  - /auth/cookie/*  web console — httpOnly access + refresh cookies
-  - /auth/jwt/*     mobile — access + refresh tokens in the JSON body
-
-The refresh cookie is path=/ (like the access cookie) so it reaches the auth
-endpoints regardless of where the app is reverse-proxied. ponytail: scoping it to
-/auth/cookie broke logout/refresh once the app moved under a /firenet/api prefix —
-the browser stopped sending it. Re-scope only via a configured base-path env var,
-never a hardcoded prefix.
-"""
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users.exceptions import UserNotExists
 
 from ..auth.authen import cookie_transport, get_jwt_strategy
-from ..auth.refresh import issue_refresh_token, revoke_refresh_token, rotate_refresh_token
+from ..auth.refresh import (
+    issue_refresh_token,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
 from ..config import get_settings
 from ..database.schemas import RefreshRequest
 from ..db_control.audit import audit
@@ -30,16 +19,19 @@ router = APIRouter()
 REFRESH_COOKIE = "firenet_refresh"
 REFRESH_COOKIE_PATH = "/"
 
-# fastapi-users uses this exact code for a failed credential check; the web/mobile
-# clients map it to a localized message, so keep it identical.
 BAD_CREDENTIALS = "LOGIN_BAD_CREDENTIALS"
 
 
 async def _issue_tokens(session, user) -> tuple[str, str]:
-    """Mint access + refresh tokens, audit the login, and commit — shared by both login routes."""
     access = await get_jwt_strategy().write_token(user)
     refresh = await issue_refresh_token(session, user.id)
-    audit(session, actor=user, action="auth.login", entity_type="user", entity_id=str(user.id))
+    audit(
+        session,
+        actor=user,
+        action="auth.login",
+        entity_type="user",
+        entity_id=str(user.id),
+    )
     await session.commit()
     return access, refresh
 
@@ -64,17 +56,14 @@ async def _authenticate(manager: UserManager, credentials: OAuth2PasswordRequest
 
 
 async def _new_access_for(manager: UserManager, user_id) -> str | None:
-    """Mint a fresh access token for a refresh, re-checking the account is still active."""
     try:
         user = await manager.get(user_id)
     except UserNotExists:
-        return None  # account deleted out from under a live refresh token
+        return None
     if not user.is_active:
         return None
     return await get_jwt_strategy().write_token(user)
 
-
-# --- mobile (bearer) ---------------------------------------------------------
 
 @router.post("/jwt/login", tags=["auth"])
 async def jwt_login(
@@ -97,9 +86,11 @@ async def jwt_refresh(
     access = None
     if rotated is not None:
         access = await _new_access_for(manager, rotated[0])
-    await session.commit()  # persist rotation / reuse-revocation either way
+    await session.commit()
     if rotated is None or access is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN"
+        )
     return {"access_token": access, "refresh_token": rotated[1], "token_type": "bearer"}
 
 
@@ -113,8 +104,6 @@ async def jwt_logout(
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-
-# --- web (cookie) ------------------------------------------------------------
 
 @router.post("/cookie/login", tags=["auth"])
 async def cookie_login(
@@ -136,7 +125,9 @@ async def cookie_refresh(
 ):
     raw = request.cookies.get(REFRESH_COOKIE)
     if not raw:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN"
+        )
     session = manager.user_db.session
     rotated = await rotate_refresh_token(session, raw)
     access = None
@@ -144,7 +135,9 @@ async def cookie_refresh(
         access = await _new_access_for(manager, rotated[0])
     await session.commit()
     if rotated is None or access is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, detail="INVALID_REFRESH_TOKEN"
+        )
     response = await cookie_transport.get_login_response(access)
     _set_refresh_cookie(response, rotated[1])
     return response

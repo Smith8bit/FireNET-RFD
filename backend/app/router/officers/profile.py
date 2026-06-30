@@ -26,7 +26,6 @@ async def update_my_location(
     if body.latitude is not None and body.longitude is not None:
         fo.last_location = from_shape(Point(body.longitude, body.latitude), srid=4326)
     if body.active is not None:
-        # audit only on/off transitions, never routine location pings
         if body.active != fo.active:
             audit(
                 session,
@@ -62,7 +61,6 @@ async def update_my_profile(
     name = body.name.strip()
     if not name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "name required")
-    # name lives on both the region assignment (source of truth) and the officer row
     ur = (
         await session.execute(
             select(UserRegion).where(
@@ -77,7 +75,6 @@ async def update_my_profile(
     await session.execute(
         update(FieldOfficer).where(FieldOfficer.user_id == user.id).values(name=name)
     )
-    # division is optional; only overwrite when the client sends it
     if body.division is not None:
         user.division = body.division.strip() or None
     await session.commit()

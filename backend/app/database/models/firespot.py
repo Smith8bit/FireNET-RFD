@@ -3,7 +3,15 @@ from datetime import datetime
 
 from geoalchemy2 import Geography
 from geoalchemy2.elements import WKBElement
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,19 +21,33 @@ from ..db import Base
 class Firespot(Base):
     __tablename__ = "firespots"
 
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     external_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     detail: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    region_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("regions.id", ondelete="RESTRICT"), nullable=False)
-    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    location: Mapped[WKBElement] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=False)
+    region_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("regions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    location: Mapped[WKBElement] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326), nullable=False
+    )
     status: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # True when status was set by the auto-expiry job rather than an officer
-    expired: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    # True when an officer closed the fire as a false detection (no real fire, no photo evidence)
-    false_alarm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    officer_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("field_officers.id"), nullable=True)
+    expired: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    false_alarm: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    officer_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("field_officers.id"), nullable=True
+    )
     resolve_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (

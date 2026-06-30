@@ -1,5 +1,3 @@
-"""Officer-specific query layer: shared between HTTP routers and WS handlers."""
-
 from typing import TypedDict
 
 from sqlalchemy import or_, select, text
@@ -73,15 +71,12 @@ _OFFICERS_SQL = """
     WHERE u.is_verified = true
 """
 
-# A national/large-region admin must never be handed the whole fleet: cap every
-# officer fetch at OFFICER_MAP_MAX, keeping the freshest (most recently active) rows.
 _OFFICERS_ORDER_CAP = " ORDER BY fo.last_updated DESC NULLS LAST LIMIT :cap"
 
 
 async def fetch_officers(
     session: AsyncSession, user: User, *, limit: int | None = None
 ) -> list[OfficerRow]:
-    """Verified officers scoped to the user's region, capped at OFFICER_MAP_MAX."""
     ttl = settings.OFFICER_ONLINE_TTL_MINUTES
     cap = limit if limit is not None else settings.OFFICER_MAP_MAX
     if user.is_superuser:
@@ -109,9 +104,11 @@ async def fetch_officers(
             "active": m["active"],
             "fire_id": m["fire_id"],
             "last_updated": m["last_updated"],
-            "location": {"latitude": m["latitude"], "longitude": m["longitude"]}
-            if m["latitude"] is not None
-            else None,
+            "location": (
+                {"latitude": m["latitude"], "longitude": m["longitude"]}
+                if m["latitude"] is not None
+                else None
+            ),
             "province_name_th": m["province_name_th"],
             "province_path": m["province_path"],
             "created_at": m["created_at"].isoformat() if m["created_at"] else None,
@@ -121,7 +118,6 @@ async def fetch_officers(
 
 
 async def fetch_pending(session: AsyncSession, user: User) -> list[PendingOfficerRow]:
-    """Unverified officers scoped to the user's region."""
     if user.is_superuser:
         rows = await session.execute(text(_PENDING_SQL + " ORDER BY u.email"))
     else:
@@ -150,7 +146,6 @@ async def fetch_pending(session: AsyncSession, user: User) -> list[PendingOffice
 async def fetch_region_requests(
     session: AsyncSession, user: User
 ) -> list[RegionRequestRow]:
-    """Pending officer region-change requests scoped to the admin's destination province."""
     dest = aliased(Region)
     cur = aliased(Region)
     stmt = (

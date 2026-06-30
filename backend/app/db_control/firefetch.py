@@ -4,10 +4,6 @@ from zoneinfo import ZoneInfo
 
 from ..config import get_settings
 
-
-# The feed's Apache/mod_security setup 403s requests with the default
-# python-requests user-agent, so present browser-like headers (with a Referer
-# pointing at the firemap page the API backs).
 _FETCH_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -19,8 +15,6 @@ _FETCH_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
-# The feed returns no per-hotspot satellite source, so we fetch each satellite
-# separately (one flag on at a time) and tag the records ourselves.
 _SATELLITES = {"snpp": "Suomi NPP", "noaa20": "NOAA-20", "noaa21": "NOAA-21"}
 _FETCH_TIMEOUT_S = 15
 
@@ -51,8 +45,6 @@ def fetch_live_fires() -> list[dict]:
     fires: list[dict] = []
     for sat, label in _SATELLITES.items():
         for f in _fetch_one(sat, start, today, settings):
-            # ponytail: a point seen by two satellites at the same minute/coords
-            # collides on external_id, so only the first satellite's label is kept.
             f["SATELLITE"] = label
             fires.append(f)
     return fires

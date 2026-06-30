@@ -9,7 +9,11 @@ from ...db_control.audit import audit
 from ...db_control.officers import fetch_pending
 from ...db_control.permission import can_manage_officers, has_perm_anywhere
 from ..manager import Connection
-from ._helpers import admin_covers_path, broadcast_admin_refresh, broadcast_officers_update
+from ._helpers import (
+    admin_covers_path,
+    broadcast_admin_refresh,
+    broadcast_officers_update,
+)
 
 logger = logging.getLogger("firenet.officers")
 
@@ -34,7 +38,6 @@ async def handle_verify_officer(
     except (KeyError, ValueError):
         await ws.send_json({"type": "error", "code": "invalid_user_id"})
         return
-
     from sqlalchemy import select
     from ...database.models import Region, UserRegion
 
@@ -42,12 +45,13 @@ async def handle_verify_officer(
         if not await can_manage_officers(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
-
         ur_row = (
             await session.execute(
                 select(Region.path, UserRegion.name)
                 .join(UserRegion, UserRegion.region_id == Region.id)
-                .where(UserRegion.user_id == user_id, UserRegion.role == "field_officer")
+                .where(
+                    UserRegion.user_id == user_id, UserRegion.role == "field_officer"
+                )
             )
         ).one_or_none()
         if ur_row is None:
@@ -58,8 +62,8 @@ async def handle_verify_officer(
         if not await admin_covers_path(admin, province_path, session):
             await ws.send_json({"type": "error", "code": "out_of_scope"})
             return
-
         from ...database.models import User as UserModel
+
         target = await session.get(UserModel, user_id)
         if target is None:
             await ws.send_json({"type": "error", "code": "not_found"})
@@ -76,7 +80,6 @@ async def handle_verify_officer(
             logger.info("created FieldOfficer user=%s", user_id)
         else:
             logger.info("FieldOfficer already exists user=%s", user_id)
-
         audit(
             session,
             actor=admin,
@@ -91,7 +94,6 @@ async def handle_verify_officer(
             },
         )
         await session.commit()
-
     logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
     await broadcast_officers_update(active_connections)

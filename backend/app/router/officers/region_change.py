@@ -20,12 +20,13 @@ async def request_region_change(
 ) -> dict[str, str]:
     province = (
         await session.execute(
-            select(Region).where(Region.code == body.province_code, Region.level == "province")
+            select(Region).where(
+                Region.code == body.province_code, Region.level == "province"
+            )
         )
     ).scalar_one_or_none()
     if province is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid province")
-
     ur = (
         await session.execute(
             select(UserRegion).where(
@@ -38,7 +39,6 @@ async def request_region_change(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
     if ur.region_id == province.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "already in this province")
-
     previous = (
         await session.execute(select(Region).where(Region.id == ur.region_id))
     ).scalar_one_or_none()
@@ -62,7 +62,7 @@ async def request_region_change(
     )
     try:
         await session.commit()
-    except IntegrityError:  # partial unique index: one open request per officer
+    except IntegrityError:
         await session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "a request is already pending")
     return {"id": str(req.id), "status": req.status, "province": province.name_th}

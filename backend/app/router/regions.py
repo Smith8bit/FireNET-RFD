@@ -19,7 +19,6 @@ async def list_regions(
     if user.is_superuser:
         result = await session.execute(select(Region).order_by(Region.path))
         return result.scalars().all()
-
     paths = await user_region_paths(user, session)
     if not paths:
         return []

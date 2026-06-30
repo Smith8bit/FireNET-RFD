@@ -1,6 +1,3 @@
-"""S3/MinIO access for fire-resolution evidence. The minio client is sync, so
-every call is pushed to a thread to keep the event loop free."""
-
 import asyncio
 import json
 from io import BytesIO
@@ -72,13 +69,13 @@ async def list_keys(prefix: str) -> list[str]:
     def _list() -> list[str]:
         return [
             obj.object_name
-            for obj in client().list_objects(settings.S3_BUCKET, prefix=prefix, recursive=True)
+            for obj in client().list_objects(
+                settings.S3_BUCKET, prefix=prefix, recursive=True
+            )
         ]
 
     return await asyncio.to_thread(_list)
 
-
-# ---- image upload utilities ----
 
 IMAGE_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
@@ -88,11 +85,6 @@ IMAGE_EXT: dict[str, str] = {
 
 
 async def read_capped(upload: UploadFile, max_bytes: int) -> bytes:
-    """Read an upload in chunks; raises 400 the moment it exceeds max_bytes.
-
-    Bounds peak memory to roughly max_bytes + one chunk, so a large body is
-    never fully buffered before the size check runs.
-    """
     chunks: list[bytes] = []
     total = 0
     while True:
@@ -107,7 +99,6 @@ async def read_capped(upload: UploadFile, max_bytes: int) -> bytes:
 
 
 def sniff_image(data: bytes) -> str | None:
-    """Identify image type from magic bytes (headers can lie)."""
     if data.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -118,11 +109,6 @@ def sniff_image(data: bytes) -> str | None:
 
 
 def parse_image_gps(image_gps: str | None, count: int) -> list[dict[str, float] | None]:
-    """Parse a JSON GPS coordinate array aligned with uploaded images.
-
-    Returns a list of {latitude, longitude} dicts (one per image) or None
-    for missing/invalid entries. Raises 400 if the JSON itself is malformed.
-    """
     if not image_gps:
         return [None] * count
     try:

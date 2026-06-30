@@ -12,11 +12,6 @@ def audit(
     entity_id: str | None = None,
     detail: dict | None = None,
 ) -> None:
-    """Queue an audit row on the caller's session; the caller's commit makes it atomic.
-
-    actor=None records a scheduled/system job (actor_email='system').
-    Never put secrets (passwords, tokens) in detail.
-    """
     session.add(
         AuditLog(
             actor_id=actor.id if actor is not None else None,

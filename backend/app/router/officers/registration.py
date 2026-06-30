@@ -20,20 +20,26 @@ async def register_officer(
 ) -> UserRead:
     province = (
         await session.execute(
-            select(Region).where(Region.code == body.province_code, Region.level == "province")
+            select(Region).where(
+                Region.code == body.province_code, Region.level == "province"
+            )
         )
     ).scalar_one_or_none()
     if province is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid province")
     try:
         user = await manager.create(
-            UserCreate(email=body.username, password=body.password, division=body.division),
-            safe=True,  # forces is_verified=False and is_superuser=False
+            UserCreate(
+                email=body.username, password=body.password, division=body.division
+            ),
+            safe=True,
         )
     except UserAlreadyExists:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "REGISTER_USER_ALREADY_EXISTS")
     except InvalidPasswordException as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"INVALID_PASSWORD: {e.reason}")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"INVALID_PASSWORD: {e.reason}"
+        )
     session.add(
         UserRegion(
             user_id=user.id,
@@ -51,7 +57,6 @@ async def username_available(
     username: str,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, bool]:
-    # username is stored as User.email; match case-insensitively like fastapi-users does on create
     exists = (
         await session.execute(
             select(User.id).where(func.lower(User.email) == username.strip().lower())

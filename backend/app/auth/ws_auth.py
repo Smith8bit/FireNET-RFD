@@ -11,11 +11,9 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
 
 async def get_user_from_ws(websocket: WebSocket) -> Optional[User]:
-    """Verify the firenet_auth cookie on a WS handshake and return the User, or None."""
     token = websocket.cookies.get("firenet_auth")
     if not token:
         return None
-
     strategy = get_jwt_strategy()
     session: AsyncSession
     async with async_session_maker() as session:

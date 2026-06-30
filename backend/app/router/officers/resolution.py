@@ -9,7 +9,13 @@ from ... import storage
 from ...auth.authen import current_active_user
 from ...config import get_settings
 from ...database import get_async_session
-from ...database.models import FieldOfficer, FireResolution, FireResolutionImage, Firespot, User
+from ...database.models import (
+    FieldOfficer,
+    FireResolution,
+    FireResolutionImage,
+    Firespot,
+    User,
+)
 from ...database.schemas import FireFalseReport
 from ...db_control.audit import audit
 from ...db_control.fires import FireDetail, build_fire_detail, get_resolution_history
@@ -18,18 +24,19 @@ from ._helpers import get_field_officer
 settings = get_settings()
 router = APIRouter()
 
-# ponytail: a re-submit within this window (flaky field network) is treated as success
 _RESOLVE_RETRY_WINDOW = timedelta(minutes=settings.RESOLVE_RETRY_MINUTES)
 
 
-async def _find_recent_resolve(session: AsyncSession, fo: FieldOfficer) -> FireDetail | None:
-    """Return a prior successful resolve within the retry window, or None."""
+async def _find_recent_resolve(
+    session: AsyncSession, fo: FieldOfficer
+) -> FireDetail | None:
     recent = (
         await session.execute(
             select(FireResolution)
             .where(
                 FireResolution.officer_id == fo.id,
-                FireResolution.created_at >= datetime.now(timezone.utc) - _RESOLVE_RETRY_WINDOW,
+                FireResolution.created_at
+                >= datetime.now(timezone.utc) - _RESOLVE_RETRY_WINDOW,
             )
             .order_by(FireResolution.created_at.desc())
             .limit(1)
@@ -51,7 +58,9 @@ async def resolve_my_fire(
     session: AsyncSession = Depends(get_async_session),
 ) -> FireDetail:
     if not images:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "at least one photo is required")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "at least one photo is required"
+        )
     if len(images) > settings.RESOLVE_MAX_IMAGES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "too many photos")
     if note is not None and len(note) > settings.RESOLVE_NOTE_MAX_CHARS:
@@ -62,22 +71,17 @@ async def resolve_my_fire(
     if not fo.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
     if fo.fire_id is None:
-        # idempotent retry: the previous attempt may have committed before the
-        # response was lost — return that resolution instead of failing
         retry = await _find_recent_resolve(session, fo)
         if retry is not None:
             return retry
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no reserved fire")
-
     fire = await session.get(Firespot, fo.fire_id)
     if fire is None:
         fo.fire_id = None
         await session.commit()
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
-
-    # validate and read all images before touching storage or the DB
     max_bytes = settings.RESOLVE_MAX_IMAGE_MB * 1024 * 1024
-    prepared: list[tuple[str, bytes, str]] = []  # (key, data, content_type)
+    prepared: list[tuple[str, bytes, str]] = []
     day = f"{datetime.now(timezone.utc):%Y%m%d}"
     for upload in images:
         data = await storage.read_capped(upload, max_bytes)
@@ -86,8 +90,6 @@ async def resolve_my_fire(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported image type")
         key = f"resolutions/{day}/{fire.id}/{uuid.uuid4().hex}.{storage.IMAGE_EXT[content_type]}"
         prepared.append((key, data, content_type))
-
-    # upload first; the DB transaction only commits if all objects are stored
     stored: list[str] = []
     try:
         for key, data, content_type in prepared:
@@ -97,7 +99,6 @@ async def resolve_my_fire(
         await storage.remove_objects(stored)
         print(f"[resolve] evidence upload failed: {exc}")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "evidence storage unavailable")
-
     resolution = FireResolution(
         fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None
     )
@@ -123,14 +124,20 @@ async def resolve_my_fire(
         action="fire.resolve",
         entity_type="fire",
         entity_id=str(fire.id),
-        detail={"name": fire.name, "resolution_id": str(resolution.id), "images": len(prepared)},
+        detail={
+            "name": fire.name,
+            "resolution_id": str(resolution.id),
+            "images": len(prepared),
+        },
     )
     try:
         await session.commit()
     except Exception:
         await session.rollback()
         await storage.remove_objects(stored)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "could not record resolution")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "could not record resolution"
+        )
     return build_fire_detail(fire, booked=False)
 
 
@@ -143,24 +150,19 @@ async def false_report_my_fire(
     note = body.note
     if note is not None and len(note) > settings.RESOLVE_NOTE_MAX_CHARS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "note too long")
-
     fo = await get_field_officer(user, session)
     if not fo.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
     if fo.fire_id is None:
-        # idempotent retry: a prior attempt may have committed before its response was lost
         retry = await _find_recent_resolve(session, fo)
         if retry is not None:
             return retry
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no reserved fire")
-
     fire = await session.get(Firespot, fo.fire_id)
     if fire is None:
         fo.fire_id = None
         await session.commit()
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
-
-    # records who reported it false and why; no images, unlike a real resolution
     resolution = FireResolution(
         fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None
     )
@@ -196,4 +198,6 @@ async def my_resolutions(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
     fo = await get_field_officer(user, session)
-    return await get_resolution_history(user=user, limit=limit, offset=offset, officer_id=fo.id)
+    return await get_resolution_history(
+        user=user, limit=limit, offset=offset, officer_id=fo.id
+    )

@@ -10,7 +10,11 @@ from ...database.models import Region, RegionChangeRequest, User, UserRegion
 from ...database.schemas import UserRole
 from ...db_control.audit import audit
 from ...db_control.officers import fetch_region_requests
-from ...db_control.permission import can_manage_officers, is_admin_user, update_user_region
+from ...db_control.permission import (
+    can_manage_officers,
+    is_admin_user,
+    update_user_region,
+)
 from ...db_control.push import send_push
 from ..manager import Connection
 from ._helpers import admin_covers_path, broadcast_admin_refresh
@@ -33,37 +37,30 @@ async def handle_decide_region_request(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
-    """Approve (move the officer's province) or reject a region-change request."""
     try:
         request_id = uuid.UUID(data["request_id"])
     except (KeyError, ValueError):
         await ws.send_json({"type": "error", "code": "invalid_request"})
         return
-
     action = data.get("action")
     if action not in ("approve", "reject"):
         await ws.send_json({"type": "error", "code": "invalid_action"})
         return
-
     async with async_session_maker() as session:
         if not await can_manage_officers(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
-
         req = await session.get(RegionChangeRequest, request_id)
         if req is None or req.status != "pending":
             await ws.send_json({"type": "error", "code": "not_found"})
             return
-
         dest = await session.get(Region, req.requested_region_id)
         if dest is None:
             await ws.send_json({"type": "error", "code": "invalid_region"})
             return
-        # dispatcher must cover the destination province (they accept the officer)
         if not await admin_covers_path(admin, dest.path, session):
             await ws.send_json({"type": "error", "code": "out_of_scope"})
             return
-
         ur = (
             await session.execute(
                 select(UserRegion).where(
@@ -75,10 +72,8 @@ async def handle_decide_region_request(
         if ur is None:
             await ws.send_json({"type": "error", "code": "not_found"})
             return
-
-        old_region_id = ur.region_id  # capture before any move
+        old_region_id = ur.region_id
         if action == "approve":
-            # region_id is part of the composite PK — move via UPDATE, not ORM identity
             await update_user_region(
                 session,
                 user_id=req.user_id,
@@ -86,7 +81,6 @@ async def handle_decide_region_request(
                 ur_obj=ur,
                 region_id=dest.id,
             )
-
         req.status = "approved" if action == "approve" else "rejected"
         req.decided_at = datetime.now(timezone.utc)
         req.decided_by = admin.id
@@ -117,18 +111,16 @@ async def handle_decide_region_request(
             detail=detail,
         )
         from sqlalchemy.exc import IntegrityError
+
         try:
             await session.commit()
         except IntegrityError:
             await session.rollback()
             await ws.send_json({"type": "error", "code": "conflict"})
             return
-
         notify_user_id = req.user_id
         decided_status = req.status
         province_name = dest.name_th
-
-    # tell the officer the outcome — best-effort, outside the decision transaction
     approved = decided_status == "approved"
     async with async_session_maker() as session:
         await send_push(
@@ -143,8 +135,9 @@ async def handle_decide_region_request(
             data={"type": "region_change", "status": decided_status},
         )
         await session.commit()
-
-    logger.info("region request %s %s by admin=%s", request_id, decided_status, admin.id)
+    logger.info(
+        "region request %s %s by admin=%s", request_id, decided_status, admin.id
+    )
     await ws.send_json(
         {
             "type": "region_request_decided",
@@ -154,5 +147,4 @@ async def handle_decide_region_request(
     )
     await handle_list_region_requests(ws, admin)
     if action == "approve":
-        # the officer's province changed — refresh officer/pending lists for all admins
         await broadcast_admin_refresh(active_connections, include_pending=True)

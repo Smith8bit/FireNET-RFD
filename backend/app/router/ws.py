@@ -28,7 +28,7 @@ from ..ws.officers import (
 router = APIRouter()
 logger = logging.getLogger("firenet.ws")
 
-_WS_POLICY_VIOLATION = 1008  # RFC 6455 §7.4.1 — server-side policy rejection
+_WS_POLICY_VIOLATION = 1008
 
 
 @router.websocket("/ws")
@@ -37,13 +37,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     if user is None:
         await ws.close(code=_WS_POLICY_VIOLATION)
         return
-    # the web app is admin/dispatcher only; field officers use the mobile app
     async with async_session_maker() as session:
         if not await is_admin_user(user, session):
             await ws.close(code=_WS_POLICY_VIOLATION)
             return
-        # resolve the visibility scope once, here, so recurring broadcasts can
-        # bucket by it instead of re-deriving paths per connection on every tick
         paths = await user_region_paths(user, session)
         can_view_officers = await has_perm_anywhere(user, "officers.view", session)
     conn = await manager.connect(ws, user, paths, can_view_officers)
@@ -52,7 +49,6 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             try:
                 data = await ws.receive_json()
             except ValueError:
-                # malformed JSON: tell the client, keep the connection
                 await ws.send_json({"type": "error", "code": "invalid_json"})
                 continue
             match data.get("type"):
@@ -85,10 +81,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 case "list_officers_MAP":
                     await handle_list_officers_MAP(ws, user)
                 case "resync_fires":
-                    # client detected a delta version gap: re-baseline its scope
                     await manager.send_snapshot(conn)
                 case _:
-                    logger.warning("ws user=%s unknown message type=%s", user.id, data.get("type"))
+                    logger.warning(
+                        "ws user=%s unknown message type=%s", user.id, data.get("type")
+                    )
     except WebSocketDisconnect:
         pass
     except Exception as exc:

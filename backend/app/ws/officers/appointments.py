@@ -22,27 +22,20 @@ async def handle_appoint_officer(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
-    """Admin appoints a fire to a specific field officer.
-
-    Same first-come-first-served invariants apply as self-reserve: a fire is
-    held by at most one officer, an officer holds at most one unresolved fire.
-    On success the officer is notified via FCM.
-    """
     try:
         fire_id = uuid.UUID(data["fire_id"])
         officer_id = uuid.UUID(data["officer_id"])
     except (KeyError, ValueError):
         await ws.send_json({"type": "error", "code": "invalid_request"})
         return
-
     notify_user_id = None
     fire_name = None
     async with async_session_maker() as session:
         from ...db_control.permission import can_manage_officers
+
         if not await can_manage_officers(admin, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
-
         fire = await session.get(Firespot, fire_id)
         if fire is None:
             await ws.send_json({"type": "error", "code": "fire_not_found"})
@@ -50,19 +43,18 @@ async def handle_appoint_officer(
         if fire.status:
             await ws.send_json({"type": "error", "code": "fire_resolved"})
             return
-
         fire_path = (
-            await session.execute(select(Region.path).where(Region.id == fire.region_id))
+            await session.execute(
+                select(Region.path).where(Region.id == fire.region_id)
+            )
         ).scalar_one()
         if not await admin_covers_path(admin, fire_path, session):
             await ws.send_json({"type": "error", "code": "out_of_scope"})
             return
-
         officer = await session.get(FieldOfficer, officer_id)
         if officer is None:
             await ws.send_json({"type": "error", "code": "officer_not_found"})
             return
-
         officer_path = (
             await session.execute(
                 select(Region.path)
@@ -73,17 +65,20 @@ async def handle_appoint_officer(
                 )
             )
         ).scalar_one_or_none()
-        if officer_path is None or not await admin_covers_path(admin, officer_path, session):
+        if officer_path is None or not await admin_covers_path(
+            admin, officer_path, session
+        ):
             await ws.send_json({"type": "error", "code": "out_of_scope"})
             return
-
-        # idempotent if the officer already holds this fire
         if officer.fire_id == fire_id:
             await ws.send_json(
-                {"type": "officer_appointed", "fire_id": str(fire_id), "officer_id": str(officer_id)}
+                {
+                    "type": "officer_appointed",
+                    "fire_id": str(fire_id),
+                    "officer_id": str(officer_id),
+                }
             )
             return
-
         holder = (
             await session.execute(
                 select(FieldOfficer.id).where(
@@ -99,9 +94,8 @@ async def handle_appoint_officer(
             if held is not None and not held.status:
                 await ws.send_json({"type": "error", "code": "officer_busy"})
                 return
-
         officer.fire_id = fire_id
-        officer.appointed = True  # dispatcher-assigned vs. self-reserved
+        officer.appointed = True
         audit(
             session,
             actor=admin,
@@ -116,17 +110,15 @@ async def handle_appoint_officer(
             },
         )
         from sqlalchemy.exc import IntegrityError
+
         try:
             await session.commit()
         except IntegrityError:
             await session.rollback()
             await ws.send_json({"type": "error", "code": "fire_already_booked"})
             return
-
         notify_user_id = officer.user_id
         fire_name = fire.name
-
-    # push is best-effort and runs outside the appointment transaction
     if notify_user_id is not None:
         async with async_session_maker() as session:
             await send_push(
@@ -137,10 +129,15 @@ async def handle_appoint_officer(
                 data={"type": "fire_appointment", "fire_id": str(fire_id)},
             )
             await session.commit()
-
-    logger.info("fire appointed fire=%s officer=%s by admin=%s", fire_id, officer_id, admin.id)
+    logger.info(
+        "fire appointed fire=%s officer=%s by admin=%s", fire_id, officer_id, admin.id
+    )
     await ws.send_json(
-        {"type": "officer_appointed", "fire_id": str(fire_id), "officer_id": str(officer_id)}
+        {
+            "type": "officer_appointed",
+            "fire_id": str(fire_id),
+            "officer_id": str(officer_id),
+        }
     )
 
 
@@ -150,18 +147,11 @@ async def handle_cancel_booking(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
-    """Release a held fire from its officer.
-
-    Who may cancel depends on how it was booked:
-      - self-reserved: any console user.
-      - dispatcher-appointed: only fire.appoint, scoped to the fire's region.
-    """
     try:
         fire_id = uuid.UUID(data["fire_id"])
     except (KeyError, ValueError):
         await ws.send_json({"type": "error", "code": "invalid_request"})
         return
-
     notify_user_id = None
     fire_name = None
     async with async_session_maker() as session:
@@ -173,26 +163,28 @@ async def handle_cancel_booking(
         if officer is None:
             await ws.send_json({"type": "error", "code": "not_booked"})
             return
-
         fire = await session.get(Firespot, fire_id)
         fire_name = fire.name if fire is not None else None
 
         if officer.appointed:
-            # dispatcher-appointed: needs fire.appoint within the fire's region
-            fire_path = None if fire is None else (
-                await session.execute(
-                    select(Region.path).where(Region.id == fire.region_id)
-                )
-            ).scalar_one_or_none()
-            if fire_path is None or not await has_perm(user, "fire.appoint", fire_path, session):
+            fire_path = (
+                None
+                if fire is None
+                else (
+                    await session.execute(
+                        select(Region.path).where(Region.id == fire.region_id)
+                    )
+                ).scalar_one_or_none()
+            )
+            if fire_path is None or not await has_perm(
+                user, "fire.appoint", fire_path, session
+            ):
                 await ws.send_json({"type": "error", "code": "forbidden"})
                 return
         else:
-            # self-reserved: anyone with console access may cancel
             if not await is_admin_user(user, session):
                 await ws.send_json({"type": "error", "code": "forbidden"})
                 return
-
         notify_user_id = officer.user_id
         officer.fire_id = None
         officer.appointed = False
@@ -210,7 +202,6 @@ async def handle_cancel_booking(
             },
         )
         await session.commit()
-
     if notify_user_id is not None:
         async with async_session_maker() as session:
             await send_push(
@@ -225,6 +216,5 @@ async def handle_cancel_booking(
                 data={"type": "fire_cancelled", "fire_id": str(fire_id)},
             )
             await session.commit()
-
     logger.info("fire booking cancelled fire=%s by user=%s", fire_id, user.id)
     await ws.send_json({"type": "booking_cancelled", "fire_id": str(fire_id)})

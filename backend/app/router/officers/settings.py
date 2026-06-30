@@ -17,13 +17,11 @@ _LOCATION_POLL_KEY = "location_poll_minutes"
 
 
 def _effective_poll_minutes(raw: str | None) -> float:
-    """Clamp the stored (or default) poll cadence to the configured [MIN, MAX] window.
-
-    ponytail: floor and ceiling kept 1 min apart (1–10 min) so a late Doze tick
-    still beats the 20-min officer TTL — see LOCATION_POLL_MAX_MINUTES in config.
-    """
     minutes = float(raw) if raw is not None else settings.LOCATION_POLL_DEFAULT_MINUTES
-    return min(max(minutes, settings.LOCATION_POLL_MIN_MINUTES), settings.LOCATION_POLL_MAX_MINUTES)
+    return min(
+        max(minutes, settings.LOCATION_POLL_MIN_MINUTES),
+        settings.LOCATION_POLL_MAX_MINUTES,
+    )
 
 
 async def _location_poll_minutes(session: AsyncSession) -> float:
@@ -51,13 +49,13 @@ async def set_location_poll_interval(
 ) -> dict[str, float]:
     if not user.is_superuser:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "superuser only")
-    # store raw value (read-time clamping preserves intent if MIN/MAX ever change),
-    # but audit + return the effective value so the trail matches what officers get
     effective = _effective_poll_minutes(str(body.minutes))
     await session.execute(
         insert(AppSetting)
         .values(key=_LOCATION_POLL_KEY, value=str(body.minutes))
-        .on_conflict_do_update(index_elements=["key"], set_={"value": str(body.minutes)})
+        .on_conflict_do_update(
+            index_elements=["key"], set_={"value": str(body.minutes)}
+        )
     )
     audit(
         session,

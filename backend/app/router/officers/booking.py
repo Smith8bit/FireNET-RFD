@@ -7,7 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...auth.authen import current_active_user
 from ...database import get_async_session
-from ...database.models import FieldOfficer, FireResolution, Firespot, Region, User, UserRegion
+from ...database.models import (
+    FieldOfficer,
+    FireResolution,
+    Firespot,
+    Region,
+    User,
+    UserRegion,
+)
 from ...database.schemas import FireAssign, UserRole
 from ...db_control.audit import audit
 from ...db_control.fires import FireDetail, build_fire_detail
@@ -18,7 +25,6 @@ router = APIRouter()
 
 _LEADERBOARD_LIMIT = 50
 
-
 @router.patch("/me/fire", status_code=status.HTTP_200_OK)
 async def reserve_fire(
     body: FireAssign,
@@ -27,10 +33,10 @@ async def reserve_fire(
 ) -> FireDetail | None:
     fo = await get_field_officer(user, session)
     fire = None
-    # releasing a reservation: a dispatcher-appointed fire can only be cancelled
-    # by a dispatcher (web console), not by the officer themselves
     if body.fire_id is None and fo.fire_id is not None and fo.appointed:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "appointed fire, dispatcher-only cancel")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "appointed fire, dispatcher-only cancel"
+        )
     if body.fire_id is not None:
         if not fo.active:
             raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
@@ -38,10 +44,14 @@ async def reserve_fire(
         if fire is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
         region_path = (
-            await session.execute(select(Region.path).where(Region.id == fire.region_id))
+            await session.execute(
+                select(Region.path).where(Region.id == fire.region_id)
+            )
         ).scalar_one()
         if not await fire_visible(user, str(region_path), session):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "fire outside your assigned region")
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "fire outside your assigned region"
+            )
         if fire.status:
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already resolved")
         if fo.fire_id is not None and fo.fire_id != body.fire_id:
@@ -61,7 +71,7 @@ async def reserve_fire(
             raise HTTPException(status.HTTP_409_CONFLICT, "fire already reserved")
     previous_fire_id = fo.fire_id
     fo.fire_id = body.fire_id
-    fo.appointed = False  # self-reserve (or clear) is never a dispatcher appointment
+    fo.appointed = False
     if body.fire_id is not None:
         if body.fire_id != previous_fire_id:
             audit(
@@ -118,15 +128,15 @@ async def my_leaderboard(
         )
         .join(FireResolution, FireResolution.officer_id == FieldOfficer.id)
         .join(Firespot, Firespot.id == FireResolution.fire_id)
-        # rank by the officer's *current* region, not the fire's — a reassigned
-        # officer moves to their new province's board, carrying past resolutions
         .join(
             UserRegion,
             (UserRegion.user_id == FieldOfficer.user_id)
             & (UserRegion.role == UserRole.FIELD_OFFICER),
         )
         .join(Region, Region.id == UserRegion.region_id)
-        .where(Firespot.false_alarm.is_(False), FireResolution.created_at >= month_start)
+        .where(
+            Firespot.false_alarm.is_(False), FireResolution.created_at >= month_start
+        )
         .group_by(FieldOfficer.id, FieldOfficer.name)
         .order_by(func.count(FireResolution.id).desc())
         .limit(_LEADERBOARD_LIMIT)

@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import storage
 from ..auth.authen import current_active_user
 from ..database import get_async_session
-from ..database.models import FieldOfficer, FireResolution, FireResolutionImage, Firespot, Region, User
+from ..database.models import (
+    FieldOfficer,
+    FireResolution,
+    FireResolutionImage,
+    Firespot,
+    Region,
+    User,
+)
 from ..db_control.fires import get_fires, get_resolution_history
 from ..db_control.permission import fire_visible, has_perm_anywhere
 
@@ -32,18 +39,25 @@ async def list_resolutions(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    # console fire-resolution history is its own permission, distinct from the
-    # live fire feed (fires.view) — region scope is still applied inside the query
     if not await has_perm_anywhere(user, "fires.history", session):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "missing fires.history permission")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "missing fires.history permission"
+        )
     return await get_resolution_history(
-        user=user, limit=limit, offset=offset,
-        false_alarm=false_alarm, since=since, until=until, province=province,
+        user=user,
+        limit=limit,
+        offset=offset,
+        false_alarm=false_alarm,
+        since=since,
+        until=until,
+        province=province,
         search=search,
     )
 
 
-async def _visible_fire_or_404(fire_id: uuid.UUID, user: User, session: AsyncSession) -> Firespot:
+async def _visible_fire_or_404(
+    fire_id: uuid.UUID, user: User, session: AsyncSession
+) -> Firespot:
     fire = await session.get(Firespot, fire_id)
     if fire is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
@@ -51,11 +65,12 @@ async def _visible_fire_or_404(fire_id: uuid.UUID, user: User, session: AsyncSes
         await session.execute(select(Region.path).where(Region.id == fire.region_id))
     ).scalar_one()
     if not await fire_visible(user, str(region_path), session):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "fire outside your assigned region")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "fire outside your assigned region"
+        )
     return fire
 
 
-# ---- resolution evidence (note + photos) for a resolved fire ----
 @router.get("/{fire_id}/resolution")
 async def get_fire_resolution(
     fire_id: uuid.UUID,
@@ -64,24 +79,32 @@ async def get_fire_resolution(
 ):
     await _visible_fire_or_404(fire_id, user, session)
     resolution = (
-        await session.execute(select(FireResolution).where(FireResolution.fire_id == fire_id))
+        await session.execute(
+            select(FireResolution).where(FireResolution.fire_id == fire_id)
+        )
     ).scalar_one_or_none()
     if resolution is None:
-        return None  # unresolved, or auto-expired
+        return None
     officer_name = None
     if resolution.officer_id is not None:
         officer_name = (
             await session.execute(
-                select(FieldOfficer.name).where(FieldOfficer.id == resolution.officer_id)
+                select(FieldOfficer.name).where(
+                    FieldOfficer.id == resolution.officer_id
+                )
             )
         ).scalar_one_or_none()
     images = (
-        await session.execute(
-            select(FireResolutionImage)
-            .where(FireResolutionImage.resolution_id == resolution.id)
-            .order_by(FireResolutionImage.created_at)
+        (
+            await session.execute(
+                select(FireResolutionImage)
+                .where(FireResolutionImage.resolution_id == resolution.id)
+                .order_by(FireResolutionImage.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "id": str(resolution.id),
         "note": resolution.note,
@@ -100,8 +123,6 @@ async def get_fire_resolution(
     }
 
 
-# images are served through the API (not presigned URLs) so the same region
-# scoping applies to evidence reads as to everything else
 @router.get("/{fire_id}/images/{image_id}")
 async def get_fire_image(
     fire_id: uuid.UUID,
@@ -115,24 +136,30 @@ async def get_fire_image(
     row = (
         await session.execute(
             select(FireResolutionImage, FireResolution.officer_id)
-            .join(FireResolution, FireResolution.id == FireResolutionImage.resolution_id)
-            .where(FireResolution.fire_id == fire_id, FireResolutionImage.id == image_id)
+            .join(
+                FireResolution, FireResolution.id == FireResolutionImage.resolution_id
+            )
+            .where(
+                FireResolution.fire_id == fire_id, FireResolutionImage.id == image_id
+            )
         )
     ).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "image not found")
     image, officer_id = row
-    # access: visible in the viewer's current region, or the officer who resolved it —
-    # history follows a reassigned officer, but the fire's region may no longer be theirs
     region_path = (
         await session.execute(select(Region.path).where(Region.id == fire.region_id))
     ).scalar_one()
     if not await fire_visible(user, str(region_path), session):
         my_officer_id = (
-            await session.execute(select(FieldOfficer.id).where(FieldOfficer.user_id == user.id))
+            await session.execute(
+                select(FieldOfficer.id).where(FieldOfficer.user_id == user.id)
+            )
         ).scalar_one_or_none()
         if my_officer_id != officer_id:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "fire outside your assigned region")
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "fire outside your assigned region"
+            )
     try:
         data = await storage.get_object(image.object_key)
     except Exception as exc:
