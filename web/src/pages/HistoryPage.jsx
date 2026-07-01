@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { API_URL, apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { useRegions } from '../lib/useRegions'
 
 const PAGE_SIZE = 20
 
@@ -17,28 +18,13 @@ export default function HistoryPage() {
   const [page, setPage] = useState(0)
   const [kind, setKind] = useState('') // '' = all, 'false' = real fire, 'true' = false alarm
   const [province, setProvince] = useState('') // '' = all provinces (matched by Thai name)
-  const [provinces, setProvinces] = useState([]) // dropdown options, Thai province names
+  const { provinces: provinceRegions } = useRegions() // dropdown options, region-scoped to the viewer
+  const provinces = useMemo(() => (provinceRegions ?? []).map((p) => p.name_th), [provinceRegions])
   const [onDate, setOnDate] = useState('')
   const [searchInput, setSearchInput] = useState('') // raw text in the box
   const [search, setSearch] = useState('') // committed query (fire/officer name, location)
   const [error, setError] = useState(null)
   const [reload, setReload] = useState(0)
-
-  // province filter options, region-scoped to the viewer by the backend
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await apiFetch('/regions/provinces')
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (!cancelled) setProvinces(data.map((p) => p.name_th))
-      } catch (e) {
-        console.warn('[HistoryPage] provinces load failed:', e)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [])
 
   useEffect(() => {
     let cancelled = false

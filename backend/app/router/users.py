@@ -17,11 +17,25 @@ from ..auth.authen import current_active_user, current_superuser
 from ..auth.refresh import revoke_all_for_user
 from ..database import get_async_session
 from ..database.models import Region, RefreshToken, User, UserRegion
+from ..database.schemas import UserRole
 from ..db_control.audit import audit
 from ..db_control.permission import is_admin_user, is_field_officer, user_permissions
 from ..db_control.region_view import region_view
 
 router = APIRouter()
+
+# Highest-privilege role wins when a user holds several across regions.
+_ROLE_RANK = (UserRole.ADMIN, UserRole.DISPATCHER, UserRole.FIELD_OFFICER)
+
+
+def _primary_role(is_superuser: bool, roles: list[str] | None) -> str | None:
+    """Pick the single role to display for a user row (superuser ⇒ admin)."""
+    if is_superuser:
+        return UserRole.ADMIN
+    for r in _ROLE_RANK:
+        if roles and r in roles:
+            return r
+    return None
 
 
 @router.get("/me/profile")
@@ -112,7 +126,21 @@ async def list_users(
         .subquery()
     )
     n_col = func.coalesce(live.c.n, 0)
-    stmt = select(User, n_col).outerjoin(live, live.c.user_id == User.id)
+    # Aggregate each user's region-roles (a user may hold several across regions)
+    # so the list can show a role without an N+1 lookup per row.
+    roles_sq = (
+        select(
+            UserRegion.user_id,
+            func.array_agg(func.distinct(UserRegion.role)).label("roles"),
+        )
+        .group_by(UserRegion.user_id)
+        .subquery()
+    )
+    stmt = (
+        select(User, n_col, roles_sq.c.roles)
+        .outerjoin(live, live.c.user_id == User.id)
+        .outerjoin(roles_sq, roles_sq.c.user_id == User.id)
+    )
     if q:
         like = f"%{q.strip().lower()}%"
         stmt = stmt.where(
@@ -157,12 +185,13 @@ async def list_users(
                 "id": str(u.id),
                 "username": u.email,
                 "division": u.division,
+                "role": _primary_role(u.is_superuser, roles),
                 "is_active": u.is_active,
                 "is_superuser": u.is_superuser,
                 "is_verified": u.is_verified,
                 "active_sessions": n,
             }
-            for u, n in rows
+            for u, n, roles in rows
         ],
     }
 

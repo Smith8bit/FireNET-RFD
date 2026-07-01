@@ -7,10 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-# Absolute import (not `.storage`): the app is launched with this package's own directory
-# on sys.path (e.g. `uvicorn main:app` from within backend/app), unlike the rest of the
-# submodules below which are imported relatively as part of the `app` package.
-import storage
+from . import storage
 from .auth.authen import fastapi_users
 from .config import get_settings
 from .middleware import install_rate_limiting

@@ -10,7 +10,7 @@ import { useMapSelection } from '../lib/stateStore'
 const FIRES_SOURCE = 'fires'
 const FIRES_LAYER = 'fire-circles'
 
-// same palette as the mobile app's fire states
+// same palette as the mobile app's fire states (mirrored in MapViewPage's legend)
 const FIRE_COLORS = {
     resolved: '#d1d5dc', // ดับแล้ว
     booked: '#facc15', // ถูกเจ้าหน้าที่จอง

@@ -6,6 +6,9 @@ import { apiFetch, INPUT_CLS } from '../lib/shared'
 
 const PAGE_SIZE = 20
 
+// backend role strings → Thai labels (matches the app's vocabulary elsewhere)
+const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dispatcher: 'ผู้ดูแล', field_officer: 'เจ้าหน้าที่' }
+
 // Superuser-only console for revoking account access. "Revoke" suspends the
 // account and kills its live sessions (refresh tokens); "restore" re-enables it.
 export default function UsersPage() {
@@ -159,11 +162,12 @@ export default function UsersPage() {
               <table className="w-full table-fixed text-left border-collapse">
                 <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
                   <tr className="text-accent text-sm">
-                    <th className="px-3 py-2 font-medium w-[32%]">ชื่อผู้ใช้</th>
-                    <th className="px-3 py-2 font-medium w-[26%]">สังกัด</th>
-                    <th className="px-3 py-2 font-medium w-[14%]">เซสชัน</th>
+                    <th className="px-3 py-2 font-medium w-[28%]">ชื่อผู้ใช้</th>
+                    <th className="px-3 py-2 font-medium w-[20%]">สังกัด</th>
+                    <th className="px-3 py-2 font-medium w-[14%]">บทบาท</th>
+                    <th className="px-3 py-2 font-medium w-[12%]">เซสชัน</th>
                     <th className="px-3 py-2 font-medium w-[14%]">สถานะ</th>
-                    <th className="px-3 py-2 font-medium w-[14%]"></th>
+                    <th className="px-3 py-2 font-medium w-[12%]"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -178,6 +182,7 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td title={u.division || '—'} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{u.division || '—'}</td>
+                      <td className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{ROLE_TH[u.role] ?? '—'}</td>
                       <td className="px-3 py-2.5 text-sm text-gray-600">{u.active_sessions}</td>
                       <td className="px-3 py-2.5">
                         <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
