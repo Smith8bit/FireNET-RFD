@@ -7,12 +7,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+# Absolute import (not `.storage`): the app is launched with this package's own directory
+# on sys.path (e.g. `uvicorn main:app` from within backend/app), unlike the rest of the
+# submodules below which are imported relatively as part of the `app` package.
+import storage
 from .auth.authen import fastapi_users
 from .config import get_settings
 from .middleware import install_rate_limiting
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
-from . import storage
 from .database.seed import run_all as run_seed
 from .db_control.fires import expire_old_fires, sweep_orphan_images, update_fires
 from .router.audit import router as audit_router
@@ -27,8 +30,6 @@ from .ws.pg_listener import pg_listener
 
 settings = get_settings()
 
-# App logs go through the stdlib logging module (levels, no PII): request-time
-# code logs ids, never raw emails — emails belong only in the audit_log.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -37,16 +38,18 @@ logger = logging.getLogger("firenet")
 
 scheduler = AsyncIOScheduler(timezone=settings.INGEST_TIMEZONE)
 
-# A fixed key for the bootstrap advisory lock. Workers/replicas starting at once
-# would otherwise race the idempotent DDL below (CREATE INDEX, triggers,
-# create_all) into a deadlock; a transaction-level advisory lock serializes them
-# and is released automatically when the bootstrap transaction commits. The same
-# key is reused by the pg_listener trigger setup. (Until migrations exist — see
-# audit M5 — this is the in-stack, zero-dependency guard.)
+# Arbitrary fixed key for pg_advisory_xact_lock: any int works as long as it's stable, so that
+# concurrent app instances starting up simultaneously serialize their schema bootstrap instead
+# of racing on CREATE TABLE / ALTER TABLE / CREATE INDEX statements.
 BOOTSTRAP_LOCK_KEY = 845_173_001
 
-# upgrade a pre-existing non-unique index to unique (first-come-first-served จอง);
-# no-op once the unique index is in place
+_ORPHAN_SWEEP_HOURS = 24
+_WS_SNAPSHOT_VERSION = 8
+_MAP_TILE_SIZE = 256
+
+# Idempotent DDL run on every boot (instead of a migration framework): safe to re-execute
+# because each statement guards itself with IF NOT EXISTS / EXISTS checks, so a fleet of
+# instances can all run this on startup without conflicting or erroring on re-application.
 _UNIQUE_FIRE_INDEX_SQL = """
 DO $$
 BEGIN
@@ -61,10 +64,10 @@ BEGIN
 END $$;
 """
 
-# the audit trail is append-only: block UPDATE/DELETE at the DB level.
-# the one permitted mutation is the ON DELETE SET NULL cascade that anonymizes a
-# deleted account's rows (actor_id -> NULL, every other column untouched). The
-# denormalized actor_email keeps those rows attributable, so the trail is preserved.
+# Enforces append-only semantics for audit_log at the database level (not just app-level
+# discipline): a trigger raises on any UPDATE/DELETE, except it tolerates the narrow no-op
+# UPDATE case (all business columns unchanged) so ORM round-trips that re-save an unmodified
+# row don't spuriously fail.
 _AUDIT_BLOCK_FN_SQL = """
 CREATE OR REPLACE FUNCTION audit_log_block_mutation() RETURNS trigger AS $fn$
 BEGIN
@@ -98,6 +101,12 @@ END $$;
 
 
 async def _ingest_tick() -> None:
+    """Scheduled job body: fetch fresh fire data, then expire stale rows.
+
+    Each step is wrapped in its own try/except so a failure in one (e.g. the upstream
+    wildfire API being down) does not prevent the other from running, and does not crash
+    the scheduler — the job simply retries on the next scheduled interval.
+    """
     try:
         await update_fires()
     except Exception as exc:
@@ -109,6 +118,7 @@ async def _ingest_tick() -> None:
 
 
 async def _safe_sweep_orphans() -> None:
+    """Scheduled job wrapper: never let an S3/MinIO cleanup failure kill the scheduler thread."""
     try:
         await sweep_orphan_images()
     except Exception as exc:
@@ -117,90 +127,124 @@ async def _safe_sweep_orphans() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """FastAPI startup/shutdown hook: runs schema bootstrap, seeding, and background jobs.
+
+    Args:
+        app: The FastAPI instance being started (unused here beyond the decorator contract,
+            but required by ASGI's lifespan signature; app.state is used later to stash the
+            boot-time ingest task handle).
+    Yields:
+        Control back to FastAPI to serve requests; code after `yield` runs on shutdown.
+    """
     async with engine.begin() as conn:
-        # serialize bootstrap DDL across workers (auto-released on commit)
+        # Take a transaction-scoped advisory lock first so that if multiple app replicas boot
+        # concurrently, only one runs the DDL/backfill block below at a time; the lock is
+        # released automatically when the transaction (this `async with`) ends.
         await conn.execute(
             text("SELECT pg_advisory_xact_lock(:k)").bindparams(k=BOOTSTRAP_LOCK_KEY)
         )
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS ltree"))
-        # Geography columns (firespots/field_officers) need PostGIS. The postgis
-        # image enables it on first volume init, but create it here too so a fresh
-        # or externally-managed DB can't fail create_all. Idempotent.
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+        # create_all only creates tables that don't yet exist; it never alters existing ones.
+        # The ALTER TABLE ... ADD COLUMN IF NOT EXISTS statements below are this project's
+        # lightweight substitute for a migration framework, backfilling new columns onto
+        # tables that already existed from a prior deploy.
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text(_UNIQUE_FIRE_INDEX_SQL))
-        # pre-existing tables don't get new model columns from create_all
         await conn.execute(
-            text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS expired boolean NOT NULL DEFAULT false")
+            text(
+                "ALTER TABLE firespots ADD COLUMN IF NOT EXISTS expired boolean NOT NULL DEFAULT false"
+            )
         )
         await conn.execute(
-            text("ALTER TABLE firespots ADD COLUMN IF NOT EXISTS false_alarm boolean NOT NULL DEFAULT false")
+            text(
+                "ALTER TABLE firespots ADD COLUMN IF NOT EXISTS false_alarm boolean NOT NULL DEFAULT false"
+            )
         )
         await conn.execute(
-            text("ALTER TABLE fire_resolutions ADD COLUMN IF NOT EXISTS officer_name text")
+            text(
+                "ALTER TABLE fire_resolutions ADD COLUMN IF NOT EXISTS officer_name text"
+            )
         )
         await conn.execute(
             text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS division text')
         )
         await conn.execute(
-            text("ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
-                 "permissions text[] NOT NULL DEFAULT '{}'")
+            text(
+                "ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
+                "permissions text[] NOT NULL DEFAULT '{}'"
+            )
         )
         await conn.execute(
-            text("ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
-                 "created_at timestamptz NOT NULL DEFAULT now()")
+            text(
+                "ALTER TABLE user_regions ADD COLUMN IF NOT EXISTS "
+                "created_at timestamptz NOT NULL DEFAULT now()"
+            )
         )
         await conn.execute(
-            text("ALTER TABLE field_officers ADD COLUMN IF NOT EXISTS "
-                 "appointed boolean NOT NULL DEFAULT false")
+            text(
+                "ALTER TABLE field_officers ADD COLUMN IF NOT EXISTS "
+                "appointed boolean NOT NULL DEFAULT false"
+            )
         )
-        # backfill the snapshot for rows predating the column, so a later officer
-        # delete doesn't strip their attribution (no-op once filled)
-        await conn.execute(text(
-            "UPDATE fire_resolutions r SET officer_name = fo.name FROM field_officers fo "
-            "WHERE r.officer_id = fo.id AND r.officer_name IS NULL"
-        ))
+        # One-time backfill for the officer_name column just added above: copies the officer's
+        # current name onto existing resolution rows so historical records display a name even
+        # though the column didn't exist when they were created. Guarded by IS NULL so it's
+        # safe to re-run on every boot without overwriting already-backfilled rows.
+        await conn.execute(
+            text(
+                "UPDATE fire_resolutions r SET officer_name = fo.name FROM field_officers fo "
+                "WHERE r.officer_id = fo.id AND r.officer_name IS NULL"
+            )
+        )
         await conn.execute(text(_AUDIT_BLOCK_FN_SQL))
         await conn.execute(text(_AUDIT_BLOCK_TRIGGER_SQL))
-        # at most one open region-change request per officer
-        await conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ix_region_change_one_pending "
-            "ON region_change_requests (user_id) WHERE status = 'pending'"
-        ))
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_region_change_one_pending "
+                "ON region_change_requests (user_id) WHERE status = 'pending'"
+            )
+        )
     await run_seed()
     try:
         await storage.ensure_bucket()
     except Exception as exc:
-        # resolve-with-evidence will 502 until storage is back; don't block startup
+        # Non-fatal: the API can still serve most routes without object storage available;
+        # only evidence-photo upload/download would fail until MinIO comes up.
         logger.warning("storage bucket check failed (%s); is MinIO running?", exc)
     if settings.INGEST_ENABLED:
-        # fire-and-forget the boot ingest: a slow/unreachable feed (e.g. a
-        # colocated feed not yet up, or NAT-hairpin on its public hostname) must
-        # not block the app from accepting connections. When it lands, the
-        # firespots insert trigger drives a delta to connected clients anyway.
-        # ponytail: held on app.state so the task isn't GC'd mid-flight.
+        # Fire an immediate ingest on boot (don't wait for the first scheduler interval to
+        # elapse) in addition to registering the recurring interval jobs, so the map has
+        # fresh data right after a deploy/restart rather than sitting stale for up to
+        # INGEST_INTERVAL_MINUTES.
         app.state.boot_ingest = asyncio.create_task(_ingest_tick())
-        scheduler.add_job(_ingest_tick, "interval", minutes=settings.INGEST_INTERVAL_MINUTES)
-        scheduler.add_job(_safe_sweep_orphans, "interval", hours=24)
+        scheduler.add_job(
+            _ingest_tick, "interval", minutes=settings.INGEST_INTERVAL_MINUTES
+        )
+        scheduler.add_job(_safe_sweep_orphans, "interval", hours=_ORPHAN_SWEEP_HOURS)
         scheduler.start()
     await pg_listener.start()
-    # prime the fire registry so the first change after boot sends a minimal
-    # delta (not the whole list) to already-connected clients
+    # Pre-populate in-memory websocket/presence state from the DB so the first clients to
+    # connect after a restart see correct data immediately instead of an empty registry.
     await manager.warm_registry()
     yield
+    # Shutdown: stop listening for DB notifications and tear down the scheduler without
+    # blocking on currently-running jobs (wait=False), since the process is exiting anyway.
     await pg_listener.stop()
     if scheduler.running:
         scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="FireNET API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+# docs_url/redoc_url/openapi_url disabled: schema/docs endpoints are not exposed publicly
+# in this deployment (reduces attack-surface / information disclosure in production).
+app = FastAPI(
+    title="FireNET API",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
-# Throttle credential brute force / registration abuse on the auth endpoints.
-# Registered BEFORE CORS so that CORS ends up the outermost middleware: Starlette
-# runs the last-added middleware first, and CORS must wrap every response —
-# including the limiter's early 429 — or the browser sees a cross-origin reply
-# with no Access-Control-Allow-Origin header and reports it as a CORS failure
-# instead of letting the client read the 429.
 install_rate_limiting(
     app,
     limit=settings.RATE_LIMIT_MAX,
@@ -215,16 +259,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# login / refresh / logout for both web (cookie) and mobile (bearer); issues and
-# rotates the refresh token alongside the short-lived access token
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/auth",
     tags=["auth"],
 )
-# our users routes first so static paths (e.g. /users/list) aren't shadowed by
-# fastapi-users' /users/{id} param route
 app.include_router(users_router, prefix="/users", tags=["users"])
 app.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate),
@@ -240,15 +280,15 @@ app.include_router(ws_router, tags=["ws"])
 
 @app.get("/")
 def read_root():
+    """Unauthenticated liveness/health-check endpoint."""
     return {"service": "firenet", "status": "ok"}
 
 
-# MapLibre's offline pack downloader fetches the style by URL through its own HTTP
-# stack (no bearer token), so this must be public. ponytail: kept in sync by hand
-# with mobile/assets/layers/base.json — only the raster tile URLs need to match
-# (the offline cache keys tiles by URL), and they change ~never.
+# Static MapLibre/Mapbox GL style document served to the frontend map client, sourcing
+# raster tiles from multiple Google Maps subdomains (mt0-mt3) to allow browsers to open
+# more parallel connections than a single hostname permits.
 _MAP_STYLE = {
-    "version": 8,
+    "version": _WS_SNAPSHOT_VERSION,
     "sources": {
         "raster-tiles": {
             "type": "raster",
@@ -258,7 +298,7 @@ _MAP_STYLE = {
                 "https://mt2.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
                 "https://mt3.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
             ],
-            "tileSize": 256,
+            "tileSize": _MAP_TILE_SIZE,
             "attribution": "&copy; <a href='https://maps.google.com'>Google Maps</a> contributors",
         }
     },
@@ -268,4 +308,5 @@ _MAP_STYLE = {
 
 @app.get("/map-style.json")
 def map_style():
+    """Return the static map style JSON consumed by the frontend map renderer."""
     return _MAP_STYLE

@@ -10,38 +10,57 @@ from ..db import Base
 
 
 class FireResolution(Base):
-    """Officer-submitted evidence for a resolved fire. Auto-expired fires have no row."""
-
     __tablename__ = "fire_resolutions"
 
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # unique=True enforces a one-to-one relationship with Firespot — only one
+    # resolution report is allowed per fire event.
     fire_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("firespots.id", ondelete="CASCADE"), nullable=False, unique=True
+        PGUUID(as_uuid=True),
+        ForeignKey("firespots.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
+    # SET NULL (not CASCADE): the resolution record is preserved for audit purposes
+    # even if the officer account is later deleted.
     officer_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("field_officers.id", ondelete="SET NULL"), nullable=True
+        PGUUID(as_uuid=True),
+        ForeignKey("field_officers.id", ondelete="SET NULL"),
+        nullable=True,
     )
-    # denormalized so history stays attributable after the officer is deleted
-    # (officer_id then SET NULLs) — mirrors audit_log.actor_email
+    # Denormalised snapshot of the officer's display name at resolution time.
+    # Survives officer record changes or deletion — required for immutable audit trail.
     officer_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class FireResolutionImage(Base):
     __tablename__ = "fire_resolution_images"
 
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    resolution_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("fire_resolutions.id", ondelete="CASCADE"), nullable=False
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    resolution_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("fire_resolutions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Storage object key (e.g., S3/MinIO path). Globally unique to prevent
+    # duplicate uploads being stored under the same key.
     object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     content_type: Mapped[str] = mapped_column(String(64), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    # GPS evidence captured client-side (mobile compression re-encodes and drops embedded EXIF)
+    # Optional GPS coordinates extracted from image EXIF; nullable when unavailable.
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     __table_args__ = (
         Index("ix_fire_resolution_images_resolution_id", "resolution_id"),

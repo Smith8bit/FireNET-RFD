@@ -16,33 +16,36 @@ from .schemas import UserCreate
 from ..db_control.permission import PRESETS
 from ..db_control.users import UserManager
 
+# Sorted for deterministic storage in the PostgreSQL TEXT[] column.
 _DISPATCHER_PERMS = sorted(PRESETS["dispatcher"])
 _ADMIN_PERMS = sorted(PRESETS["admin"])
 
+# Resolved relative to this file so the path is correct regardless of CWD at startup.
 FIXTURE = Path(__file__).parent / "seedbag" / "regions_info.json"
 
-# Generated regional/province credentials are written here once (repo root), then
-# the file is gitignored. seed.py -> database -> app -> backend -> firenet/
+# Written three directories above the app package (project root) so it's
+# accessible post-deploy without exposing it inside the importable package tree.
 _ACCOUNTS_CSV = Path(__file__).resolve().parents[3] / "seeded_accounts.csv"
 
 
 def _username_from(value: str) -> str:
-    """Username from a code or name: lowercased, letters+digits only (drops
-    spaces and any special characters so it always passes username validation)."""
+    """Derive a safe login handle by stripping all non-alphanumeric characters."""
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
 def _new_password() -> str:
-    """A strong, random per-account password (URL-safe, ~16 chars)."""
+    """Return a cryptographically random URL-safe password (~16 chars entropy)."""
     return secrets.token_urlsafe(12)
 
 
 def _write_accounts_csv(accounts: list[dict]) -> None:
-    """Record freshly generated credentials to the gitignored repo-root CSV.
+    """
+    Persist seeded credentials to a CSV at the project root.
 
-    Only newly created accounts are written — existing accounts keep their
-    already-hashed (unrecoverable) passwords, so a re-run with nothing new to
-    create leaves any previous CSV untouched rather than clobbering it."""
+    Args:
+        accounts: List of dicts with keys username, password, role, scope, name.
+                  Only newly created accounts are included; existing ones are skipped.
+    """
     if not accounts:
         print("[seed] no new accounts created; credentials CSV left unchanged")
         return
@@ -56,10 +59,18 @@ def _write_accounts_csv(accounts: list[dict]) -> None:
 
 
 async def seed_regions(session: AsyncSession) -> None:
+    """
+    Insert the national and regional hierarchy from the fixture JSON.
+
+    Idempotent: returns immediately if any Region row already exists,
+    so restarts or re-deployments won't produce duplicate hierarchy nodes.
+
+    Args:
+        session: An open AsyncSession; the caller owns the transaction boundary.
+    """
     existing = (await session.execute(select(Region).limit(1))).scalar_one_or_none()
     if existing is not None:
         return
-
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     nat = data["national"]
     national = Region(
@@ -72,6 +83,8 @@ async def seed_regions(session: AsyncSession) -> None:
     )
     session.add(national)
     print(f"[seed] added national region {nat['name_en']}")
+    # flush (not commit) to obtain national.id for child FK references
+    # while keeping the transaction open for the regional batch.
     await session.flush()
 
     for ro in data["regional"]:
@@ -90,18 +103,30 @@ async def seed_regions(session: AsyncSession) -> None:
 
 
 async def seed_provinces(session: AsyncSession) -> None:
+    """
+    Insert province-level Region rows linked to their regional parents.
+
+    Idempotent: skips entirely if any province row already exists.
+    Assumes seed_regions has already committed, because it reads regional
+    rows to resolve parent_id FKs without issuing N+1 queries.
+
+    Args:
+        session: An open AsyncSession; the caller owns the transaction boundary.
+    """
     existing = (
         await session.execute(select(Region).where(Region.level == "province").limit(1))
     ).scalar_one_or_none()
     if existing is not None:
         return
-
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     nat = data["national"]
 
     regional_rows = (
-        await session.execute(select(Region).where(Region.level == "regional"))
-    ).scalars().all()
+        (await session.execute(select(Region).where(Region.level == "regional")))
+        .scalars()
+        .all()
+    )
+    # Build an in-memory lookup to avoid one SELECT per province when resolving parent_id.
     regional_slug_to_id = {ro.path.split(".")[-1]: ro.id for ro in regional_rows}
 
     for pv in data["province"]:
@@ -120,6 +145,14 @@ async def seed_provinces(session: AsyncSession) -> None:
 
 
 async def seed_superuser() -> None:
+    """
+    Create the initial superuser account and assign it to the national region.
+
+    Idempotent: if the account already exists, only the UserRegion assignment
+    is checked; the password is never changed on subsequent runs.
+    safe=False bypasses the is_verified guard — correct here since this is a
+    controlled internal seed, not a user self-registration path.
+    """
     settings = get_settings()
     nat_name = json.loads(FIXTURE.read_text(encoding="utf-8"))["national"]["name_en"]
     async with async_session_maker() as session:
@@ -138,76 +171,115 @@ async def seed_superuser() -> None:
             )
             print(f"[seed] created superuser {settings.INITIAL_SUPERUSER_USERNAME}")
         except UserAlreadyExists:
-            result = await session.execute(select(User).where(User.email == settings.INITIAL_SUPERUSER_USERNAME))
+            # Re-fetch so we still have the user object for the region assignment below.
+            result = await session.execute(
+                select(User).where(User.email == settings.INITIAL_SUPERUSER_USERNAME)
+            )
             user = result.scalar_one()
-
         national = (
             await session.execute(select(Region).where(Region.level == "national"))
         ).scalar_one_or_none()
         if national is None:
-            print("[seed] national region not found, skipping superuser region assignment")
+            print(
+                "[seed] national region not found, skipping superuser region assignment"
+            )
             return
-
         existing = await session.get(UserRegion, (user.id, national.id))
         if not existing:
-            session.add(UserRegion(user_id=user.id, region_id=national.id, role="admin",
-                                   name="Admin", permissions=_ADMIN_PERMS))
+            session.add(
+                UserRegion(
+                    user_id=user.id,
+                    region_id=national.id,
+                    role="admin",
+                    name="Admin",
+                    permissions=_ADMIN_PERMS,
+                )
+            )
             await session.commit()
             print(f"[seed] assigned superuser → national region ({national.name_en})")
 
 
 async def seed_regional_users() -> list[dict]:
-    """Provision one real dispatcher account per regional office.
-    Username: {code without special chars}, random password.
-    Returns the newly created accounts (with plaintext passwords) for the CSV."""
+    """
+    Create one dispatcher account per regional zone and bind it to that zone.
+
+    Returns:
+        List of dicts for newly created accounts only (skips pre-existing ones).
+        Each dict contains: username, password, role, scope, name.
+    """
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     created: list[dict] = []
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
         for ro in data["regional"]:
-            username = _username_from(ro['code'])
+            username = _username_from(ro["code"])
             password = _new_password()
             try:
                 user = await manager.create(
-                    UserCreate(email=username, password=password, is_superuser=False, is_verified=True),
+                    UserCreate(
+                        email=username,
+                        password=password,
+                        is_superuser=False,
+                        is_verified=True,
+                    ),
                     safe=False,
                 )
-                created.append({"username": username, "password": password, "role": "dispatcher",
-                                "scope": ro["code"], "name": ro["name_en"]})
+                created.append(
+                    {
+                        "username": username,
+                        "password": password,
+                        "role": "dispatcher",
+                        "scope": ro["code"],
+                        "name": ro["name_en"],
+                    }
+                )
                 print(f"[seed] created regional user {username}")
             except UserAlreadyExists:
-                result = await session.execute(select(User).where(User.email == username))
+                result = await session.execute(
+                    select(User).where(User.email == username)
+                )
                 user = result.scalar_one()
-
             region = (
                 await session.execute(select(Region).where(Region.code == ro["code"]))
             ).scalar_one_or_none()
             if region is None:
                 print(f"[seed] region {ro['code']} not found, skipping assignment")
                 continue
-
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
-                session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher",
-                                       name=ro["name_en"], permissions=_DISPATCHER_PERMS))
+                session.add(
+                    UserRegion(
+                        user_id=user.id,
+                        region_id=region.id,
+                        role="dispatcher",
+                        name=ro["name_en"],
+                        permissions=_DISPATCHER_PERMS,
+                    )
+                )
                 await session.commit()
                 print(f"[seed] assigned {username} → {ro['code']}")
     return created
 
 
 async def seed_province_users() -> list[dict]:
-    """Provision one real dispatcher account per province.
-    Username: {name_en without spaces/special chars}, random password.
-    Returns the newly created accounts (with plaintext passwords) for the CSV."""
+    """
+    Create one dispatcher account per province and bind it to that province region.
+
+    Returns:
+        List of dicts for newly created accounts only (skips pre-existing ones).
+        Each dict contains: username, password, role, scope, name.
+    """
     created: list[dict] = []
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
         manager = UserManager(user_db)
 
         province_regions = (
-            await session.execute(select(Region).where(Region.level == "province"))
-        ).scalars().all()
+            (await session.execute(select(Region).where(Region.level == "province")))
+            .scalars()
+            .all()
+        )
 
         settings = get_settings()
         for region in province_regions:
@@ -216,42 +288,68 @@ async def seed_province_users() -> list[dict]:
 
             try:
                 user = await manager.create(
-                    UserCreate(email=username, password=password, is_superuser=False, is_verified=True),
+                    UserCreate(
+                        email=username,
+                        password=password,
+                        is_superuser=False,
+                        is_verified=True,
+                    ),
                     safe=False,
                 )
-                created.append({"username": username, "password": password, "role": "dispatcher",
-                                "scope": region.code, "name": region.name_en})
+                created.append(
+                    {
+                        "username": username,
+                        "password": password,
+                        "role": "dispatcher",
+                        "scope": region.code,
+                        "name": region.name_en,
+                    }
+                )
                 print(f"[seed] created province user {username}")
             except UserAlreadyExists:
-                result = await session.execute(select(User).where(User.email == username))
+                result = await session.execute(
+                    select(User).where(User.email == username)
+                )
                 user = result.scalar_one()
-
             existing = await session.get(UserRegion, (user.id, region.id))
             if not existing:
-                session.add(UserRegion(user_id=user.id, region_id=region.id, role="dispatcher",
-                                       name=region.name_en, permissions=_DISPATCHER_PERMS))
+                session.add(
+                    UserRegion(
+                        user_id=user.id,
+                        region_id=region.id,
+                        role="dispatcher",
+                        name=region.name_en,
+                        permissions=_DISPATCHER_PERMS,
+                    )
+                )
                 await session.commit()
                 print(f"[seed] assigned {username} → {region.code}")
     return created
 
 
 async def run_all() -> None:
+    """
+    Entry point for the full seed pipeline.
+
+    Runs in order: regions → provinces → superuser → (optional) regional/province accounts.
+    SEED_REGIONAL_ACCOUNTS can be disabled in production to skip auto-provisioning
+    dispatcher accounts when those are managed externally.
+    """
     async with async_session_maker() as session:
         await seed_regions(session)
         await seed_provinces(session)
     await seed_superuser()
-    # Provision one real dispatcher account per regional office and per province
-    # (random passwords). The generated credentials are written once to a
-    # gitignored CSV at the repo root — distribute and rotate them, then disable
-    # the flag. Off by default so it never runs unintentionally.
     if get_settings().SEED_REGIONAL_ACCOUNTS:
         created = await seed_regional_users()
         created += await seed_province_users()
         _write_accounts_csv(created)
     else:
-        print("[seed] SEED_REGIONAL_ACCOUNTS is off; skipping regional/province provisioning")
+        print(
+            "[seed] SEED_REGIONAL_ACCOUNTS is off; skipping regional/province provisioning"
+        )
 
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(run_all())

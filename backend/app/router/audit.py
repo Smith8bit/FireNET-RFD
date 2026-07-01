@@ -1,3 +1,11 @@
+"""
+Append-only audit log reader — superuser access only.
+
+All security-relevant mutations across the system write to AuditLog. This endpoint
+exposes that log with composable filters. Filters are additive (AND); omitting a
+filter returns all records matching the remaining constraints.
+"""
+
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
@@ -11,7 +19,6 @@ from ..database.models import AuditLog, User
 router = APIRouter()
 
 
-# regional scoping deferred — the trail is superuser-only for now
 @router.get("")
 async def list_audit(
     actor: str | None = Query(None, description="actor username substring"),
@@ -25,14 +32,42 @@ async def list_audit(
     _: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """
+    Return a paginated, filtered view of the audit log.
+
+    Action filter semantics: if `action` contains a dot it is matched exactly
+    (e.g. "auth.login"); otherwise it is treated as a namespace prefix so
+    "auth" matches "auth.login", "auth.revoke_user", etc. This allows
+    broad scans by category without exposing an arbitrary LIKE interface.
+
+    Args:
+        actor:       Case-insensitive substring match against the actor's email.
+        action:      Exact action string if it contains ".", otherwise prefix match.
+        entity_type: Exact match on entity category (e.g. "user", "fire").
+        entity_id:   Exact match on the affected entity's UUID string.
+        since:       Inclusive lower timestamp bound (AuditLog.at >= since).
+        until:       Exclusive upper timestamp bound (AuditLog.at < until).
+        limit:       Page size (1–200).
+        offset:      Records to skip.
+        _:           Superuser guard — value unused, dependency enforces auth.
+        session:     Async DB session.
+
+    Returns:
+        {
+            "total": int,        # total matching records (before pagination)
+            "limit": int,
+            "offset": int,
+            "items": [AuditLog dict, ...]
+        }
+    """
     stmt = select(AuditLog)
     if actor:
         stmt = stmt.where(AuditLog.actor_email.ilike(f"%{actor}%"))
     if action:
-        # a bare category ("fire") matches all of its actions; a full
-        # "fire.reserve" still matches exactly. ponytail: prefix filter
+        # Dot in action string → caller wants an exact action; no dot → prefix scan.
         stmt = stmt.where(
-            AuditLog.action == action if "." in action
+            AuditLog.action == action
+            if "." in action
             else AuditLog.action.like(f"{action}.%")
         )
     if entity_type:
@@ -43,13 +78,18 @@ async def list_audit(
         stmt = stmt.where(AuditLog.at >= since)
     if until:
         stmt = stmt.where(AuditLog.at < until)
-
     total = (
         await session.execute(select(func.count()).select_from(stmt.subquery()))
     ).scalar_one()
     rows = (
-        await session.execute(stmt.order_by(AuditLog.at.desc()).limit(limit).offset(offset))
-    ).scalars().all()
+        (
+            await session.execute(
+                stmt.order_by(AuditLog.at.desc()).limit(limit).offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {
         "total": total,
         "limit": limit,
