@@ -1,3 +1,12 @@
+"""
+Region-change request workflow for field officers.
+
+Officers can request a transfer to a different province. The request is stored
+with a pending status until an admin approves or rejects it via the WebSocket
+admin flow. A unique constraint on (user_id, pending_status) prevents duplicate
+in-flight requests.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +27,29 @@ async def request_region_change(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, str]:
+    """
+    Submit a province transfer request for the calling field officer.
+
+    Validates that the requested province exists, the officer has a region record,
+    and the requested province differs from the current one. The audit entry records
+    both the target and source province paths to support rollback tracking.
+
+    A DB unique constraint enforces only one pending request per officer; IntegrityError
+    is caught and surfaced as 409 to avoid a read-then-write TOCTOU race.
+
+    Args:
+        body:    RegionChangeCreate with `province_code` (str) of the target province.
+        user:    Authenticated field officer making the request.
+        session: Async DB session.
+
+    Returns:
+        {"id": str, "status": str, "province": str (Thai name)}
+
+    Raises:
+        HTTPException(400): Province code invalid, or officer already in that province.
+        HTTPException(404): Officer has no UserRegion record.
+        HTTPException(409): A pending request already exists for this officer.
+    """
     province = (
         await session.execute(
             select(Region).where(
@@ -63,6 +95,7 @@ async def request_region_change(
     try:
         await session.commit()
     except IntegrityError:
+        # Unique constraint on pending requests — another request was submitted concurrently.
         await session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "a request is already pending")
     return {"id": str(req.id), "status": req.status, "province": province.name_th}
@@ -73,6 +106,19 @@ async def my_region_change(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict | None:
+    """
+    Return the most recent region-change request for the calling officer.
+
+    Returns the latest request regardless of status (pending, approved, rejected)
+    so the mobile app can display both in-progress and historical decisions.
+
+    Args:
+        user:    Authenticated field officer.
+        session: Async DB session.
+
+    Returns:
+        Request dict with id, status, province name, and timestamps; or None if no requests exist.
+    """
     row = (
         await session.execute(
             select(RegionChangeRequest, Region.name_th)

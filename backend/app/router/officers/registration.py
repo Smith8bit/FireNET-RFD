@@ -1,3 +1,11 @@
+"""
+Self-registration endpoint for field officers.
+
+This endpoint is intentionally unauthenticated — officers register themselves
+and are activated by an admin. Province is validated before user creation so
+that a failed province lookup doesn't leave a dangling User record.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists
 from sqlalchemy import func, select
@@ -18,6 +26,25 @@ async def register_officer(
     manager: UserManager = Depends(get_user_manager),
     session: AsyncSession = Depends(get_async_session),
 ) -> UserRead:
+    """
+    Create a new field officer account linked to a province-level region.
+
+    No authentication required — this is the public self-registration flow.
+    `manager.create(..., safe=True)` strips any superuser/verified flags that
+    might be injected in the request body, ensuring new accounts start unprivileged.
+
+    Args:
+        body:    OfficerRegister with `username` (email), `password`, `name`, `division`,
+                 and `province_code`.
+        manager: Injected UserManager for account creation.
+        session: Async DB session for region lookup and UserRegion creation.
+
+    Returns:
+        UserRead — the created user (without sensitive fields).
+
+    Raises:
+        HTTPException(400): Province code invalid, email already taken, or password too weak.
+    """
     province = (
         await session.execute(
             select(Region).where(
@@ -32,7 +59,7 @@ async def register_officer(
             UserCreate(
                 email=body.username, password=body.password, division=body.division
             ),
-            safe=True,
+            safe=True,  # Prevents privilege escalation via crafted request bodies.
         )
     except UserAlreadyExists:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "REGISTER_USER_ALREADY_EXISTS")
@@ -57,6 +84,20 @@ async def username_available(
     username: str,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, bool]:
+    """
+    Check whether an email address is available for registration.
+
+    Case-insensitive comparison prevents registering "User@Example.com" when
+    "user@example.com" already exists. No authentication required — used by
+    the registration form before submission.
+
+    Args:
+        username: Email address to check (query param).
+        session:  Async DB session.
+
+    Returns:
+        {"available": bool}
+    """
     exists = (
         await session.execute(
             select(User.id).where(func.lower(User.email) == username.strip().lower())

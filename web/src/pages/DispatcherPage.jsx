@@ -24,7 +24,7 @@ const PERMISSION_OPTIONS = [
   { id: 'region_request.decide', label: 'อนุมัติคำขอย้ายพื้นที่' },
   { id: 'fires.history', label: 'ดูประวัติการดับไฟ' },
   { id: 'dispatchers.view', label: 'มองเห็นผู้ดูแล' },
-  // dispatcher.manage / permission.grant are superuser-only — not delegatable
+  // dispatcher.manage is superuser-only — not delegatable
 ]
 // Default checkboxes = the backend "dispatcher" preset.
 const DISPATCHER_DEFAULT = [

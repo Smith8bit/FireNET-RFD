@@ -15,17 +15,23 @@ class FireResolution(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # unique=True enforces a one-to-one relationship with Firespot — only one
+    # resolution report is allowed per fire event.
     fire_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("firespots.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
+    # SET NULL (not CASCADE): the resolution record is preserved for audit purposes
+    # even if the officer account is later deleted.
     officer_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("field_officers.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # Denormalised snapshot of the officer's display name at resolution time.
+    # Survives officer record changes or deletion — required for immutable audit trail.
     officer_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -44,9 +50,12 @@ class FireResolutionImage(Base):
         ForeignKey("fire_resolutions.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # Storage object key (e.g., S3/MinIO path). Globally unique to prevent
+    # duplicate uploads being stored under the same key.
     object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     content_type: Mapped[str] = mapped_column(String(64), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Optional GPS coordinates extracted from image EXIF; nullable when unavailable.
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

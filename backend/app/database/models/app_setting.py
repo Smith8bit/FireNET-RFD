@@ -4,6 +4,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..db import Base
 
 
+# Simple key-value config store for runtime-adjustable settings
+# (e.g., "location_poll_interval"). No timestamps — these are long-lived
+# operational parameters, not audited state.
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

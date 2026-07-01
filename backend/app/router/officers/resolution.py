@@ -1,3 +1,16 @@
+"""
+Fire resolution endpoints — confirmed resolution and false-alarm reporting.
+
+Evidence (images) are uploaded to object storage before the DB record is written.
+If the DB commit fails, stored objects are deleted to prevent orphaned files.
+The reverse is not true: if storage upload fails, no DB record is created.
+
+An idempotency window (`RESOLVE_RETRY_MINUTES`) handles the common mobile edge case
+where the officer's app retries after a network error that actually succeeded on the
+server. Within the window, re-submission returns the already-resolved fire instead
+of 404 or a duplicate resolution error.
+"""
+
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -24,12 +37,27 @@ from ._helpers import get_field_officer
 settings = get_settings()
 router = APIRouter()
 
+# How long after a successful resolve to treat a re-submission as idempotent.
 _RESOLVE_RETRY_WINDOW = timedelta(minutes=settings.RESOLVE_RETRY_MINUTES)
 
 
 async def _find_recent_resolve(
     session: AsyncSession, fo: FieldOfficer
 ) -> FireDetail | None:
+    """
+    Look for a resolution submitted by *fo* within the idempotency window.
+
+    If found, returns the associated fire so the caller can return it as if
+    this request were the original — making re-submission safe for mobile clients
+    that cannot distinguish network failure from server failure.
+
+    Args:
+        session: Async DB session.
+        fo:      The FieldOfficer whose recent resolution to search for.
+
+    Returns:
+        FireDetail of the recently resolved fire, or None if no recent resolution exists.
+    """
     recent = (
         await session.execute(
             select(FireResolution)
@@ -57,6 +85,37 @@ async def resolve_my_fire(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> FireDetail:
+    """
+    Mark the officer's booked fire as resolved with photo evidence.
+
+    Upload sequence:
+      1. Validate all inputs (count, size, type) before touching storage.
+      2. Upload images to object storage and track stored keys.
+      3. Flush DB to obtain resolution.id (needed as FK for image rows).
+      4. Commit atomically; on failure, delete the already-uploaded objects.
+
+    Image content-type is sniffed from the file bytes rather than trusting the
+    multipart header, to prevent type confusion when serving evidence back.
+
+    Object storage keys follow: `resolutions/{YYYYMMDD}/{fire_id}/{uuid}.{ext}`
+
+    Args:
+        note:      Optional text note (length bounded by settings.RESOLVE_NOTE_MAX_CHARS).
+        image_gps: JSON string mapping image index → GPS coordinates (optional).
+        images:    One or more uploaded image files (required, up to RESOLVE_MAX_IMAGES).
+        user:      Authenticated field officer.
+        session:   Async DB session.
+
+    Returns:
+        FireDetail of the now-resolved fire.
+
+    Raises:
+        HTTPException(400): No images, too many images, note too long, or unsupported image type.
+        HTTPException(404): No reserved fire (with idempotency fallback if within retry window).
+        HTTPException(409): Officer is offline.
+        HTTPException(502): Object storage upload failed.
+        HTTPException(500): DB commit failed (uploaded objects are rolled back).
+    """
     if not images:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "at least one photo is required"
@@ -71,12 +130,14 @@ async def resolve_my_fire(
     if not fo.active:
         raise HTTPException(status.HTTP_409_CONFLICT, "officer offline")
     if fo.fire_id is None:
+        # No current booking — check if this is a retry within the idempotency window.
         retry = await _find_recent_resolve(session, fo)
         if retry is not None:
             return retry
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no reserved fire")
     fire = await session.get(Firespot, fo.fire_id)
     if fire is None:
+        # Fire was deleted externally — clean up the dangling FK before erroring.
         fo.fire_id = None
         await session.commit()
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
@@ -96,6 +157,7 @@ async def resolve_my_fire(
             await storage.put_object(key, data, content_type)
             stored.append(key)
     except Exception as exc:
+        # Roll back any objects already uploaded before the failure.
         await storage.remove_objects(stored)
         print(f"[resolve] evidence upload failed: {exc}")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "evidence storage unavailable")
@@ -103,6 +165,7 @@ async def resolve_my_fire(
         fire_id=fire.id, officer_id=fo.id, officer_name=fo.name, note=note or None
     )
     session.add(resolution)
+    # Flush to generate resolution.id before image rows reference it as a FK.
     await session.flush()
     for (key, data, content_type), point in zip(prepared, gps):
         session.add(
@@ -134,6 +197,7 @@ async def resolve_my_fire(
         await session.commit()
     except Exception:
         await session.rollback()
+        # DB failed after storage succeeded — delete orphaned objects to stay consistent.
         await storage.remove_objects(stored)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR, "could not record resolution"
@@ -147,6 +211,27 @@ async def false_report_my_fire(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> FireDetail:
+    """
+    Mark the officer's booked fire as a false alarm (no photo evidence required).
+
+    Sets `fire.false_alarm = True` in addition to `fire.status = True`, which
+    excludes this fire from leaderboard counts and resolution history statistics.
+    Shares the same idempotency window as `resolve_my_fire`.
+
+    Args:
+        body:    FireFalseReport with optional `note`.
+        user:    Authenticated field officer.
+        session: Async DB session.
+
+    Returns:
+        FireDetail of the now-closed fire.
+
+    Raises:
+        HTTPException(400): Note too long.
+        HTTPException(404): No reserved fire (with idempotency fallback).
+        HTTPException(409): Officer is offline.
+        HTTPException(500): DB commit failed.
+    """
     note = body.note
     if note is not None and len(note) > settings.RESOLVE_NOTE_MAX_CHARS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "note too long")
@@ -197,6 +282,18 @@ async def my_resolutions(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict:
+    """
+    Return a paginated history of fires resolved by the calling officer.
+
+    Args:
+        limit:   Page size (default 20).
+        offset:  Records to skip (default 0).
+        user:    Authenticated field officer.
+        session: Async DB session.
+
+    Returns:
+        {"total": int, "items": [...]}
+    """
     fo = await get_field_officer(user, session)
     return await get_resolution_history(
         user=user, limit=limit, offset=offset, officer_id=fo.id

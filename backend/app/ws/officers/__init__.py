@@ -1,3 +1,6 @@
+# Re-exports the public surface of this subpackage so the WS router
+# (router/ws.py) can dispatch on a flat set of handler names without
+# knowing which submodule each one lives in.
 from ._helpers import broadcast_admin_refresh, broadcast_officers_update
 from .appointments import handle_appoint_officer, handle_cancel_booking
 from .management import (

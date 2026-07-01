@@ -23,13 +23,18 @@ class RegionChangeRequest(Base):
         ForeignKey("regions.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # Lifecycle: "pending" → "approved" | "rejected".
+    # Stored as a readable string rather than an enum so values appear clearly in logs.
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # decided_at is NULL while status is "pending"; set atomically with status update.
     decided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # SET NULL (not CASCADE): the decision record is preserved for audit purposes
+    # even if the approving admin's account is later deleted.
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

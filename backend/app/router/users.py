@@ -1,3 +1,12 @@
+"""
+User management endpoints — all mutating operations are superuser-only.
+
+The list endpoint enriches each user row with a live active-session count derived
+from non-expired, non-revoked RefreshTokens. Revocation deactivates the account
+AND invalidates all sessions atomically so there is no window where a deactivated
+user can still use an existing token.
+"""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,6 +29,20 @@ async def get_my_profile(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """
+    Return the calling user's full profile including role flags and permissions.
+
+    The region assignment query selects the shallowest (lowest nlevel) UserRegion
+    to surface the top-level jurisdiction rather than a deeply nested sub-region.
+
+    Args:
+        user:    Authenticated calling user.
+        session: Async DB session.
+
+    Returns:
+        Profile dict with identity, role booleans, home region, and sorted permission list.
+    """
+    # Shallowest region = broadest jurisdiction; used as the user's "home" display.
     row = (
         await session.execute(
             select(UserRegion.name, Region.code)
@@ -58,6 +81,30 @@ async def list_users(
     _su: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """
+    Paginated user list with live session counts — superuser only.
+
+    The active-session count is computed via a LEFT JOIN on a subquery that
+    counts non-expired, non-revoked RefreshTokens per user, making it cheap
+    to surface "is anyone currently logged in?" without a separate API call.
+    Limit is server-capped at 200 to prevent runaway queries regardless of the
+    caller-supplied value.
+
+    Args:
+        q:        Case-insensitive substring filter on email or division.
+        status:   "active" | "suspended" | None (all).
+        division: Exact division name filter.
+        sort:     "name" (default) or "sessions" to sort by active session count.
+        order:    "asc" (default) or "desc".
+        limit:    Page size (server-capped at 200).
+        offset:   Records to skip (floored at 0).
+        _su:      Superuser guard — value unused, dependency enforces auth.
+        session:  Async DB session.
+
+    Returns:
+        {"total": int, "divisions": [str], "items": [...]}
+    """
+    # Subquery: count active (non-expired, non-revoked) sessions per user.
     live = (
         select(RefreshToken.user_id, func.count().label("n"))
         .where(RefreshToken.revoked_at.is_(None), RefreshToken.expires_at > func.now())
@@ -126,6 +173,24 @@ async def revoke_user(
     su: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """
+    Deactivate a user account and immediately revoke all their active sessions.
+
+    Guards prevent a superuser from revoking themselves or another superuser —
+    both would risk losing all admin access to the system.
+
+    Args:
+        user_id: UUID of the user to suspend.
+        su:      Calling superuser (used for self-check and audit record).
+        session: Async DB session.
+
+    Returns:
+        {"ok": True}
+
+    Raises:
+        HTTPException(400): Attempting to revoke self or another superuser.
+        HTTPException(404): Target user not found.
+    """
     if user_id == su.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="cannot_revoke_self")
     target = await session.get(User, user_id)
@@ -155,6 +220,23 @@ async def restore_user(
     su: User = Depends(current_superuser),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """
+    Re-activate a previously suspended user account.
+
+    Restoring does not re-issue tokens; the user must log in again.
+    The audit trail from the original revocation is preserved.
+
+    Args:
+        user_id: UUID of the user to restore.
+        su:      Calling superuser (for audit record).
+        session: Async DB session.
+
+    Returns:
+        {"ok": True}
+
+    Raises:
+        HTTPException(404): Target user not found.
+    """
     target = await session.get(User, user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user_not_found")

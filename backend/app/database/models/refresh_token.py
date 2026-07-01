@@ -15,9 +15,13 @@ class RefreshToken(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # CASCADE: deleting a user invalidates all their refresh tokens,
+    # forcing re-authentication rather than allowing lingering sessions.
     user_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("user.id", ondelete="CASCADE"), nullable=False
     )
+    # Only the hash is stored — the raw token never hits the DB, so a database
+    # breach cannot be used to replay existing sessions.
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -25,6 +29,8 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # NULL = still valid; non-null = explicitly revoked before expires_at
+    # (e.g., logout or suspicious activity).
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

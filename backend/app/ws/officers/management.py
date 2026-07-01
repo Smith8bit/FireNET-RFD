@@ -1,3 +1,10 @@
+"""WS handlers for admin CRUD over already-verified field officers.
+
+Complements pending.py (verification) and region_requests.py (self-service
+transfers): this module covers an admin directly editing, relocating, or
+removing an officer's profile.
+"""
+
 import logging
 import uuid
 
@@ -24,6 +31,7 @@ _MIN_PASSWORD_LEN = 8
 
 
 async def handle_list_officers(ws: WebSocket, user: User) -> None:
+    """Send the caller their region-scoped list of verified officers (full detail)."""
     async with async_session_maker() as session:
         if not await has_perm_anywhere(user, "officers.view", session):
             await ws.send_json({"type": "error", "code": "forbidden"})
@@ -34,6 +42,7 @@ async def handle_list_officers(ws: WebSocket, user: User) -> None:
 
 
 async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
+    """Same as handle_list_officers but trimmed to map-display fields (map_subset)."""
     async with async_session_maker() as session:
         if not await has_perm_anywhere(user, "officers.view", session):
             await ws.send_json({"type": "error", "code": "forbidden"})
@@ -49,6 +58,24 @@ async def handle_update_officer(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
+    """Update an officer's name, province, username, division, and/or password.
+
+    Args:
+        ws: The admin's socket.
+        admin: Must pass can_manage_officers and cover the officer's
+            *current* province; if relocating, must also cover the
+            *destination* province.
+        data: Partial-update payload; only keys present are considered (e.g.
+            omitting "division" leaves it untouched, but passing
+            "division": "" clears it — see the `"division" in data` checks).
+        active_connections: Used to broadcast the change to every
+            officer-viewing connection once the update is committed.
+
+    All fields are optional but at least one real change is required
+    (`nothing_to_update` otherwise). Every field is independently validated
+    before any DB write is attempted, so a rejected update never partially
+    applies.
+    """
     try:
         user_id = uuid.UUID(data["user_id"])
     except (KeyError, ValueError):
@@ -105,6 +132,9 @@ async def handle_update_officer(
         if target is None:
             await ws.send_json({"type": "error", "code": "not_found"})
             return
+        # `changes` accumulates a human-readable audit trail; `ur_values`
+        # accumulates only the fields that actually need writing to
+        # UserRegion (passed as **kwargs to update_user_region below).
         changes: dict = {}
         ur_values: dict = {}
         if new_name is not None and new_name != user_region.name:
@@ -123,6 +153,8 @@ async def handle_update_officer(
                 await ws.send_json({"type": "error", "code": "invalid_province"})
                 return
             if province.id != user_region.region_id:
+                # Only re-check scope and record a change if this is an
+                # actual relocation, not a no-op resubmission of the current province.
                 if not await admin_covers_path(admin, province.path, session):
                     await ws.send_json({"type": "error", "code": "out_of_scope"})
                     return
@@ -142,6 +174,8 @@ async def handle_update_officer(
             changes["password_changed"] = True
             changes["officer_name"] = new_name or user_region.name or target.email
         if not changes:
+            # All requested values matched existing state; report success
+            # without writing or auditing anything.
             await ws.send_json({"type": "officer_updated", "user_id": str(user_id)})
             return
         if ur_values:
@@ -153,6 +187,8 @@ async def handle_update_officer(
                 **ur_values,
             )
             if "name" in ur_values:
+                # FieldOfficer.name is denormalized from UserRegion.name for
+                # dispatch/map display; keep it in sync on rename.
                 await session.execute(
                     update(FieldOfficer)
                     .where(FieldOfficer.user_id == user_id)
@@ -171,6 +207,7 @@ async def handle_update_officer(
         try:
             await session.commit()
         except IntegrityError:
+            # Most likely a duplicate email/username from a concurrent request.
             await session.rollback()
             await ws.send_json({"type": "error", "code": "username_taken"})
             return
@@ -190,6 +227,19 @@ async def handle_delete_officer(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
+    """Permanently remove an officer's FieldOfficer and User records.
+
+    Args:
+        ws: The admin's socket.
+        admin: Must pass can_manage_officers and cover the officer's province.
+        data: Expects {"user_id": <uuid str>}.
+        active_connections: Broadcast target so every admin's roster drops
+            the deleted officer immediately.
+
+    This is a hard delete (not a soft-disable); the FieldOfficer row is
+    removed explicitly before the User row so any FK from FieldOfficer to
+    User doesn't block the cascade.
+    """
     try:
         user_id = uuid.UUID(data["user_id"])
     except (KeyError, ValueError):
@@ -221,6 +271,8 @@ async def handle_delete_officer(
         if target is None:
             await ws.send_json({"type": "error", "code": "not_found"})
             return
+        # Audit written before delete so entity details (name/division/path)
+        # are still available to record.
         audit(
             session,
             actor=admin,

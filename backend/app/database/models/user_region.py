@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..db import Base
 
 
+# Join table between User and Region that carries role + fine-grained permissions.
+# Composite PK (user_id, region_id) enforces one role per user per region.
 class UserRegion(Base):
     __tablename__ = "user_regions"
 
@@ -24,6 +26,9 @@ class UserRegion(Base):
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Native PostgreSQL TEXT[] avoids a separate permissions join table.
+    # server_default ensures DB inserts without an explicit value get '{}' not NULL,
+    # which would break = ANY(permissions) comparisons in SQL.
     permissions: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'"), default=list
     )

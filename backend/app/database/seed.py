@@ -16,23 +16,36 @@ from .schemas import UserCreate
 from ..db_control.permission import PRESETS
 from ..db_control.users import UserManager
 
+# Sorted for deterministic storage in the PostgreSQL TEXT[] column.
 _DISPATCHER_PERMS = sorted(PRESETS["dispatcher"])
 _ADMIN_PERMS = sorted(PRESETS["admin"])
 
+# Resolved relative to this file so the path is correct regardless of CWD at startup.
 FIXTURE = Path(__file__).parent / "seedbag" / "regions_info.json"
 
+# Written three directories above the app package (project root) so it's
+# accessible post-deploy without exposing it inside the importable package tree.
 _ACCOUNTS_CSV = Path(__file__).resolve().parents[3] / "seeded_accounts.csv"
 
 
 def _username_from(value: str) -> str:
+    """Derive a safe login handle by stripping all non-alphanumeric characters."""
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
 def _new_password() -> str:
+    """Return a cryptographically random URL-safe password (~16 chars entropy)."""
     return secrets.token_urlsafe(12)
 
 
 def _write_accounts_csv(accounts: list[dict]) -> None:
+    """
+    Persist seeded credentials to a CSV at the project root.
+
+    Args:
+        accounts: List of dicts with keys username, password, role, scope, name.
+                  Only newly created accounts are included; existing ones are skipped.
+    """
     if not accounts:
         print("[seed] no new accounts created; credentials CSV left unchanged")
         return
@@ -46,6 +59,15 @@ def _write_accounts_csv(accounts: list[dict]) -> None:
 
 
 async def seed_regions(session: AsyncSession) -> None:
+    """
+    Insert the national and regional hierarchy from the fixture JSON.
+
+    Idempotent: returns immediately if any Region row already exists,
+    so restarts or re-deployments won't produce duplicate hierarchy nodes.
+
+    Args:
+        session: An open AsyncSession; the caller owns the transaction boundary.
+    """
     existing = (await session.execute(select(Region).limit(1))).scalar_one_or_none()
     if existing is not None:
         return
@@ -61,6 +83,8 @@ async def seed_regions(session: AsyncSession) -> None:
     )
     session.add(national)
     print(f"[seed] added national region {nat['name_en']}")
+    # flush (not commit) to obtain national.id for child FK references
+    # while keeping the transaction open for the regional batch.
     await session.flush()
 
     for ro in data["regional"]:
@@ -79,6 +103,16 @@ async def seed_regions(session: AsyncSession) -> None:
 
 
 async def seed_provinces(session: AsyncSession) -> None:
+    """
+    Insert province-level Region rows linked to their regional parents.
+
+    Idempotent: skips entirely if any province row already exists.
+    Assumes seed_regions has already committed, because it reads regional
+    rows to resolve parent_id FKs without issuing N+1 queries.
+
+    Args:
+        session: An open AsyncSession; the caller owns the transaction boundary.
+    """
     existing = (
         await session.execute(select(Region).where(Region.level == "province").limit(1))
     ).scalar_one_or_none()
@@ -92,6 +126,7 @@ async def seed_provinces(session: AsyncSession) -> None:
         .scalars()
         .all()
     )
+    # Build an in-memory lookup to avoid one SELECT per province when resolving parent_id.
     regional_slug_to_id = {ro.path.split(".")[-1]: ro.id for ro in regional_rows}
 
     for pv in data["province"]:
@@ -110,6 +145,14 @@ async def seed_provinces(session: AsyncSession) -> None:
 
 
 async def seed_superuser() -> None:
+    """
+    Create the initial superuser account and assign it to the national region.
+
+    Idempotent: if the account already exists, only the UserRegion assignment
+    is checked; the password is never changed on subsequent runs.
+    safe=False bypasses the is_verified guard — correct here since this is a
+    controlled internal seed, not a user self-registration path.
+    """
     settings = get_settings()
     nat_name = json.loads(FIXTURE.read_text(encoding="utf-8"))["national"]["name_en"]
     async with async_session_maker() as session:
@@ -128,6 +171,7 @@ async def seed_superuser() -> None:
             )
             print(f"[seed] created superuser {settings.INITIAL_SUPERUSER_USERNAME}")
         except UserAlreadyExists:
+            # Re-fetch so we still have the user object for the region assignment below.
             result = await session.execute(
                 select(User).where(User.email == settings.INITIAL_SUPERUSER_USERNAME)
             )
@@ -156,6 +200,13 @@ async def seed_superuser() -> None:
 
 
 async def seed_regional_users() -> list[dict]:
+    """
+    Create one dispatcher account per regional zone and bind it to that zone.
+
+    Returns:
+        List of dicts for newly created accounts only (skips pre-existing ones).
+        Each dict contains: username, password, role, scope, name.
+    """
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     created: list[dict] = []
     async with async_session_maker() as session:
@@ -212,6 +263,13 @@ async def seed_regional_users() -> list[dict]:
 
 
 async def seed_province_users() -> list[dict]:
+    """
+    Create one dispatcher account per province and bind it to that province region.
+
+    Returns:
+        List of dicts for newly created accounts only (skips pre-existing ones).
+        Each dict contains: username, password, role, scope, name.
+    """
     created: list[dict] = []
     async with async_session_maker() as session:
         user_db = SQLAlchemyUserDatabase(session, User)
@@ -270,6 +328,13 @@ async def seed_province_users() -> list[dict]:
 
 
 async def run_all() -> None:
+    """
+    Entry point for the full seed pipeline.
+
+    Runs in order: regions → provinces → superuser → (optional) regional/province accounts.
+    SEED_REGIONAL_ACCOUNTS can be disabled in production to skip auto-provisioning
+    dispatcher accounts when those are managed externally.
+    """
     async with async_session_maker() as session:
         await seed_regions(session)
         await seed_provinces(session)

@@ -4,10 +4,12 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# .env lives one directory above this package (backend/.env), not next to this file.
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
+    # extra="ignore" so unrelated env vars (e.g. shell/OS vars) don't raise validation errors.
     model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     DATABASE_URL: str = "postgresql+asyncpg://firenet:firenet@localhost:5432/firenet"
@@ -17,6 +19,8 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = 30
     DB_POOL_RECYCLE: int = 1800
     DB_PGBOUNCER: bool = False
+    # No default: pydantic-settings raises at startup if missing from env/.env, forcing
+    # every deployment to supply its own secret rather than falling back to something guessable.
     JWT_SECRET: str
     COOKIE_SECURE: bool = True
     ACCESS_TOKEN_MAX_AGE: int = 3600
@@ -27,6 +31,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: float = 60.0
 
     INITIAL_SUPERUSER_USERNAME: str = "adminRFD"
+    # Required (no default) so a bootstrap admin account can never be created with a blank password.
     INITIAL_SUPERUSER_PASSWORD: str
     SEED_REGIONAL_ACCOUNTS: bool = False
 
@@ -49,6 +54,7 @@ class Settings(BaseSettings):
 
     S3_ENDPOINT: str = "localhost:9000"
     S3_ACCESS_KEY: str = "firenet"
+    # Required: no safe default for a credential that grants write access to fire evidence storage.
     S3_SECRET_KEY: str
     S3_BUCKET: str = "firenet-fire-evidence"
     S3_SECURE: bool = False
@@ -64,8 +70,24 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return the process-wide Settings singleton.
+
+    lru_cache (no maxsize args -> unbounded, but only ever called with no arguments)
+    ensures the .env file is parsed once and the same instance is reused everywhere,
+    avoiding repeated disk reads and guaranteeing all callers see identical config.
+    """
     return Settings()
 
 
 def derive_secret(label: str) -> str:
+    """Deterministically derive a purpose-scoped secret from the master JWT secret.
+
+    Args:
+        label: A namespace string (e.g. "refresh", "csrf") identifying the secret's use.
+    Returns:
+        A hex-encoded SHA-256 digest, unique per label but reproducible across processes
+        since it's a pure function of (label, JWT_SECRET) — avoids needing to store/rotate
+        multiple independent secrets while still keeping different subsystems cryptographically
+        isolated from one another.
+    """
     return hashlib.sha256(f"{label}:{get_settings().JWT_SECRET}".encode()).hexdigest()

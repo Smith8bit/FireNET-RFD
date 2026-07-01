@@ -1,3 +1,11 @@
+"""WS handlers for field-officer self-service region transfer requests.
+
+A field officer asks to move to a different province (see
+router/officers/region_change.py); an admin here approves or rejects it. On
+approval the officer's UserRegion is actually moved and they're notified via
+push; on rejection only the request record changes.
+"""
+
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +31,7 @@ logger = logging.getLogger("firenet.officers")
 
 
 async def handle_list_region_requests(ws: WebSocket, user: User) -> None:
+    """Send the caller their region-scoped list of pending transfer requests."""
     async with async_session_maker() as session:
         if not await is_admin_user(user, session):
             await ws.send_json({"type": "error", "code": "forbidden"})
@@ -37,6 +46,24 @@ async def handle_decide_region_request(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
+    """Approve or reject a pending region-change request.
+
+    Args:
+        ws: The deciding admin's socket.
+        admin: Must pass can_manage_officers and cover the *destination*
+            region (not the officer's current region) to approve/reject.
+        data: Expects {"request_id": <uuid str>, "action": "approve"|"reject"}.
+        active_connections: Used to refresh every admin's officer list when
+            an approval actually moves the officer.
+
+    Notes:
+        - The request row's status is only mutated after all validation
+          passes and the region move (if any) succeeds within the same
+          transaction, so a failed commit can't leave the request half-decided.
+        - A push notification is sent in a *separate* session, after the
+          decision has been committed, so a notification-delivery hiccup
+          never rolls back the actual decision.
+    """
     try:
         request_id = uuid.UUID(data["request_id"])
     except (KeyError, ValueError):
@@ -52,6 +79,8 @@ async def handle_decide_region_request(
             return
         req = await session.get(RegionChangeRequest, request_id)
         if req is None or req.status != "pending":
+            # Reusing "not_found" for an already-decided request avoids a
+            # separate race-condition error code for double-submits.
             await ws.send_json({"type": "error", "code": "not_found"})
             return
         dest = await session.get(Region, req.requested_region_id)
@@ -74,6 +103,8 @@ async def handle_decide_region_request(
             return
         old_region_id = ur.region_id
         if action == "approve":
+            # Only actually move the officer's region on approval; a reject
+            # leaves their current UserRegion untouched.
             await update_user_region(
                 session,
                 user_id=req.user_id,
@@ -93,6 +124,8 @@ async def handle_decide_region_request(
                 )
             )
         ).scalar_one_or_none()
+        # Captured before update_user_region's move for the audit trail's
+        # "previous" value; old_region_id is fixed above the branch.
         prev_path = (
             await session.execute(select(Region.path).where(Region.id == old_region_id))
         ).scalar_one_or_none()
@@ -115,9 +148,13 @@ async def handle_decide_region_request(
         try:
             await session.commit()
         except IntegrityError:
+            # e.g. a concurrent decision or region move produced a conflicting
+            # unique constraint; surface as a generic conflict rather than crash.
             await session.rollback()
             await ws.send_json({"type": "error", "code": "conflict"})
             return
+        # Snapshot values needed after the session closes, since ORM objects
+        # become unusable once their session ends.
         notify_user_id = req.user_id
         decided_status = req.status
         province_name = dest.name_th
@@ -145,6 +182,9 @@ async def handle_decide_region_request(
             "status": decided_status,
         }
     )
+    # Refresh the caller's own request list immediately...
     await handle_list_region_requests(ws, admin)
     if action == "approve":
+        # ...and, only on approval (since only that changes officer rosters),
+        # push updated officer + pending lists to every other admin connection.
         await broadcast_admin_refresh(active_connections, include_pending=True)

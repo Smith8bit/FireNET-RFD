@@ -1,3 +1,10 @@
+"""WS handlers for the field-officer verification queue.
+
+New field officers self-register (see router/officers/registration.py) but
+stay unverified until an admin approves them here; verification also creates
+their FieldOfficer row, which is the record actually used for dispatch/booking.
+"""
+
 import logging
 import uuid
 
@@ -19,6 +26,13 @@ logger = logging.getLogger("firenet.officers")
 
 
 async def handle_list_pending(ws: WebSocket, user: User) -> None:
+    """Send the caller their region-scoped list of unverified field officers.
+
+    Args:
+        ws: The requesting client's socket.
+        user: Authenticated caller; must hold "officers.view" in at least
+            one region or the request is rejected.
+    """
     async with async_session_maker() as session:
         if not await has_perm_anywhere(user, "officers.view", session):
             await ws.send_json({"type": "error", "code": "forbidden"})
@@ -33,11 +47,27 @@ async def handle_verify_officer(
     data: dict,
     active_connections: list[Connection],
 ) -> None:
+    """Approve a pending field officer, creating their FieldOfficer record.
+
+    Args:
+        ws: The admin's socket, used to report validation/permission errors.
+        admin: The acting admin; must pass can_manage_officers and cover the
+            officer's registered province.
+        data: Client payload; expects {"user_id": <uuid str>}.
+        active_connections: All live sockets, used to broadcast the resulting
+            change to every other officer-viewing connection.
+
+    Idempotency: if a FieldOfficer row already exists for this user (e.g. a
+    duplicate verify request), verification still succeeds without creating
+    a second row.
+    """
     try:
         user_id = uuid.UUID(data["user_id"])
     except (KeyError, ValueError):
         await ws.send_json({"type": "error", "code": "invalid_user_id"})
         return
+    # Imported locally to avoid pulling these models into every module that
+    # imports this handler file.
     from sqlalchemy import select
     from ...database.models import Region, UserRegion
 
@@ -59,6 +89,8 @@ async def handle_verify_officer(
             return
         province_path, officer_name = ur_row
 
+        # Scope check happens *after* confirming the target exists, so a
+        # not-found user never leaks region info via a different error code.
         if not await admin_covers_path(admin, province_path, session):
             await ws.send_json({"type": "error", "code": "out_of_scope"})
             return
@@ -96,4 +128,6 @@ async def handle_verify_officer(
         await session.commit()
     logger.info("officer verified user=%s by admin=%s", user_id, admin.id)
     await ws.send_json({"type": "officer_verified", "user_id": str(user_id)})
+    # Verification changes who shows up in officers_in_region for every admin
+    # scoped to this province, so refresh everyone, not just the caller.
     await broadcast_officers_update(active_connections)
