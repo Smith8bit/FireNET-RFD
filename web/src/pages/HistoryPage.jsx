@@ -20,23 +20,51 @@ export default function HistoryPage() {
   const [province, setProvince] = useState('') // '' = all provinces (matched by Thai name)
   const { provinces: provinceRegions } = useRegions() // dropdown options, region-scoped to the viewer
   const provinces = useMemo(() => (provinceRegions ?? []).map((p) => p.name_th), [provinceRegions])
-  const [onDate, setOnDate] = useState('')
+  const [dateFrom, setDateFrom] = useState('') // inclusive start day
+  const [dateTo, setDateTo] = useState('') // inclusive end day
   const [searchInput, setSearchInput] = useState('') // raw text in the box
   const [search, setSearch] = useState('') // committed query (fire/officer name, location)
   const [error, setError] = useState(null)
   const [reload, setReload] = useState(0)
+  const [downloading, setDownloading] = useState(false)
+
+  // Shared filter params (used by both the table query and the ZIP export).
+  // since = start of dateFrom; until = start of the day after dateTo (exclusive).
+  const buildFilterParams = () => {
+    const p = new URLSearchParams()
+    if (kind) p.set('false_alarm', kind)
+    if (province) p.set('province', province)
+    if (search) p.set('search', search)
+    if (dateFrom) p.set('since', new Date(`${dateFrom}T00:00:00`).toISOString())
+    if (dateTo) p.set('until', new Date(new Date(`${dateTo}T00:00:00`).getTime() + 86_400_000).toISOString())
+    return p
+  }
+
+  async function download() {
+    setDownloading(true)
+    setError(null)
+    try {
+      const res = await apiFetch(`/fires/resolutions/export?${buildFilterParams()}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `fire-history${dateFrom ? '_' + dateFrom : ''}${dateTo ? '_' + dateTo : ''}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.warn('[HistoryPage] export failed:', e)
+      setError('ดาวน์โหลดไม่สำเร็จ')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
-    const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
-    if (kind) params.set('false_alarm', kind)
-    if (province) params.set('province', province)
-    if (search) params.set('search', search)
-    if (onDate) {
-      const start = new Date(`${onDate}T00:00:00`)
-      params.set('since', start.toISOString())
-      params.set('until', new Date(start.getTime() + 86_400_000).toISOString())
-    }
+    const params = buildFilterParams()
+    params.set('limit', String(PAGE_SIZE))
+    params.set('offset', String(page * PAGE_SIZE))
     ;(async () => {
       try {
         const res = await apiFetch(`/fires/resolutions?${params}`)
@@ -54,7 +82,7 @@ export default function HistoryPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [page, kind, province, onDate, search, reload])
+  }, [page, kind, province, dateFrom, dateTo, search, reload])
 
   if (!can(user, 'fires.history')) return <Navigate to="/" replace />
 
@@ -94,12 +122,32 @@ export default function HistoryPage() {
             ))}
           </select>
 
-          <input
-            type="date"
-            value={onDate}
-            onChange={(e) => { setOnDate(e.target.value); setPage(0) }}
-            className={`${INPUT_CLS} max-w-fit text-accent`}
-          />
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(0) }}
+              className={`${INPUT_CLS} max-w-fit text-accent`}
+            />
+            <span className="text-accent">–</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => { setDateTo(e.target.value); setPage(0) }}
+              className={`${INPUT_CLS} max-w-fit text-accent`}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={download}
+            disabled={downloading}
+            className="text-md font-semibold text-blue-400 hover:text-blue-700 px-2 py-1.5 disabled:opacity-40"
+          >
+            {downloading ? 'กำลังดาวน์โหลด…' : 'ดาวน์โหลด'}
+          </button>
 
           <form
             onSubmit={(e) => { e.preventDefault(); setSearch(searchInput.trim()); setPage(0) }}

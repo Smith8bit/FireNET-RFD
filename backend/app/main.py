@@ -14,7 +14,8 @@ from .middleware import install_rate_limiting
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
-from .db_control.fires import expire_old_fires, sweep_orphan_images, update_fires
+from .db_control.fires import expire_old_fires, sweep_orphan_images
+from .db_control.firefetch import update_fires
 from .router.audit import router as audit_router
 from .router.auth import router as auth_router
 from .router.fires import router as fires_router

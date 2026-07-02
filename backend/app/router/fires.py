@@ -25,6 +25,7 @@ from ..database.models import (
     User,
 )
 from ..db_control.fires import get_fires, get_resolution_history
+from ..db_control.fire_export import build_history_zip, get_resolutions_for_export
 from ..db_control.permission import fire_visible, has_perm_anywhere
 
 router = APIRouter()
@@ -92,6 +93,52 @@ async def list_resolutions(
         until=until,
         province=province,
         search=search,
+    )
+
+
+@router.get("/resolutions/export")
+async def export_resolutions(
+    false_alarm: bool | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    province: str | None = None,
+    search: str | None = None,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Download resolved-fire history as a ZIP (history.csv + images folder tree).
+
+    Accepts the same filters as `list_resolutions`; the dispatcher picks the date
+    range via `since`/`until`. Gated by the same fires.history permission.
+
+    Returns:
+        application/zip attachment.
+
+    Raises:
+        HTTPException(403): User lacks fires.history permission in any assigned region.
+    """
+    if not await has_perm_anywhere(user, "fires.history", session):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "missing fires.history permission"
+        )
+    items = await get_resolutions_for_export(
+        user=user,
+        false_alarm=false_alarm,
+        since=since,
+        until=until,
+        province=province,
+        search=search,
+    )
+    data = await build_history_zip(items)
+    fname = "fire-history"
+    if since:
+        fname += f"_{since:%Y%m%d}"
+    if until:
+        fname += f"_{until:%Y%m%d}"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}.zip"'},
     )
 
 
