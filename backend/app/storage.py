@@ -134,6 +134,12 @@ IMAGE_EXT: dict[str, str] = {
     "image/webp": "webp",
 }
 
+# Video evidence formats. mp4 and quicktime (.mov) cover what Android/iOS cameras record.
+VIDEO_EXT: dict[str, str] = {
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+}
+
 
 async def read_capped(upload: UploadFile, max_bytes: int) -> bytes:
     """Read an uploaded file into memory while enforcing a hard size limit.
@@ -158,7 +164,7 @@ async def read_capped(upload: UploadFile, max_bytes: int) -> bytes:
             break
         total += len(chunk)
         if total > max_bytes:
-            raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "photo too large")
+            raise HTTPException(http_status.HTTP_400_BAD_REQUEST, "file too large")
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -181,6 +187,19 @@ def sniff_image(data: bytes) -> str | None:
         return "image/png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
+    return None
+
+
+def sniff_video(data: bytes) -> str | None:
+    """Identify an MP4/QuickTime video from its ISO-BMFF `ftyp` box.
+
+    Both formats begin with a `....ftyp` box (a 4-byte size then the literal `ftyp`
+    at offset 4); the major brand at offset 8 distinguishes QuickTime (`qt  `) from
+    the MP4 family. Content is trusted over the client header, same as sniff_image,
+    and the two-entry allowlist blocks arbitrary/executable uploads.
+    """
+    if data[4:8] == b"ftyp":
+        return "video/quicktime" if data[8:12] == b"qt  " else "video/mp4"
     return None
 
 

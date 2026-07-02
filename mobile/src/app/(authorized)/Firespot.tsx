@@ -3,9 +3,12 @@ import { toast } from '@/lib/toastStore'
 import { useFireStore, type ResolvePhoto } from '@/stores/fireStore'
 import { formatDetectedAt } from '@/utils/format'
 import { Ionicons } from '@expo/vector-icons'
+import { File } from 'expo-file-system'
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
 import * as ImagePicker from 'expo-image-picker'
 import * as Location from 'expo-location'
+import * as VideoThumbnails from 'expo-video-thumbnails'
+import { Video } from 'react-native-compressor'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -30,6 +33,7 @@ import Animated, { SlideInDown } from 'react-native-reanimated'
 const BURNING = '#ef4444'
 
 const MAX_PHOTOS = 3
+const VIDEO_MAX_MB = 40 // keep in sync with backend RESOLVE_MAX_VIDEO_MB
 
 function gpsFromExif(exif: Record<string, any> | null | undefined): ResolvePhoto['gps'] {
   if (!exif) return null
@@ -71,6 +75,8 @@ export default function Firespot() {
   const [formVisible, setFormVisible] = useState(false)
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState<ResolvePhoto[]>([])
+  const [video, setVideo] = useState<ResolvePhoto | null>(null)
+  const [compressingVideo, setCompressingVideo] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [falseFormVisible, setFalseFormVisible] = useState(false)
   const [falseNote, setFalseNote] = useState('')
@@ -101,6 +107,7 @@ export default function Firespot() {
   const openResolveForm = useCallback(() => {
     setNote('')
     setPhotos([])
+    setVideo(null)
     setFormVisible(true)
     Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
       .then((pos) => {
@@ -145,21 +152,56 @@ export default function Firespot() {
     setPhotos((prev) => prev.filter((p) => p.uri !== uri))
   }, [])
 
+  // one optional video clip; compressed before upload, GPS falls back to device fix
+  const captureVideo = useCallback(
+    async (fromLibrary: boolean) => {
+      const perm = fromLibrary
+        ? await ImagePicker.requestMediaLibraryPermissionsAsync()
+        : await ImagePicker.requestCameraPermissionsAsync()
+      if (perm.status !== 'granted') {
+        toast.error(fromLibrary ? 'กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ' : 'กรุณาอนุญาตให้แอปใช้กล้อง')
+        return
+      }
+      const opts = { mediaTypes: 'videos' as const }
+      const result = fromLibrary
+        ? await ImagePicker.launchImageLibraryAsync(opts)
+        : await ImagePicker.launchCameraAsync(opts)
+      if (result.canceled || !result.assets[0]) return
+      setCompressingVideo(true)
+      try {
+        // manual/HD: cap the longest side at 720p so clips stay legible but small
+        const compressed = await Video.compress(result.assets[0].uri, { compressionMethod: 'manual', maxSize: 1280 })
+        // backend rejects > VIDEO_MAX_MB; check here so the officer isn't stuck at upload time
+        if (new File(compressed).size > VIDEO_MAX_MB * 1024 * 1024) {
+          toast.error(`วิดีโอใหญ่เกินไป (สูงสุด ${VIDEO_MAX_MB}MB) กรุณาถ่ายให้สั้นลง`)
+          return
+        }
+        const thumb = await VideoThumbnails.getThumbnailAsync(compressed).catch(() => null)
+        setVideo({ uri: compressed, gps: deviceGps.current, kind: 'video', thumbUri: thumb?.uri })
+      } catch {
+        toast.error('ไม่สามารถประมวลผลวิดีโอได้ กรุณาลองใหม่อีกครั้ง')
+      } finally {
+        setCompressingVideo(false)
+      }
+    },
+    [],
+  )
+
   const submitResolve = useCallback(async () => {
-    if (photos.length === 0) {
-      toast.error('กรุณาถ่ายรูปหลักฐานการดับไฟอย่างน้อย 1 รูป')
+    if (photos.length === 0 && !video) {
+      toast.error('กรุณาแนบรูปถ่ายหรือวิดีโอหลักฐานอย่างน้อย 1 รายการ')
       return
     }
     setSubmitting(true)
     try {
-      await resolveFire(note, photos)
+      await resolveFire(note, video ? [...photos, video] : photos)
       setFormVisible(false)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
-  }, [note, photos, resolveFire])
+  }, [note, photos, video, resolveFire])
 
   const confirmCancel = useCallback(() => {
     Alert.alert('ยกเลิกการจอง', 'ต้องการยกเลิกการจองไฟนี้ใช่หรือไม่? ไฟจะกลับไปให้ผู้อื่นรับผิดชอบได้', [
@@ -317,8 +359,11 @@ export default function Firespot() {
           <Animated.View
             className="rounded-t-3xl bg-foreground p-5"
             entering={SlideInDown.duration(250)}
-            style={{ marginBottom: keyboardHeight }}
+            style={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
           >
+            {/* keyboardShouldPersistTaps: without it the first tap on a button just
+                dismisses the keyboard (needs a second tap) when the note field is focused */}
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">บันทึกการดับไฟ</Text>
 
             <Text className="mb-0.5 mt-2 text-md font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
@@ -334,7 +379,7 @@ export default function Firespot() {
             />
 
             <Text className="mb-0.5 mt-2 text-sm font-head text-gray-500">
-              รูปถ่ายหลักฐาน (อย่างน้อย 1 รูป สูงสุด {MAX_PHOTOS} รูป)
+              รูปถ่ายหลักฐาน (สูงสุด {MAX_PHOTOS} รูป — แนบรูปหรือวิดีโออย่างน้อย 1 รายการ)
             </Text>
             <View className="mt-1 flex-row gap-2.5">
               {photos.map((p) => (
@@ -371,6 +416,55 @@ export default function Firespot() {
               )}
             </View>
 
+            <Text className="mb-0.5 mt-3 text-sm font-head text-gray-500">
+              วิดีโอหลักฐาน (ไม่บังคับ)
+            </Text>
+            <View className="mt-1 flex-row gap-2.5">
+              {compressingVideo ? (
+                <View className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border">
+                  <ActivityIndicator color={colors.gray500} />
+                  <Text className="mt-1 text-xs font-head text-gray-500">กำลังบีบอัด...</Text>
+                </View>
+              ) : video ? (
+                <View className="relative">
+                  <View className="h-20 w-20 items-center justify-center overflow-hidden rounded-md bg-secondary">
+                    {video.thumbUri ? (
+                      <Image source={{ uri: video.thumbUri }} className="h-20 w-20" />
+                    ) : null}
+                    <View className="absolute inset-0 items-center justify-center">
+                      <Ionicons name="play-circle" size={30} color="#ffffff" />
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    className="absolute -right-1.5 -top-1.5 h-7 w-7 items-center justify-center rounded-full bg-destructive"
+                    onPress={() => setVideo(null)}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="close" size={14} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
+                    onPress={() => captureVideo(false)}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="videocam-outline" size={22} color={colors.gray500} />
+                    <Text className="mt-0.5 text-sm font-head text-gray-500">ถ่ายวิดีโอ</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
+                    onPress={() => captureVideo(true)}
+                    disabled={submitting}
+                  >
+                    <Ionicons name="film-outline" size={22} color={colors.gray500} />
+                    <Text className="mt-0.5 text-sm font-head text-gray-500">คลังวิดีโอ</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
             <View className="mt-5 flex-row gap-3">
               <TouchableOpacity
                 className="flex-1 items-center rounded-xl border-2 border-border p-3.5"
@@ -380,10 +474,10 @@ export default function Firespot() {
                 <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                className={`items-center rounded-xl p-3.5 ${photos.length === 0 || submitting ? 'bg-gray-300' : 'bg-success'}`}
+                className={`items-center rounded-xl p-3.5 ${(photos.length === 0 && !video) || submitting || compressingVideo ? 'bg-gray-300' : 'bg-success'}`}
                 style={{ flex: 2 }}
                 onPress={submitResolve}
-                disabled={photos.length === 0 || submitting}
+                disabled={(photos.length === 0 && !video) || submitting || compressingVideo}
               >
                 {submitting ? (
                   <ActivityIndicator color="white" />
@@ -392,6 +486,7 @@ export default function Firespot() {
                 )}
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>
@@ -410,8 +505,9 @@ export default function Firespot() {
           <Animated.View
             className="rounded-t-3xl bg-foreground p-5"
             entering={SlideInDown.duration(250)}
-            style={{ marginBottom: keyboardHeight }}
+            style={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
           >
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">แจ้งว่าไม่ใช่ไฟ</Text>
             <Text className="mb-1 text-md text-center font-head text-accent">
               ใช้เฉพาะเมื่อตรวจสอบแล้วพบว่าไม่มีไฟจริงในจุดนี้
@@ -450,6 +546,7 @@ export default function Firespot() {
                 )}
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>

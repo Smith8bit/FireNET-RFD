@@ -208,7 +208,7 @@ async def lifespan(app: FastAPI):
         await storage.ensure_bucket()
     except Exception as exc:
         # Non-fatal: the API can still serve most routes without object storage available;
-        # only evidence-photo upload/download would fail until MinIO comes up.
+        # only evidence photo/video upload/download would fail until MinIO comes up.
         logger.warning("storage bucket check failed (%s); is MinIO running?", exc)
     if settings.INGEST_ENABLED:
         # Fire an immediate ingest on boot (don't wait for the first scheduler interval to

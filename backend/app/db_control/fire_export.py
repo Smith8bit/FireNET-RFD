@@ -181,6 +181,6 @@ async def build_history_zip(items: list[dict[str, Any]]) -> bytes:
                 except Exception as exc:
                     print(f"[export] skipped image {object_key}: {exc}")
                     continue
-                ext = storage.IMAGE_EXT.get(content_type, "jpg")
+                ext = storage.IMAGE_EXT.get(content_type) or storage.VIDEO_EXT.get(content_type, "jpg")
                 zf.writestr(f"{folder}/{idx}.{ext}", data)
     return out.getvalue()

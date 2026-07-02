@@ -53,8 +53,9 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to take photos as evidence of extinguished fires",
-          "photosPermission": "Allow $(PRODUCT_NAME) to attach photos as evidence of extinguished fires"
+          "cameraPermission": "Allow $(PRODUCT_NAME) to take photos and videos as evidence of extinguished fires",
+          "photosPermission": "Allow $(PRODUCT_NAME) to attach photos and videos as evidence of extinguished fires",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to record audio with video evidence of extinguished fires"
         }
       ],
       "expo-image",
@@ -71,7 +72,9 @@
       "expo-notifications",
       "expo-build-properties",
       "./plugins/withGradleMemory",
-      "expo-font"
+      "expo-font",
+      "react-native-compressor",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -382,12 +382,18 @@ async def get_resolution_history(
         if res_ids:
             for img in (
                 await session.execute(
-                    select(FireResolutionImage.id, FireResolutionImage.resolution_id)
+                    select(
+                        FireResolutionImage.id,
+                        FireResolutionImage.resolution_id,
+                        FireResolutionImage.content_type,
+                    )
                     .where(FireResolutionImage.resolution_id.in_(res_ids))
                     .order_by(FireResolutionImage.created_at)
                 )
             ).all():
-                imgs.setdefault(img.resolution_id, []).append(str(img.id))
+                imgs.setdefault(img.resolution_id, []).append(
+                    {"id": str(img.id), "content_type": img.content_type}
+                )
         return {
             "total": total,
             "items": [
@@ -402,7 +408,7 @@ async def get_resolution_history(
                     "officer_name": r.officer_name,
                     "note": r.note,
                     "false_alarm": r.false_alarm,
-                    "image_ids": imgs.get(r.resolution_id, []),
+                    "images": imgs.get(r.resolution_id, []),
                 }
                 for r in rows
             ],

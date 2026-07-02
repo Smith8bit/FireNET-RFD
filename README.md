@@ -29,7 +29,7 @@ hotspot feed — an internal tool, not a public site.
   admin's current viewport and capped so a national view never ships the whole
   fleet. Officers age to *offline* after a TTL without an update.
 - **Fire resolution with evidence** — officers close a fire with a note and up to
-  a few photos, stored in S3/MinIO.
+  a few photos plus an optional video, stored in S3/MinIO.
 - **Region hierarchy** — regional offices / provinces modeled as a Postgres
   `ltree` tree, with region-change requests and per-user region scoping.
 - **Push notifications** — assignment / status pushes via Firebase Cloud
