@@ -14,12 +14,10 @@ import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
 
 const LAYERS = { 'ค่าเริ่มต้น': baseStyle, 'ดาวเทียม': satelliteStyle, 'ภูมิประเทศ': topoStyle }
-// fallback view (all of Thailand) until the profile's per-region home arrives
 const DEFAULT_HOME = { lat: 13.05, lng: 101.45, zoom: 5.5 }
-const CARD_HEIGHT = 140 // px — must match Card's rendered height (py-3 + 3 text lines + border)
-const EMPTY_OFFICERS = [] // stable ref so <Map> doesn't re-render when officers are hidden
+const CARD_HEIGHT = 140
+const EMPTY_OFFICERS = []
 
-// one legend row: a filled dot (fires) or an outlined ring (officer markers) + label
 function LegendDot({ color, ring, label }) {
   return (
     <div className="flex items-center gap-2">
@@ -56,9 +54,7 @@ export default function MapViewPage() {
   const [listCollapsed, setListCollapsed] = useState(false)
   const mapRef = useRef(null)
 
-  // per-user opening view: center + zoom of the region this admin is assigned to
   const home = useAuthStore((s) => s.user?.home) ?? DEFAULT_HOME
-  // memoized so a layout-only re-render (panel collapse) keeps <Map> props stable
   const startPoint = useMemo(() => ({ lat: home.lat, lng: home.lng }), [home.lat, home.lng])
 
   const [officers, setOfficers] = useState([])
@@ -80,7 +76,6 @@ export default function MapViewPage() {
 
   const fires = useFireData()
 
-  // sort like mobile (tap the active chip again to flip direction) + filters
   const [sortBy, setSortBy] = useState('time')
   const [sortAsc, setSortAsc] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
@@ -92,7 +87,7 @@ export default function MapViewPage() {
       setSortAsc((v) => !v)
     } else {
       setSortBy(key)
-      setSortAsc(key === 'name') // name: ก→ฮ, time: newest first
+      setSortAsc(key === 'name')
     }
   }
 
@@ -130,7 +125,6 @@ export default function MapViewPage() {
     return sorted
   }, [filteredFires, sortBy, sortAsc])
 
-  // the map shows the same fires the list does
   const points = useMemo(
     () => filteredFires.map((f) => ({ id: f.id, lat: f.lat, lng: f.lng, status: f.status, booked: f.booked })),
     [filteredFires],
@@ -140,23 +134,18 @@ export default function MapViewPage() {
   const clearSelection = useMapSelection((s) => s.clear)
   const focused = focusedId ? fires.find((f) => f.id === focusedId) : null
 
-  // focusing a fire (e.g. clicking its spot on the map) reveals its card, so
-  // open the panel if it was collapsed
   useEffect(() => {
     if (focusedId) setListCollapsed(false)
   }, [focusedId])
 
   return (
     <div className="relative flex flex-1 w-full overflow-hidden">
-      {/* Full-screen map fills the viewport; the sidebar and list panel float over it */}
       <div className="fixed inset-0 z-0">
         <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={showOfficers ? officers : EMPTY_OFFICERS} />
       </div>
 
-      {/* Map controls float top-right, shifting left of the panel when it's open */}
       <div className={`fixed top-3 z-10 flex flex-col items-end gap-2 transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'right-3' : 'right-[calc(25vw+0.75rem)]'}`}>
 
-        {/* Map tile controls Base/Satellite/Topography */}
         <div
           id="layers"
           className="flex rounded-lg overflow-hidden shadow-md divide-x divide-gray-300"
@@ -172,7 +161,6 @@ export default function MapViewPage() {
           ))}
         </div>
 
-        {/* Reset view button */}
         <button
           title="กลับไปจุดเริ่มต้น"
           className="flex items-center gap-1.5 bg-white rounded-lg shadow-md px-3 py-1.5 text-sm text-primary font-medium hover:bg-flame-light hover:text-primary"
@@ -182,7 +170,6 @@ export default function MapViewPage() {
           กลับไปจุดเริ่มต้น
         </button>
 
-        {/* Toggle officers in map */}
         {canViewOfficers && (
           <button
             title={showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
@@ -195,7 +182,6 @@ export default function MapViewPage() {
           </button>
         )}
 
-        {/* Zoom in/out control */}
         <div id="zoom" className="flex flex-col rounded-lg overflow-hidden shadow-md divide-y divide-gray-300">
           <button
             title="ซูมเข้า"
@@ -217,7 +203,6 @@ export default function MapViewPage() {
 
       </div>
 
-      {/* Marker legend floats bottom-right, shifting left of the panel like the top controls */}
       <div className={`fixed bottom-3 z-10 bg-white/90 rounded-lg shadow-md px-3 py-2 text-xs text-primary transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'right-3' : 'right-[calc(25vw+0.75rem)]'}`}>
         <p className="font-semibold mb-1.5">สัญลักษณ์</p>
         <div className="flex flex-col gap-1">
@@ -233,10 +218,8 @@ export default function MapViewPage() {
         </div>
       </div>
 
-      {/* List panel floats over the right edge of the map */}
       <div className={`fixed top-0 right-0 h-full z-10 transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'w-0' : 'w-1/4'}`}>
-        
-        {/* collapse/expand handle: sits on the panel's outer edge, vertically centered */}
+
         <button
           title={listCollapsed ? 'แสดงรายการไฟ' : 'ซ่อนรายการไฟ'}
           onClick={() => setListCollapsed((v) => !v)}
@@ -247,10 +230,6 @@ export default function MapViewPage() {
             : <ChevronDoubleRightIcon className="w-5 h-5" />}
         </button>
 
-        {/* list panel stays mounted while the expanded card overlays it,
-            so the scroll position is kept naturally */}
-        {/* fixed width (matching the open panel) so the outer w-0 + overflow-hidden
-            clips it smoothly during the close transition instead of reflowing */}
         <div
           className="h-full w-[25vw] bg-background border-l border-background/50 shadow-xl overflow-hidden flex flex-col"
           id="map-controller"

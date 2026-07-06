@@ -6,8 +6,6 @@ export const useSocketStore = create((set, get) => ({
   send: () => console.warn('Socket not connected yet'),
   handleMessage: (data) => {
     const type = data?.type
-    // fires arrive as a versioned snapshot then per-fire deltas; keep the full
-    // list under byType.fires so useFireData/map keep reading it unchanged
     if (type === 'fires_snapshot') {
       set((state) => ({
         byType: { ...state.byType, fires: { fires: data.fires ?? [], v: data.v ?? 0 } },
@@ -16,7 +14,6 @@ export const useSocketStore = create((set, get) => ({
     }
     if (type === 'fires_delta') {
       const cur = get().byType.fires
-      // no baseline yet, or a version gap → ask the server to re-send a snapshot
       if (!cur || data.v !== (cur.v ?? -1) + 1) {
         get().send({ type: 'resync_fires' })
         return
@@ -29,7 +26,6 @@ export const useSocketStore = create((set, get) => ({
       }))
       return
     }
-    // officer + other typed messages keep the replace-by-type behavior
     set((state) => ({
       byType: { ...state.byType, [type ?? 'fires']: data },
     }))

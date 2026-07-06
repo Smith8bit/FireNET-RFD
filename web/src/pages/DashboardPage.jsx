@@ -16,12 +16,7 @@ import { useAuthStore, can } from '../lib/useAuthStore'
 
 const collator = new Intl.Collator('th')
 const DAY_MS = 24 * 60 * 60 * 1000
-// Asia/Bangkok is a fixed UTC+7 (no DST, ever). Ingested detections carry Thai
-// wall-clock numbers tagged +00:00 (see backend db_control/fires.py), so elapsed
-// time vs a real clock comes up ~7h short and must be added back.
-// ponytail: hardcoded +7h; only wrong if Thailand ever adopts DST.
 const THAI_OFFSET_MS = 7 * 60 * 60 * 1000
-// mirrors backend FIRE_EXPIRE_DAYS — open fires auto-expire after this many days
 const EXPIRE_DAYS = 10
 
 function asDate(value) {
@@ -29,19 +24,16 @@ function asDate(value) {
   return date && !Number.isNaN(date.getTime()) ? date : null
 }
 
-// real elapsed ms since a Thai-wall-clock detection timestamp
 function detectedAgeMs(value, nowMs) {
   const t = Date.parse(value)
   return Number.isNaN(t) ? null : nowMs - t + THAI_OFFSET_MS
 }
 
-// Thai calendar date (YYYY-MM-DD) of a detected_at (already Thai wall-clock)
 function detectedDayKey(value) {
   const d = asDate(value)
   return d ? d.toISOString().slice(0, 10) : null
 }
 
-// Thai calendar date of a real-UTC instant (resolve_time, now)
 function utcDayKey(ms) {
   return new Date(ms + THAI_OFFSET_MS).toISOString().slice(0, 10)
 }
@@ -49,7 +41,6 @@ function utcDayKey(ms) {
 function formatDateTime(value) {
   const date = asDate(value)
   if (!date) return '-'
-  // timeZone UTC so the stored Thai wall-clock numbers display literally
   return new Intl.DateTimeFormat('th-TH', {
     day: '2-digit',
     month: 'short',
@@ -338,8 +329,6 @@ export default function DashboardPage() {
   }, [summary.unassigned])
 
   const dailyRows = useMemo(() => {
-    // span the full window of loaded fires (matches the metric cards) instead of a
-    // fixed 7 days, so the chart and the headline numbers share one reference frame
     const todayKey = utcDayKey(nowMs)
     let minKey = todayKey
     for (const fire of fires) {
@@ -358,8 +347,6 @@ export default function DashboardPage() {
     for (const fire of fires) {
       const detectedRow = byKey.get(detectedDayKey(fire.detected_at))
       if (detectedRow) detectedRow.detected += 1
-      // closes count toward the day the fire was actually closed (resolve_time),
-      // not its detection day — that's true daily throughput, not a cohort
       if (fire.status && fire.resolve_time) {
         const closeRow = byKey.get(utcDayKey(Date.parse(fire.resolve_time)))
         if (closeRow) {
@@ -372,15 +359,11 @@ export default function DashboardPage() {
     return rows
   }, [fires, nowMs])
 
-  // backlog: open, unassigned, and already older than 3 days — the real workload
-  // pressure, unlike "coverage" which is structurally near-zero on a small fleet
   const backlog = useMemo(
     () => summary.unassigned.filter((f) => (detectedAgeMs(f.detected_at, nowMs) ?? 0) > 3 * DAY_MS).length,
     [summary.unassigned, nowMs],
   )
 
-  // closure rate over a mature cohort (fires old enough to have been acted on) —
-  // a window-wide rate is dragged to ~0 by fires detected today that can't be closed yet
   const cohort = useMemo(() => {
     const matured = fires.filter((f) => (detectedAgeMs(f.detected_at, nowMs) ?? 0) > 2 * DAY_MS)
     const handled = matured.filter((f) => f.status && !f.expired)
@@ -391,7 +374,6 @@ export default function DashboardPage() {
   const todayOutcomes = dailyRows[dailyRows.length - 1] ?? { detected: 0, resolved: 0, falseAlarm: 0, expired: 0 }
   const openCoverage = summary.open.length ? percent(summary.assigned.length, summary.open.length) : 100
   const cohortClosureRate = cohort.total ? percent(cohort.handled, cohort.total) : 0
-  // false-alarm rate among officer-attended closes (resolved + false alarm)
   const attendedCloses = summary.resolved.length + summary.falseAlarm.length
   const falseAlarmRate = attendedCloses ? percent(summary.falseAlarm.length, attendedCloses) : 0
   const topProvince = topProvinceRows[0]

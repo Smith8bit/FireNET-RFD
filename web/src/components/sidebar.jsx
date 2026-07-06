@@ -21,7 +21,6 @@ export default function Sidebar() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
 
-  // Persist the collapsed state so it survives navigation/reloads.
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebarCollapsed') === '1'
   )
@@ -29,8 +28,6 @@ export default function Sidebar() {
     localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0')
   }, [collapsed])
 
-  // superuser-only: the global mobile location-poll cadence (minutes). Read the
-  // effective value on mount; saving applies it to every officer (floor 1 min).
   const [poll, setPoll] = useState('')
   const [pollSaved, setPollSaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -46,7 +43,7 @@ export default function Sidebar() {
     const minutes = parseFloat(poll)
     if (!(minutes > 0) || saving) return
     setSaving(true)
-    setTimeout(() => setSaving(false), 2000) // keep disabled while the "saved" animation shows
+    setTimeout(() => setSaving(false), 2000)
     const r = await apiFetch('/officers/location-poll-interval', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -54,7 +51,7 @@ export default function Sidebar() {
     })
     if (r.ok) {
       const d = await r.json()
-      setPoll(String(d.minutes)) // server echoes the clamped effective value
+      setPoll(String(d.minutes))
       setPollSaved(true)
       setTimeout(() => setPollSaved(false), 2000)
     }
@@ -83,8 +80,6 @@ export default function Sidebar() {
       aria-label="Sidebar"
       className={`relative z-20 pt-3 flex flex-col h-screen shrink-0 overflow-x-hidden whitespace-nowrap border-r border-background/50 bg-foreground shadow-sm lg:shadow-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${collapsed ? 'w-16' : 'w-56'}`}
     >
-      {/* Brand + collapse toggle. Fixed height keeps the toggle at a constant
-          Y in both states; only its horizontal placement changes. */}
       <div className="relative flex h-14 items-center px-3.5 border-b border-background">
         <div
           className={`absolute flex items-center transition-opacity duration-250 ${collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
@@ -113,7 +108,6 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* User badge */}
       <div className="px-4 py-3 border-background border-b">
         <div
           className="flex items-center gap-3 rounded-full "
@@ -133,7 +127,6 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation links */}
       <div className="flex flex-col px-2 py-1.5">
         <h2 className={`px-3 py-1.5 text-sm font-medium text-gray-400 select-none transition-opacity duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
           เมนู
@@ -162,7 +155,6 @@ export default function Sidebar() {
         </ul>
       </div>
 
-      {/* Superuser poll control */}
       {user?.is_superuser && !collapsed && (
         <div className="flex flex-col gap-2 px-2 py-3.5 border-background border-t">
           <label htmlFor="pollMins" className="px-3 text-sm font-medium text-gray-400 select-none">
@@ -190,7 +182,6 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Logout pinned to bottom */}
       <div className="mt-auto p-2 border-t border-background/50">
         <button
           type="button"

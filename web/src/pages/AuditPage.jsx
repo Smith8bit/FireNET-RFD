@@ -42,7 +42,6 @@ const ACTION_COLORS = {
   auth: 'bg-gray-100 text-gray-600',
 }
 
-// filter dropdown groups by category prefix instead of every single action
 const CATEGORY_LABELS = {
   fire: 'จุดไฟ',
   officer: 'เจ้าหน้าที่',
@@ -52,18 +51,14 @@ const CATEGORY_LABELS = {
   auth: 'บัญชีผู้ใช้',
 }
 
-// resolve a province ltree path to its Thai name, falling back to the raw path
 const provName = (names, path) => (path ? (names[path] ?? path) : path)
 
 function summarize(item, names = {}) {
   const d = item.detail ?? {}
   const prov = (path) => provName(names, path)
-  // "PrevScope → " prefix when a previous path is present, else "" (a move prefix)
   const arrowFrom = (prevPath) => (prevPath ? `${prov(prevPath)} → ` : '')
-  // verify / delete / create share one shape: "Label: name / สังกัด / ขอบเขต"
   const entity = (label, path) =>
     `${label}: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${prov(path)}`
-  // the name/username/division change lines shared by officer.update & dispatcher.update
   const renameParts = () => {
     const parts = []
     if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
@@ -129,7 +124,7 @@ function summarize(item, names = {}) {
 
 export default function AuditPage() {
   const user = useAuthStore((s) => s.user)
-  const [items, setItems] = useState(null) // null = loading
+  const [items, setItems] = useState(null)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [error, setError] = useState(null)
@@ -181,18 +176,15 @@ export default function AuditPage() {
   return (
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
-      {/* Pge header and detail */}
       <div className='flex flex-row gap-4 items-center'>
         <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>บันทึกเหตุการณ์</h1>
         <p className='font-medium text-md text-accent'>รายการเหตุการณ์ต่างที่เกิดขึ้นในระบบ</p>
       </div>
 
-      {/* Page content container */}
       <div className="flex flex-col flex-1 min-h-0 w-full bg-foreground rounded-2xl p-4 shadow-md">
 
-        {/* Table head (filter/searchbar) */}
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-300">
-          
+
           <select
             value={action}
             onChange={(e) => { setAction(e.target.value); setPage(0) }}
@@ -226,7 +218,7 @@ export default function AuditPage() {
               className={`${INPUT_CLS} flex-1 min-w-0 text-accent`}
             />
           </form>
-          
+
           <button
             type="button"
             onClick={() => setReload((n) => n + 1)}
@@ -235,7 +227,7 @@ export default function AuditPage() {
             รีเฟรช
           </button>
         </div>
-        
+
         <div className={`flex ${(items === null) || error || (items !== null && !error && items.length === 0) ? 'justify-center items-center flex-1' : 'flex-col flex-1 min-h-0'}`}>
           {items === null && <p className="text-gray-400">กำลังโหลด…</p>}
           {error && <p className="text-destructive">{error}</p>}

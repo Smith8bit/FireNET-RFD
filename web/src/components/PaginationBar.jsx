@@ -1,8 +1,3 @@
-// Shared pager footer for the console's paginated tables (officers, dispatchers,
-// history, audit). First/prev/next/last + a "start–end จาก total" range label.
-// `page` is the zero-based current page, `onPage(n)` navigates; the last page is
-// derived from `total`/`pageSize`. `className` lets a caller add its own wrapper
-// styling (e.g. a top border) without changing the shared layout.
 export default function PaginationBar({ page, pageSize, total, onPage, className = '' }) {
   const lastPage = Math.max(Math.ceil(total / pageSize) - 1, 0)
   const start = page * pageSize + 1

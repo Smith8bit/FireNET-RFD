@@ -30,18 +30,11 @@ export default function ExpandedCard({ fire, officers }) {
     const cancelledMsg = useSocketStore((s) => s.byType?.booking_cancelled)
     const errorMsg = useSocketStore((s) => s.byType?.error)
 
-    // a resolved or already-booked fire can't be (re)assigned:
-    // lock the officer list + actions
     const locked = fire.status || fire.booked
-    // cancelling any booking requires fire.appoint (a 0-permission dispatcher must not
-    // be able to cancel a field officer's self-reservation)
     const canCancel = canAppoint && fire.booked && !fire.status
 
-    // the picked officer may turn busy via a live officers_map refresh (self-reserve
-    // or another admin) — disarm the action so we don't fire a doomed appoint
     const selectedBusy = officers.some((o) => o.field_officer_id === selectedOfficer && o.busy)
 
-    // resolve the outcome of an appoint we initiated (only acts on our own request)
     useMessageEffect(appointedMsg, (m) => {
         if (!pending || m.fire_id !== fire.id) return
         setPending(false)

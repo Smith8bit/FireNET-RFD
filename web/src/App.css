@@ -1,22 +1,13 @@
-/* Plain (unlayered) CSS so these always win over the browser's
-   default scrollbar styling — Tailwind v4 owns the @layer cascade. */
 
-/* Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 
-/* IE, Edge and Firefox */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-/* slim, rounded scrollbar with flame theme tones.
-   NOTE: deliberately NO `scrollbar-width` / `scrollbar-color` here — setting
-   those standard props makes Chromium ignore the ::-webkit-scrollbar pseudo
-   styling below (incl. hiding the arrow buttons) and fall back to the OS
-   scrollbar, which shows arrows on Windows. */
 .minimal-scrollbar::-webkit-scrollbar {
   width: 0.75rem;
   height: 0.75rem;
@@ -25,34 +16,27 @@
 .minimal-scrollbar::-webkit-scrollbar-button:single-button,
 .minimal-scrollbar::-webkit-scrollbar-button:start,
 .minimal-scrollbar::-webkit-scrollbar-button:end {
-  display: none;   /* hide up/down arrow buttons */
+  display: none;
   width: 0;
   height: 0;
-  /* fallback so any slot Chromium still paints blends with the track
-     instead of the default light/gray button color */
   background-color: var(--color-flame-light);
 }
 .minimal-scrollbar::-webkit-scrollbar-track {
   background-color: var(--color-flame-light);
 }
-/* corner where horizontal + vertical bars meet — otherwise default white */
 .minimal-scrollbar::-webkit-scrollbar-corner {
   background-color: var(--color-flame-light);
 }
 .minimal-scrollbar::-webkit-scrollbar-thumb {
   background-color: var(--color-flame);
-  border-radius: 9999px;                 /* rounded-full */
-  border: 3px solid transparent;         /* inset so the pill shape shows */
+  border-radius: 9999px;
+  border: 3px solid transparent;
   background-clip: content-box;
 }
 
-/* push the maplibre zoom control below the stacked map controls
-   (layer switcher + reset-view + officer toggle), top-right */
 .maplibregl-ctrl-top-right {
   top: 132px;
 }
-/* align the zoom control's right edge with the custom buttons (right-3 = 12px) */
 .maplibregl-ctrl-top-right .maplibregl-ctrl {
   margin-right: 12px;
 }
-    

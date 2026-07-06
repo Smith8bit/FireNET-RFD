@@ -5,7 +5,6 @@ export default function Card({ Title, Area, Date, Time, id, status, booked }) {
     const setHovered = useMapSelection((s) => s.setHovered)
     const setFocused = useMapSelection((s) => s.setFocused)
 
-    // same states/colors as the mobile fire list
     const label = status ? 'ดับแล้ว' : booked ? 'ถูกจอง' : 'ลุกไหม้'
     const free = !status && !booked
 

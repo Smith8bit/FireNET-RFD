@@ -29,29 +29,27 @@ export default function OfficerPage() {
   const decidedMsg = useSocketStore((s) => s.byType?.region_request_decided)
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
-  // verified officers + inline edit
   const [officers, setOfficers] = useState([])
-  const [query, setQuery] = useState('') // search by name/username/division/province
-  const [statusFilter, setStatusFilter] = useState('all') // all | online | offline
-  const [sort, setSort] = useState('name') // 'name' = by display name, 'new' = by date added
-  const [dir, setDir] = useState('asc') // 'asc' | 'desc'
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [sort, setSort] = useState('name')
+  const [dir, setDir] = useState('asc')
   const [page, setPage] = useState(0)
-  const { provinces } = useRegions() // null = not loaded yet
-  const [editingId, setEditingId] = useState(null) // user_id being edited
+  const { provinces } = useRegions()
+  const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
-  const [editDivision, setEditDivision] = useState('') // สังกัด
-  const [editProvince, setEditProvince] = useState('') // Region.code
+  const [editDivision, setEditDivision] = useState('')
+  const [editProvince, setEditProvince] = useState('')
   const [editUsername, setEditUsername] = useState('')
-  const [editPassword, setEditPassword] = useState('') // blank = keep current
+  const [editPassword, setEditPassword] = useState('')
   const [savingId, setSavingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
-  // pending verification + region-change requests
-  const [pending, setPending] = useState(null) // null = loading
-  const [requests, setRequests] = useState(null) // region-change requests
+  const [pending, setPending] = useState(null)
+  const [requests, setRequests] = useState(null)
   const [busyId, setBusyId] = useState(null)
-  const [pendingQuery, setPendingQuery] = useState('') // search pending by name/username/division/province
-  const [requestQuery, setRequestQuery] = useState('') // search requests by name/username/province
+  const [pendingQuery, setPendingQuery] = useState('')
+  const [requestQuery, setRequestQuery] = useState('')
 
   useEffect(() => {
     send({ type: 'list_officers' })
@@ -140,7 +138,6 @@ export default function OfficerPage() {
     send({ type: 'verify_officer', user_id: id })
   }
 
-  // busy officer (holds a fire) → jump to that fire on the map, like the dashboard
   const goToSpot = (o) => {
     if (!o.fire_id) return
     setFocusedFire(o.fire_id)
@@ -170,9 +167,6 @@ export default function OfficerPage() {
   })
   const officerCols = canManage ? 5 : 4
 
-  // Sort the filtered verified officers by the chosen field, ascending, then
-  // flip for 'desc'. 'name' = Thai collation on display name (falling back to
-  // username); 'new' = region assignment's created_at (asc oldest, desc newest).
   const cmp =
     sort === 'new'
       ? (a, b) => new Date(a.created_at ?? 0) - new Date(b.created_at ?? 0)
@@ -182,8 +176,6 @@ export default function OfficerPage() {
   const sortedOfficers = [...filteredOfficers].sort(
     (a, b) => (dir === 'desc' ? -cmp(a, b) : cmp(a, b)))
 
-  // Client-side pagination over the sorted list (the full list arrives via the
-  // socket). Clamp the page if filtering/deletion shrinks the result set.
   const total = sortedOfficers.length
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
   const safePage = Math.min(page, lastPage)
@@ -202,7 +194,6 @@ export default function OfficerPage() {
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
 
-        {/* Page header and description */}
         <div className='flex flex-row gap-4 items-center'>
           <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>เจ้าหน้าที่</h1>
           <p className='font-medium text-md text-accent'>รายการเจ้าที่ในขอบเขตที่ดูแล</p>
@@ -210,10 +201,8 @@ export default function OfficerPage() {
 
         <div className="flex-1 min-h-0 w-full flex flex-row gap-4 ">
 
-          {/* Officers list container (Inspect/Edit/Delete) */}
           <div className="flex-1 flex flex-col min-h-0 bg-foreground h-full rounded-2xl max-w-1/2 p-4 shadow-md">
 
-            {/* Title + search */}
             <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
               <p className="font-medium text-accent text-lg whitespace-nowrap">เจ้าหน้าที่ในเขตของคุณ ({officers.length})</p>
               <div className="flex flex-row items-center gap-2">
@@ -411,13 +400,10 @@ export default function OfficerPage() {
             )}
           </div>
 
-          {/* Pending officers */}
           <div className="flex flex-col flex-1 rounded-2xl max-w-1/2 gap-4">
 
-            {/* Approve registration */}
             <div className="flex-1 flex flex-col min-h-0 bg-foreground rounded-2xl max-w-full p-4 shadow-md">
 
-              {/* Title + search */}
               <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
                 <p className="font-medium text-accent text-lg">บัญชีที่รอการยืนยัน ({pending?.length ?? 0})</p>
                 <input
@@ -488,11 +474,9 @@ export default function OfficerPage() {
               </div>
             </div>
 
-            {/* Approve region change request */}
             {canViewReq && (
               <div className="flex-1 flex flex-col min-h-0 bg-foreground rounded-2xl max-w-full p-4 shadow-md">
 
-                {/* Title + search */}
                 <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
                   <p className="font-medium text-accent text-lg">คำขอย้ายพื้นที่ ({requests?.length ?? 0})</p>
                   <input

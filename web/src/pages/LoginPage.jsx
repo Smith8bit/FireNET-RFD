@@ -5,9 +5,6 @@ import { toast } from '../lib/toastStore'
 import forestPlaceholder from '../assets/forest_placeholder.jpg'
 import appIcon from '../assets/icon.png'
 
-// Map backend/auth error codes to Thai messages. Anything unrecognized falls
-// back to a generic message so raw codes (e.g. LOGIN_USER_NOT_VERIFIED) or
-// network errors like "Failed to fetch" never leak to the user.
 const LOGIN_ERRORS = {
   LOGIN_BAD_CREDENTIALS: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
 }

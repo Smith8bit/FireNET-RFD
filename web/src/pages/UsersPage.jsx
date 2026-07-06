@@ -5,11 +5,8 @@ import { toast } from '../lib/toastStore'
 import { apiFetch, INPUT_CLS, PAGE_SIZE, THEAD_CLS } from '../lib/shared'
 import CenteredMessage from '../components/CenteredMessage'
 
-// backend role strings → Thai labels (matches the app's vocabulary elsewhere)
 const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dispatcher: 'ผู้ดูแล', field_officer: 'เจ้าหน้าที่' }
 
-// Superuser-only console for revoking account access. "Revoke" suspends the
-// account and kills its live sessions (refresh tokens); "restore" re-enables it.
 export default function UsersPage() {
   const user = useAuthStore((s) => s.user)
 
@@ -17,10 +14,10 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0)
   const [divisions, setDivisions] = useState([])
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('')      // '' | 'active' | 'suspended'
-  const [division, setDivision] = useState('')  // '' = all
-  const [sort, setSort] = useState('name')      // 'name' | 'sessions'
-  const [order, setOrder] = useState('asc')     // 'asc' | 'desc'
+  const [status, setStatus] = useState('')
+  const [division, setDivision] = useState('')
+  const [sort, setSort] = useState('name')
+  const [order, setOrder] = useState('asc')
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState(null)
@@ -46,7 +43,6 @@ export default function UsersPage() {
     }
   }, [query, page, status, division, sort, order])
 
-  // debounce so typing/filtering doesn't fire a request per keystroke
   useEffect(() => {
     const id = setTimeout(load, 300)
     return () => clearTimeout(id)

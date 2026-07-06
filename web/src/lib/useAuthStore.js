@@ -4,17 +4,14 @@ import { apiFetch, setOnSessionExpired } from './shared'
 import { useSocketStore } from './stateStore'
 import { clearRegionsCache } from './useRegions'
 
-// apiFetch transparently refreshes the access cookie on 401; the store just
-// treats responses as before.
 const api = apiFetch
 
-// per-resource UI gate: superuser holds everything, others check their effective set
 export const can = (user, perm) =>
   !!user && (user.is_superuser || (user.permissions ?? []).includes(perm))
 
 export const useAuthStore = create((set, get) => ({
   user: null,
-  status: 'unknown', // 'unknown' | 'guest' | 'authed'
+  status: 'unknown',
 
   async hydrate() {
     if (get().status !== 'unknown') return
@@ -23,7 +20,6 @@ export const useAuthStore = create((set, get) => ({
       if (res.ok) {
         const user = await res.json()
         if (!user.is_admin) {
-          // field officers belong in the mobile app, not the web console
           await api('/auth/cookie/logout', { method: 'POST' }).catch(() => {})
           set({ user: null, status: 'guest' })
           return
@@ -32,7 +28,6 @@ export const useAuthStore = create((set, get) => ({
         return
       }
     } catch {
-      // network error → treat as guest, the UI will show the login page
     }
     set({ user: null, status: 'guest' })
   },
@@ -53,7 +48,6 @@ export const useAuthStore = create((set, get) => ({
     console.debug('[auth] /users/me/profile status', me.status)
     const user = me.ok ? await me.json() : null
     if (user && !user.is_admin) {
-      // logged in fine, but this is a field-officer account — block web access
       await api('/auth/cookie/logout', { method: 'POST' }).catch(() => {})
       set({ user: null, status: 'guest' })
       throw new Error('บัญชีนี้เป็นเจ้าหน้าที่ภาคสนาม กรุณาใช้แอปพลิเคชันมือถือ')
@@ -65,15 +59,11 @@ export const useAuthStore = create((set, get) => ({
     try {
       await api('/auth/cookie/logout', { method: 'POST' })
     } catch {
-      // ignore — clear local state regardless
     }
-    // drop the previous session's live data so the next login can't flash it
     useSocketStore.setState({ byType: {} })
     clearRegionsCache()
     set({ user: null, status: 'guest' })
   },
 }))
 
-// a dead session surfaced by any apiFetch call (refresh token also expired) sends
-// the user back to login via RequireAuth
 setOnSessionExpired(() => useAuthStore.setState({ user: null, status: 'guest' }))

@@ -7,8 +7,6 @@ import { useMapSelection } from '../lib/stateStore'
 import { formatLastSeen } from '../lib/datetime'
 import { FIRE_COLORS } from '../lib/fireColors'
 
-// Fires are drawn as a WebGL circle layer (one source, not one DOM marker per
-// fire) so the map stays smooth with thousands of points.
 const FIRES_SOURCE = 'fires'
 const FIRES_LAYER = 'fire-circles'
 
@@ -23,14 +21,13 @@ function firesToGeoJSON(points) {
     }
 }
 
-// like mobile: color tells the fire's state; selection grows the dot + stroke
 function firePaint(activeId) {
     const isActive = ['==', ['get', 'id'], activeId ?? '']
     return {
         'circle-color': [
             'case',
             isActive,
-            '#FFBF00', // selected/focused spot
+            '#FFBF00',
             ['==', ['get', 'status'], true],
             FIRE_COLORS.resolved,
             ['==', ['get', 'booked'], true],
@@ -118,8 +115,6 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     const setFocused = useMapSelection((s) => s.setFocused)
     const clearSelection = useMapSelection((s) => s.clear)
 
-    // let the parent recenter the map to the user's starting view, plus drive
-    // the zoom buttons that live in the floating map-control group
     useImperativeHandle(ref, () => ({
         resetView: () => {
             mapRef.current?.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: startZoom, duration: 800 })
@@ -141,10 +136,7 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         map.setRenderWorldCopies(false)
         map.dragRotate.disable()
         map.doubleClickZoom.disable()
-        // zoom buttons live in the floating control group (see MapViewPage) so they
-        // stay grouped with the other controls and shift left when the panel opens
 
-        // setStyle() wipes custom sources, so re-add fires after every style load
         map.on('style.load', () => {
             if (map.getSource(FIRES_SOURCE)) return
             map.addSource(FIRES_SOURCE, { type: 'geojson', data: firesToGeoJSON(pointsRef.current) })
@@ -154,7 +146,6 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
             const feature = e.features?.[0]
             if (feature) setFocused(feature.properties.id)
         })
-        // a click on empty map (not on a fire) clears the current selection
         map.on('click', (e) => {
             const hit = map.getLayer(FIRES_LAYER)
                 && map.queryRenderedFeatures(e.point, { layers: [FIRES_LAYER] }).length > 0
@@ -165,8 +156,6 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
 
         mapRef.current = map
 
-        // the map container resizes when side panels collapse/expand, which
-        // doesn't fire a window resize — keep the canvas in sync ourselves
         const ro = new ResizeObserver(() => map.resize())
         ro.observe(map.getContainer())
 
@@ -192,11 +181,8 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         pointsRef.current = points
         const source = mapRef.current?.getSource(FIRES_SOURCE)
         if (source) source.setData(firesToGeoJSON(points))
-        // if the style is still loading, the style.load handler adds the
-        // source with the latest pointsRef
     }, [points])
 
-    // like mobile: selecting a fire (map click or list card) flies the camera to it
     useEffect(() => {
         const map = mapRef.current
         if (!map || !focusedId) return
@@ -244,6 +230,4 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     )
 })
 
-// the map instance is built once; collapsing side panels only changes layout,
-// so skip re-rendering as long as the data/layer props are unchanged
 export default memo(MapView)

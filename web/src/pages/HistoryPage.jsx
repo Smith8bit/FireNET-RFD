@@ -6,33 +6,30 @@ import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
 import PaginationBar from '../components/PaginationBar'
 
-// content-type → download filename extension (mirrors backend IMAGE_EXT/VIDEO_EXT)
 const EXT = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
   'video/mp4': 'mp4', 'video/quicktime': 'mov',
 }
 
-// Resolved-fire history with the officer's evidence (note, photos/video, who, when).
 export default function HistoryPage() {
   const user = useAuthStore((s) => s.user)
-  const [items, setItems] = useState(null) // null = loading
+  const [items, setItems] = useState(null)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
-  const [kind, setKind] = useState('') // '' = all, 'false' = real fire, 'true' = false alarm
-  const [province, setProvince] = useState('') // '' = all provinces (matched by Thai name)
-  const { provinces: provinceRegions } = useRegions() // dropdown options, region-scoped to the viewer
+  const [kind, setKind] = useState('')
+  const [province, setProvince] = useState('')
+  const { provinces: provinceRegions } = useRegions()
   const provinces = useMemo(() => (provinceRegions ?? []).map((p) => p.name_th), [provinceRegions])
-  const [dateFrom, setDateFrom] = useState('') // inclusive start day
-  const [dateTo, setDateTo] = useState('') // inclusive end day
-  const [searchInput, setSearchInput] = useState('') // raw text in the box
-  const [search, setSearch] = useState('') // committed query (fire/officer name, location)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   const [error, setError] = useState(null)
   const [reload, setReload] = useState(0)
   const [downloading, setDownloading] = useState(false)
-  const [viewer, setViewer] = useState(null) // { path, url, isVideo, filename } | null
+  const [viewer, setViewer] = useState(null)
   const [savingEvidence, setSavingEvidence] = useState(false)
 
-  // fetch a single evidence file (auth cookie via apiFetch) and save it locally
   async function saveEvidence(path, filename) {
     setSavingEvidence(true)
     try {
@@ -51,8 +48,6 @@ export default function HistoryPage() {
     }
   }
 
-  // Shared filter params (used by both the table query and the ZIP export).
-  // since = start of dateFrom; until = start of the day after dateTo (exclusive).
   const buildFilterParams = () => {
     const p = new URLSearchParams()
     if (kind) p.set('false_alarm', kind)
@@ -112,16 +107,13 @@ export default function HistoryPage() {
   return (
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
-      {/* Page header and detail */}
       <div className='flex flex-row gap-4 items-center'>
         <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>ประวัติการดับไฟ</h1>
         <p className='font-medium text-md text-accent'>รายการจุดไฟที่ดำเนินการเสร็จสิ้นแล้ว</p>
       </div>
 
-      {/* Page content container */}
       <div className="flex flex-col flex-1 min-h-0 w-full bg-foreground rounded-2xl p-4 shadow-md">
 
-        {/* Table head (filter bar) */}
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-300">
           <select
             value={kind}
@@ -292,7 +284,6 @@ export default function HistoryPage() {
       </div>
       </div>
 
-      {/* Full-screen evidence viewer — click backdrop to close (mirrors the mobile app) */}
       {viewer && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"

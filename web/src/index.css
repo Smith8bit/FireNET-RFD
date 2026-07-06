@@ -75,9 +75,6 @@
   background-image: var(--gradient-flame);
 }
 
-/* * {
-  border-color: hsl(var(--border));
-} */
 
 body {
   margin: 0;

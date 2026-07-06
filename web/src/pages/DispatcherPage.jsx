@@ -11,13 +11,11 @@ import CenteredMessage from '../components/CenteredMessage'
 
 const regionLabel = (r) => r.name_th
 
-// region picker order: broadest scope first, then alphabetical by Thai name
 const REGION_LEVEL_ORDER = { national: 0, regional: 1, province: 2 }
 const byRegion = (a, b) =>
   (REGION_LEVEL_ORDER[a.level] ?? 99) - (REGION_LEVEL_ORDER[b.level] ?? 99) ||
   (a.name_th ?? '').localeCompare(b.name_th ?? '', 'th')
 
-// Console permissions a dispatcher can be granted (mirrors backend ALL_PERMISSIONS).
 const PERMISSION_OPTIONS = [
   { id: 'officers.view', label: 'มองเห็นเจ้าหน้าที่' },
   { id: 'officer.manage', label: 'จัดการเจ้าหน้าที่' },
@@ -27,18 +25,12 @@ const PERMISSION_OPTIONS = [
   { id: 'region_request.decide', label: 'อนุมัติคำขอย้ายพื้นที่' },
   { id: 'fires.history', label: 'ดูประวัติการดับไฟ' },
   { id: 'dispatchers.view', label: 'มองเห็นผู้ดูแล' },
-  // dispatcher.manage is superuser-only — not delegatable
 ]
-// Default checkboxes = the backend "dispatcher" preset.
 const DISPATCHER_DEFAULT = [
   'fires.view', 'officers.view', 'region_requests.view', 'officer.verify',
   'officer.manage', 'fire.appoint', 'region_request.decide', 'fires.history'
 ]
 
-// Action → implied view permissions (mirrors backend IMPLIES in
-// db_control/permission.py). Holding an action permission auto-grants the views
-// it reads, so we surface those as checked & locked rather than letting an admin
-// uncheck a view the backend will re-grant anyway.
 const IMPLIES = {
   'officer.verify': ['officers.view'],
   'officer.manage': ['officers.view'],
@@ -48,20 +40,14 @@ const IMPLIES = {
   'dispatcher.manage': ['dispatchers.view'],
 }
 
-// The set of view permissions auto-granted by the currently-checked permissions.
 const impliedPerms = (perms) => {
   const out = new Set()
   for (const p of perms) for (const v of IMPLIES[p] ?? []) out.add(v)
   return out
 }
 
-// Every permission an admin can explicitly tick (used by the "select all" button).
 const ALL_PERMISSION_IDS = PERMISSION_OPTIONS.map((p) => p.id)
 
-// Permission checkbox group shared by the create and edit forms. Permissions
-// implied by a checked action permission render checked, locked, and tagged so
-// the admin sees they're included automatically. `onSet` replaces the whole list
-// (for the bulk buttons); `revertTo` is the list to restore on "revert".
 function PermissionFields({ perms, onToggle, onSet, revertTo }) {
   const implied = impliedPerms(perms)
   return (
@@ -117,12 +103,9 @@ function PermissionFields({ perms, onToggle, onSet, revertTo }) {
   )
 }
 
-// Superuser-only: provision, edit, and remove dispatcher accounts, each scoped
-// to one region (regional office or province).
 export default function DispatcherPage() {
   const user = useAuthStore((s) => s.user)
   const send = useSocketStore((s) => s.send)
-  // create/edit/delete + permission granting are superuser-only (matches backend)
   const canManage = user?.is_superuser
   const dispatchersMsg = useSocketStore((s) => s.byType?.dispatchers)
   const createdMsg = useSocketStore((s) => s.byType?.dispatcher_created)
@@ -130,27 +113,25 @@ export default function DispatcherPage() {
   const deletedMsg = useSocketStore((s) => s.byType?.dispatcher_deleted)
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
-  const [dispatchers, setDispatchers] = useState(null) // null = loading
-  const { regions: allRegions } = useRegions() // assignment options
+  const [dispatchers, setDispatchers] = useState(null)
+  const { regions: allRegions } = useRegions()
   const regions = useMemo(() => (allRegions ? [...allRegions].sort(byRegion) : null), [allRegions])
-  const [query, setQuery] = useState('') // search by name/username/division/region
-  const [sort, setSort] = useState('name') // 'name' = by display name, 'new' = by date added
-  const [dir, setDir] = useState('asc') // 'asc' | 'desc'
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState('name')
+  const [dir, setDir] = useState('asc')
   const [page, setPage] = useState(0)
 
-  // create form
   const [creating, setCreating] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [newName, setNewName] = useState('')
-  const [newDivision, setNewDivision] = useState('') // สังกัด
+  const [newDivision, setNewDivision] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [newRegion, setNewRegion] = useState('') // Region.id
+  const [newRegion, setNewRegion] = useState('')
   const [newPerms, setNewPerms] = useState(DISPATCHER_DEFAULT)
 
-  // inline edit
-  const [editingId, setEditingId] = useState(null) // dispatcher user_id
+  const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
-  const [editDivision, setEditDivision] = useState('') // สังกัด
+  const [editDivision, setEditDivision] = useState('')
   const [editUsername, setEditUsername] = useState('')
   const [editPassword, setEditPassword] = useState('')
   const [editRegion, setEditRegion] = useState('')
@@ -243,9 +224,6 @@ export default function DispatcherPage() {
     matchesQuery(d, ['name', 'username', 'division', 'region_name_th'], q))
   const dispatcherCols = canManage ? 4 : 3
 
-  // Sort the filtered list by the chosen field, ascending, then flip for 'desc'.
-  // 'name' = Thai collation on display name (falling back to username); 'new' =
-  // the assignment's created_at (asc = oldest first, desc = newest first).
   const cmp =
     sort === 'new'
       ? (a, b) => new Date(a.created_at ?? 0) - new Date(b.created_at ?? 0)
@@ -253,8 +231,6 @@ export default function DispatcherPage() {
   const sortedDispatchers = [...filteredDispatchers].sort(
     (a, b) => (dir === 'desc' ? -cmp(a, b) : cmp(a, b)))
 
-  // Client-side pagination over the sorted list (the full list arrives via the
-  // socket). Clamp the page if filtering/deletion shrinks the result set.
   const total = sortedDispatchers.length
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
   const safePage = Math.min(page, lastPage)
@@ -265,7 +241,6 @@ export default function DispatcherPage() {
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
 
-      {/* Page header and description */}
       <div className='flex flex-row gap-4 items-center'>
         <h1 className='mt-2 pl-2 font-bold text-3xl text-primary'>ผู้ดูแล</h1>
         <p className='font-medium text-md text-accent'>ผู้ดูแลประจำพื้นที่ (สร้าง แก้ไข และลบบัญชี)</p>
@@ -273,10 +248,8 @@ export default function DispatcherPage() {
 
       <div className="flex-1 min-h-0 w-full flex flex-row gap-4 ">
 
-        {/* Dispatchers list container (Inspect/Edit/Delete) */}
         <div className="flex-1 flex flex-col min-h-0 bg-foreground h-full rounded-2xl max-w-3/3 p-4 shadow-md">
 
-          {/* Title + search */}
           <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
             <p className="font-medium text-accent text-lg whitespace-nowrap">ผู้ดูแลประจำพื้นที่ ({dispatchers?.length ?? 0})</p>
             <div className="flex flex-row items-center gap-2">
@@ -440,11 +413,9 @@ export default function DispatcherPage() {
           )}
         </div>
 
-        {/* Create dispatcher (separate container) */}
         {canManage && (
           <div className="flex-1 flex flex-col min-h-0  bg-foreground h-full rounded-2xl max-w-1/3 p-4 shadow-md">
 
-            {/* Title */}
             <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
               <p className="font-medium text-accent text-lg">สร้างผู้ดูแลใหม่</p>
             </div>

@@ -1,7 +1,5 @@
 import { useEffect } from 'react'
 
-// Presentational toast card. Positioning + stacking are owned by <Toaster>;
-// this just renders one message and self-dismisses after `duration`.
 export default function Toast({ message, type = 'success', onClose, duration = 3000 }) {
   useEffect(() => {
     if (!message) return

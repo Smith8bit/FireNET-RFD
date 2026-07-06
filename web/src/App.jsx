@@ -1,4 +1,3 @@
-// App.jsx — root, owns the connection, renders the pages
 import { useEffect } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
@@ -47,7 +46,6 @@ function RequireAuth() {
 }
 
 function App() {
-  // Zustand store setters
   const handleMessage = useSocketStore((s) => s.handleMessage)
   const setSend = useSocketStore((s) => s.setSend)
   const setReady = useSocketStore((s) => s.setReady)
@@ -59,9 +57,6 @@ function App() {
     hydrate()
   }, [hydrate])
 
-  // The access cookie lives 1h, but the WebSocket (cookie-authed at handshake)
-  // can stay open with no HTTP calls to trigger a refresh. Proactively rotate
-  // every 45 min while authed so the cookie is always fresh for a WS reconnect.
   useEffect(() => {
     if (status !== 'authed') return
     const id = setInterval(refreshSession, 45 * 60 * 1000)
@@ -70,8 +65,7 @@ function App() {
 
   const wsUrl = import.meta.env.VITE_WS_URL
     ?? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
-  
-    // Establish WebSocket connection
+
   const { sendMessage, lastMessage, readyState } = useWebSocket(
     wsUrl,
     {
@@ -80,7 +74,6 @@ function App() {
     status === 'authed'
   )
 
-  // receive messages and update Zustand store
   useEffect(() => {
     if (lastMessage !== null) {
       try {
@@ -91,14 +84,12 @@ function App() {
     }
   }, [lastMessage, handleMessage])
 
-  // Sync send function to Zustand — only when sendMessage changes
   useEffect(() => {
     setSend((payload) => {
       sendMessage(typeof payload === 'string' ? payload : JSON.stringify(payload))
     })
   }, [sendMessage, setSend])
 
-  // Sync ready state separately so readyState changes don't recreate send
   useEffect(() => {
     setReady(readyState === ReadyState.OPEN)
   }, [readyState, setReady])

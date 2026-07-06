@@ -2,9 +2,6 @@ import { create } from 'zustand'
 
 let nextId = 1
 
-// A tiny global toast queue. Any component (or plain module code) can push a
-// toast via the `toast` helper below; a single <Toaster> mounted at the app
-// root renders the stack, so toasts survive route changes and tab unmounts.
 export const useToastStore = create((set) => ({
   toasts: [],
   show: (message, type = 'success', duration = 3000) => {
