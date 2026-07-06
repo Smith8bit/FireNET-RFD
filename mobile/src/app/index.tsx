@@ -14,5 +14,5 @@ export default function Index() {
   }
   if (!user) return <Redirect href="/Login" />
   if (!user.is_verified) return <Redirect href="/Pending" />
-  return <Redirect href="/(authorized)/MapView" />
+  return <Redirect href="/MapView" />
 }

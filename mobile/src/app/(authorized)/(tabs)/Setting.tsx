@@ -6,6 +6,15 @@ import { Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 type Row = { icon: keyof typeof Ionicons.glyphMap; label: string; route: string }
@@ -14,16 +23,13 @@ const ROWS: Row[] = [
   { icon: 'person-circle-outline', label: 'บัญชีของฉัน', route: '/(authorized)/Account' },
   { icon: 'swap-horizontal-outline', label: 'ย้ายพื้นที่รับผิดชอบ', route: '/(authorized)/RegionChange' },
   { icon: 'time-outline', label: 'ประวัติการดับไฟ', route: '/(authorized)/History' },
+  { icon: 'sparkles-outline', label: 'ปุ่มแอนิเมชัน (Demo)', route: '/(authorized)/ButtonDemo' },
 ]
 
-// shadow can't be expressed as a className faithfully on both platforms — keep it inline
-const cardShadow = {
-  elevation: 2,
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
+// Soft shadow via boxShadow (New Arch), NOT Android `elevation`: elevation
+// re-rasterizes each frame and shimmers while the tab transition translates the
+// screen; boxShadow composites with the view and moves with it cleanly.
+const cardShadow = { boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.10)' } as const
 
 const fmtMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MB`
 
@@ -75,26 +81,43 @@ function OfflineMapButton({ home }: { home: Home }) {
 
 function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
   const [expanded, setExpanded] = useState(false)
+  const reduced = useReducedMotion()
+  const [fullW, setFullW] = useState(0)
+  const progress = useSharedValue(0)
   useFocusEffect(useCallback(() => () => setExpanded(false), []))
+
+  useEffect(() => {
+    const to = expanded ? 1 : 0
+    progress.value = reduced ? to : withTiming(to, { duration: 240, easing: Easing.out(Easing.quad) })
+  }, [expanded, reduced, progress])
+
+  // Drive width from a 52px circle out to full width, right edge pinned by the
+  // parent's items-end. It reads as the circle expanding in place, not a pill
+  // flying in from the right. overflow-hidden clips the label until it fits.
+  const style = useAnimatedStyle(() => ({
+    width: fullW > 0 ? 52 + (fullW - 52) * progress.value : 52,
+  }))
+
   return (
-    <View className="mt-1 items-end">
-      {expanded ? (
+    <View className="mt-1 items-end" onLayout={(e) => setFullW(e.nativeEvent.layout.width)}>
+      <Animated.View style={style} className="h-[52px] overflow-hidden rounded-full bg-destructive">
         <Pressable
-          onPress={onConfirm}
-          className="flex-row items-center justify-center gap-2 w-full rounded-full bg-destructive py-3.5"
-        >
-          <Ionicons name="log-out-outline" size={20} color="#fff" />
-          <Text className="text-base font-sans-semibold text-white">ออกจากระบบ</Text>
-        </Pressable>
-      ) : (
-        <Pressable
-          onPress={() => setExpanded(true)}
-          className="items-center justify-center rounded-full bg-destructive"
-          style={{ width: 52, height: 52 }}
+          onPress={expanded ? onConfirm : () => setExpanded(true)}
+          className="flex-1 flex-row items-center justify-center gap-2"
         >
           <Ionicons name="log-out-outline" size={22} color="#fff" />
+          {expanded && (
+            <Animated.Text
+              entering={reduced ? undefined : FadeIn.duration(180)}
+              exiting={reduced ? undefined : FadeOut.duration(120)}
+              numberOfLines={1}
+              className="text-base font-sans-semibold text-white"
+            >
+              ออกจากระบบ
+            </Animated.Text>
+          )}
         </Pressable>
-      )}
+      </Animated.View>
     </View>
   )
 }

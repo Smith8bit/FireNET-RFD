@@ -17,16 +17,14 @@ import {
   Image,
   Keyboard,
   Linking,
-  Modal,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
-import Animated, { SlideInDown } from 'react-native-reanimated'
+import SlideUpModal from '@/components/SlideUpModal'
 
 // Map's "free/burning" red, kept literal so the active-fire icon/badge here match
 // the map markers (FIRE_COLORS.free in MapView).
@@ -344,23 +342,12 @@ export default function Firespot() {
           : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกผลได้'}
       </Text>
 
-      <Modal
+      <SlideUpModal
         visible={formVisible}
-        animationType="none"
-        transparent
-        onRequestClose={() => !submitting && setFormVisible(false)}
+        onClose={() => setFormVisible(false)}
+        dismissable={!submitting}
+        sheetStyle={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
       >
-        <View className="flex-1 justify-end bg-black/40">
-          {/* tapping outside the card dismisses (blocked while submitting) */}
-          <Pressable
-            className="absolute inset-0"
-            onPress={() => !submitting && setFormVisible(false)}
-          />
-          <Animated.View
-            className="rounded-t-3xl bg-foreground p-5"
-            entering={SlideInDown.duration(250)}
-            style={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
-          >
             {/* keyboardShouldPersistTaps: without it the first tap on a button just
                 dismisses the keyboard (needs a second tap) when the note field is focused */}
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -473,11 +460,13 @@ export default function Firespot() {
               >
                 <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
               </TouchableOpacity>
+              {/* not blockaded by missing evidence — submitResolve validates and
+                  toasts why; only disabled while actually working (in-flight / compressing) */}
               <TouchableOpacity
-                className={`items-center rounded-xl p-3.5 ${(photos.length === 0 && !video) || submitting || compressingVideo ? 'bg-gray-300' : 'bg-success'}`}
+                className={`items-center rounded-xl p-3.5 ${submitting || compressingVideo ? 'bg-gray-300' : 'bg-success'}`}
                 style={{ flex: 2 }}
                 onPress={submitResolve}
-                disabled={(photos.length === 0 && !video) || submitting || compressingVideo}
+                disabled={submitting || compressingVideo}
               >
                 {submitting ? (
                   <ActivityIndicator color="white" />
@@ -487,26 +476,14 @@ export default function Firespot() {
               </TouchableOpacity>
             </View>
             </ScrollView>
-          </Animated.View>
-        </View>
-      </Modal>
+      </SlideUpModal>
 
-      <Modal
+      <SlideUpModal
         visible={falseFormVisible}
-        animationType="none"
-        transparent
-        onRequestClose={() => !falseSubmitting && setFalseFormVisible(false)}
+        onClose={() => setFalseFormVisible(false)}
+        dismissable={!falseSubmitting}
+        sheetStyle={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
       >
-        <View className="flex-1 justify-end bg-black/40">
-          <Pressable
-            className="absolute inset-0"
-            onPress={() => !falseSubmitting && setFalseFormVisible(false)}
-          />
-          <Animated.View
-            className="rounded-t-3xl bg-foreground p-5"
-            entering={SlideInDown.duration(250)}
-            style={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
-          >
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">แจ้งว่าไม่ใช่ไฟ</Text>
             <Text className="mb-1 text-md text-center font-head text-accent">
@@ -547,9 +524,7 @@ export default function Firespot() {
               </TouchableOpacity>
             </View>
             </ScrollView>
-          </Animated.View>
-        </View>
-      </Modal>
+      </SlideUpModal>
     </ScrollView>
   )
 }

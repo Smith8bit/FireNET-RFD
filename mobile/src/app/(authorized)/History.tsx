@@ -198,14 +198,12 @@ export default function History() {
             viewer.contentType.startsWith('video/')
               ? <EvidenceVideo fireId={viewer.fireId} imageId={viewer.imageId} />
               : (
-                <Pressable onPress={() => setViewer(null)}>
-                  <Image
-                    source={evidenceSource(viewer.fireId, viewer.imageId)}
-                    style={{ width: '100%', height: '80%' }}
-                    contentFit="contain"
-                    transition={150}
-                  />
-                </Pressable>
+                <Image
+                  source={evidenceSource(viewer.fireId, viewer.imageId)}
+                  style={{ width: '100%', height: '80%' }}
+                  contentFit="contain"
+                  transition={150}
+                />
               )
           )}
           <Pressable
