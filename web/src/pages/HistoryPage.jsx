@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore, can } from '../lib/useAuthStore'
-import { API_URL, apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { API_URL, apiFetch, INPUT_CLS, PAGE_SIZE, SELECT_CLS, THEAD_CLS } from '../lib/shared'
+import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
-
-const PAGE_SIZE = 20
-
-const FMT = new Intl.DateTimeFormat('th-TH', {
-  day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
-})
+import PaginationBar from '../components/PaginationBar'
 
 // content-type → download filename extension (mirrors backend IMAGE_EXT/VIDEO_EXT)
 const EXT = {
@@ -113,7 +109,6 @@ export default function HistoryPage() {
 
   if (!can(user, 'fires.history')) return <Navigate to="/" replace />
 
-  const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
   return (
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
@@ -219,7 +214,7 @@ export default function HistoryPage() {
                   <col />
                   <col className="w-32" />
                 </colgroup>
-                <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                <thead className={THEAD_CLS}>
                   <tr className="text-accent text-sm">
                     <th className="px-3 py-2 font-medium">สถานะ</th>
                     <th className="px-3 py-2 font-medium">จุดไฟ</th>
@@ -281,7 +276,7 @@ export default function HistoryPage() {
                         )}
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 whitespace-nowrap text-right">
-                        {FMT.format(new Date(it.resolved_at))} น.
+                        {formatEventTime(it.resolved_at)}
                       </td>
                     </tr>
                   ))}
@@ -291,47 +286,7 @@ export default function HistoryPage() {
           )}
 
           {items?.length > 0 && (
-            <div className="flex items-center justify-between pt-3 text-sm text-gray-600">
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(0)}
-                  disabled={page === 0}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  หน้าแรก
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                  disabled={page === 0}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  ก่อนหน้า
-                </button>
-              </div>
-              <span>
-                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} จาก {total}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
-                  disabled={page >= lastPage}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  ถัดไป
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(lastPage)}
-                  disabled={page >= lastPage}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  หน้าสุดท้าย
-                </button>
-              </div>
-            </div>
+            <PaginationBar page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
           )}
         </div>
       </div>

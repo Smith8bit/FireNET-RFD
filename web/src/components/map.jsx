@@ -4,18 +4,13 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { UserCircleIcon } from '@heroicons/react/20/solid'
 import { useMapSelection } from '../lib/stateStore'
+import { formatLastSeen } from '../lib/datetime'
+import { FIRE_COLORS } from '../lib/fireColors'
 
 // Fires are drawn as a WebGL circle layer (one source, not one DOM marker per
 // fire) so the map stays smooth with thousands of points.
 const FIRES_SOURCE = 'fires'
 const FIRES_LAYER = 'fire-circles'
-
-// same palette as the mobile app's fire states (mirrored in MapViewPage's legend)
-const FIRE_COLORS = {
-    resolved: '#d1d5dc', // ดับแล้ว
-    booked: '#facc15', // ถูกเจ้าหน้าที่จอง
-    free: '#ef4444', // ไฟอิสระ กำลังไหม้
-}
 
 function firesToGeoJSON(points) {
     return {
@@ -48,17 +43,6 @@ function firePaint(activeId) {
     }
 }
 
-// last-location timestamp shown under an officer's name on the map
-const LOC_TIME_FORMAT = new Intl.DateTimeFormat('th-TH', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-})
-
-function formatLocTime(value) {
-    if (!value) return ''
-    const d = new Date(value)
-    return isNaN(d) ? '' : `${LOC_TIME_FORMAT.format(d)} น.`
-}
-
 function makeOfficerEl(active, name, lastUpdated) {
     const wrapper = document.createElement('div')
     Object.assign(wrapper.style, {
@@ -87,7 +71,7 @@ function makeOfficerEl(active, name, lastUpdated) {
     nameLine.textContent = name ?? 'เจ้าหน้าที่'
     label.appendChild(nameLine)
 
-    const timeText = formatLocTime(lastUpdated)
+    const timeText = formatLastSeen(lastUpdated)
     if (timeText) {
         const timeLine = document.createElement('div')
         Object.assign(timeLine.style, {

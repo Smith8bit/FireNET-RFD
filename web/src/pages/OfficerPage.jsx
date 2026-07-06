@@ -4,20 +4,11 @@ import { useSocketStore, useMapSelection } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
-import { ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
+import { ERROR_MESSAGES, INPUT_CLS, PAGE_SIZE, SELECT_CLS, THEAD_CLS, USERNAME_PATTERN, errorText, isValidUsername, matchesQuery } from '../lib/shared'
+import { formatLastSeen } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
-
-const PAGE_SIZE = 20
-
-// last-active timestamp shown under an officer's online status
-const LAST_SEEN_FORMAT = new Intl.DateTimeFormat('th-TH', {
-  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-})
-const formatLastSeen = (value) => {
-  if (!value) return ''
-  const d = new Date(value)
-  return isNaN(d) ? '' : `${LAST_SEEN_FORMAT.format(d)} น.`
-}
+import PaginationBar from '../components/PaginationBar'
+import CenteredMessage from '../components/CenteredMessage'
 
 export default function OfficerPage() {
   const user = useAuthStore((s) => s.user)
@@ -175,13 +166,7 @@ export default function OfficerPage() {
     if (statusFilter === 'online' && !o.active) return false
     if (statusFilter === 'offline' && o.active) return false
     if (statusFilter === 'busy' && !o.fire_id) return false
-    if (!q) return true
-    return (
-      (o.name ?? '').toLowerCase().includes(q) ||
-      (o.username ?? '').toLowerCase().includes(q) ||
-      (o.division ?? '').toLowerCase().includes(q) ||
-      (o.province_name_th ?? '').toLowerCase().includes(q)
-    )
+    return matchesQuery(o, ['name', 'username', 'division', 'province_name_th'], q)
   })
   const officerCols = canManage ? 5 : 4
 
@@ -206,26 +191,12 @@ export default function OfficerPage() {
   if (page !== safePage) setPage(safePage)
 
   const pq = pendingQuery.trim().toLowerCase()
-  const filteredPending = (pending ?? []).filter((o) => {
-    if (!pq) return true
-    return (
-      (o.name ?? '').toLowerCase().includes(pq) ||
-      (o.username ?? '').toLowerCase().includes(pq) ||
-      (o.division ?? '').toLowerCase().includes(pq) ||
-      (o.province_name_th ?? '').toLowerCase().includes(pq)
-    )
-  })
+  const filteredPending = (pending ?? []).filter((o) =>
+    matchesQuery(o, ['name', 'username', 'division', 'province_name_th'], pq))
 
   const rq = requestQuery.trim().toLowerCase()
-  const filteredRequests = (requests ?? []).filter((r) => {
-    if (!rq) return true
-    return (
-      (r.officer_name ?? '').toLowerCase().includes(rq) ||
-      (r.username ?? '').toLowerCase().includes(rq) ||
-      (r.current_province ?? '').toLowerCase().includes(rq) ||
-      (r.requested_province ?? '').toLowerCase().includes(rq)
-    )
-  })
+  const filteredRequests = (requests ?? []).filter((r) =>
+    matchesQuery(r, ['officer_name', 'username', 'current_province', 'requested_province'], rq))
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
@@ -290,16 +261,12 @@ export default function OfficerPage() {
 
             <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
               {officers.length === 0 ? (
-                <div className="h-full flex justify-center items-center">
-                  <p className="text-gray-400">ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</p>
-                </div>
+                <CenteredMessage>ยังไม่มีเจ้าหน้าที่ที่ได้รับการยืนยัน</CenteredMessage>
               ) : filteredOfficers.length === 0 ? (
-                <div className="h-full flex justify-center items-center">
-                  <p className="text-gray-400">ไม่พบเจ้าหน้าที่ที่ตรงกับการค้นหา</p>
-                </div>
+                <CenteredMessage>ไม่พบเจ้าหน้าที่ที่ตรงกับการค้นหา</CenteredMessage>
               ) : (
                 <table className="w-full table-fixed text-left border-collapse">
-                  <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                  <thead className={THEAD_CLS}>
                     <tr className="text-accent text-sm">
                       <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[34%]">ชื่อ / ชื่อผู้ใช้</th>
                       <th title="สังกัด" className="px-3 py-2 font-medium w-[26%]">สังกัด</th>
@@ -440,47 +407,7 @@ export default function OfficerPage() {
             </div>
 
             {filteredOfficers.length > 0 && (
-              <div className="flex items-center justify-between pt-3 mt-2 border-t border-gray-300 text-sm text-gray-600">
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage(0)}
-                    disabled={safePage === 0}
-                    className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                  >
-                    หน้าแรก
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                    disabled={safePage === 0}
-                    className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                  >
-                    ก่อนหน้า
-                  </button>
-                </div>
-                <span>
-                  {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, total)} จาก {total}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
-                    disabled={safePage >= lastPage}
-                    className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                  >
-                    ถัดไป
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPage(lastPage)}
-                    disabled={safePage >= lastPage}
-                    className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                  >
-                    หน้าสุดท้าย
-                  </button>
-                </div>
-              </div>
+              <PaginationBar page={safePage} pageSize={PAGE_SIZE} total={total} onPage={setPage} className="mt-2 border-t border-gray-300" />
             )}
           </div>
 
@@ -506,20 +433,14 @@ export default function OfficerPage() {
 
               <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {loadingPending ? (
-                  <div className="h-full flex justify-center items-center">
-                    <p className="text-gray-400">กำลังโหลด…</p>
-                  </div>
+                  <CenteredMessage>กำลังโหลด…</CenteredMessage>
                 ) : pending.length === 0 ? (
-                  <div className="h-full flex justify-center items-center">
-                    <p className="text-gray-400">ไม่มีบัญชีที่รอการยืนยัน</p>
-                  </div>
+                  <CenteredMessage>ไม่มีบัญชีที่รอการยืนยัน</CenteredMessage>
                 ) : filteredPending.length === 0 ? (
-                  <div className="h-full flex justify-center items-center">
-                    <p className="text-gray-400">ไม่พบบัญชีที่ตรงกับการค้นหา</p>
-                  </div>
+                  <CenteredMessage>ไม่พบบัญชีที่ตรงกับการค้นหา</CenteredMessage>
                 ) : (
                   <table className="w-full table-fixed text-left border-collapse">
-                    <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                    <thead className={THEAD_CLS}>
                       <tr className="text-accent text-sm">
                         <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[22%]">ชื่อ / ชื่อผู้ใช้</th>
                         <th title="สังกัด" className="px-3 py-2 font-medium w-[24%]">สังกัด</th>
@@ -587,20 +508,14 @@ export default function OfficerPage() {
 
                 <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                   {loadingRequests ? (
-                    <div className="h-full flex justify-center items-center">
-                      <p className="text-gray-400">กำลังโหลด…</p>
-                    </div>
+                    <CenteredMessage>กำลังโหลด…</CenteredMessage>
                   ) : requests.length === 0 ? (
-                    <div className="h-full flex justify-center items-center">
-                      <p className="text-gray-400">ไม่มีคำขอย้ายพื้นที่</p>
-                    </div>
+                    <CenteredMessage>ไม่มีคำขอย้ายพื้นที่</CenteredMessage>
                   ) : filteredRequests.length === 0 ? (
-                    <div className="h-full flex justify-center items-center">
-                      <p className="text-gray-400">ไม่พบคำขอที่ตรงกับการค้นหา</p>
-                    </div>
+                    <CenteredMessage>ไม่พบคำขอที่ตรงกับการค้นหา</CenteredMessage>
                   ) : (
                     <table className="w-full table-fixed text-left border-collapse">
-                      <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                      <thead className={THEAD_CLS}>
                         <tr className="text-accent text-sm">
                           <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[28%]">ชื่อ / ชื่อผู้ใช้</th>
                           <th title="สังกัด" className="px-3 py-2 font-medium w-[20%]">สังกัด</th>

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/useAuthStore'
-import { apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { apiFetch, INPUT_CLS, PAGE_SIZE, SELECT_CLS, THEAD_CLS } from '../lib/shared'
+import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
-
-const PAGE_SIZE = 20
+import PaginationBar from '../components/PaginationBar'
 
 const ACTION_LABELS = {
   'fire.reserve': 'จองจุดไฟ',
@@ -52,15 +52,26 @@ const CATEGORY_LABELS = {
   auth: 'บัญชีผู้ใช้',
 }
 
-const AT_FORMAT = new Intl.DateTimeFormat('th-TH', {
-  day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
-})
-
 // resolve a province ltree path to its Thai name, falling back to the raw path
 const provName = (names, path) => (path ? (names[path] ?? path) : path)
 
 function summarize(item, names = {}) {
   const d = item.detail ?? {}
+  const prov = (path) => provName(names, path)
+  // "PrevScope → " prefix when a previous path is present, else "" (a move prefix)
+  const arrowFrom = (prevPath) => (prevPath ? `${prov(prevPath)} → ` : '')
+  // verify / delete / create share one shape: "Label: name / สังกัด / ขอบเขต"
+  const entity = (label, path) =>
+    `${label}: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${prov(path)}`
+  // the name/username/division change lines shared by officer.update & dispatcher.update
+  const renameParts = () => {
+    const parts = []
+    if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
+    if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
+    if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.previous_division ? `${d.previous_division} → ` : ''}${d.division ?? '—'}`)
+    return parts
+  }
+
   switch (item.action) {
     case 'fire.ingest': {
       const base = `ดึงข้อมูล ${d.fetched ?? 0} รายการ · เพิ่มใหม่ ${d.inserted ?? 0}`
@@ -81,19 +92,12 @@ function summarize(item, names = {}) {
       return `${d.name ?? ''}`.trim()
     case 'fire.cancel_booking':
       return `ยกเลิกจุดไฟ ${d.name ?? ''}${d.officer_name ? ` ของ ${d.officer_name}` : ''}`.trim()
-    case 'region_change.request': {
-      const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
-      return `${from}${provName(names, d.province_path)}`
-    }
-    case 'region_change.approved': {
-      const who = d.officer_name ? `${d.officer_name}: ` : ''
-      const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
-      return `${who}${from}${provName(names, d.province_path)}`
-    }
+    case 'region_change.request':
+      return `${arrowFrom(d.previous_province_path)}${prov(d.province_path)}`
+    case 'region_change.approved':
     case 'region_change.rejected': {
       const who = d.officer_name ? `${d.officer_name}: ` : ''
-      const from = d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''
-      return `${who}${from}${provName(names, d.province_path)}`
+      return `${who}${arrowFrom(d.previous_province_path)}${prov(d.province_path)}`
     }
     case 'settings.location_poll':
       return d.minutes != null ? `ทุก ${d.minutes} นาที` : ''
@@ -101,28 +105,20 @@ function summarize(item, names = {}) {
     case 'auth.restore_user':
       return d.name ?? ''
     case 'officer.verify':
-      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.province_path)}`
     case 'officer.delete':
-      return `เจ้าหน้าที่: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.province_path)}`
+      return entity('เจ้าหน้าที่', d.province_path)
     case 'dispatcher.create':
-      return `ผู้ดูแล: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.region_path)}`
     case 'dispatcher.delete':
-      return `ผู้ดูแล: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${provName(names, d.region_path)}`
+      return entity('ผู้ดูแล', d.region_path)
     case 'dispatcher.update': {
-      const parts = []
-      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
-      if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
-      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.previous_division ? `${d.previous_division} → ` : ''}${d.division ?? '—'}`)
-      if (d.region_path) parts.push(`ย้ายพื้นที่: ${provName(names, d.region_path)}`)
+      const parts = renameParts()
+      if (d.region_path) parts.push(`ย้ายพื้นที่: ${prov(d.region_path)}`)
       if (d.password_changed) parts.push('รีเซ็ตรหัสผ่าน')
       return parts.join('\n')
     }
     case 'officer.update': {
-      const parts = []
-      if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
-      if (d.username) parts.push(`เปลี่ยนชื่อผู้ใช้: ${d.previous_username ? `${d.previous_username} → ` : ''}${d.username}`)
-      if ('division' in d) parts.push(`เปลี่ยนสังกัด: ${d.previous_division ? `${d.previous_division} → ` : ''}${d.division ?? '—'}`)
-      if (d.province_path) parts.push(`ย้ายไป: ${d.previous_province_path ? `${provName(names, d.previous_province_path)} → ` : ''}${provName(names, d.province_path)}`)
+      const parts = renameParts()
+      if (d.province_path) parts.push(`ย้ายไป: ${arrowFrom(d.previous_province_path)}${prov(d.province_path)}`)
       if (d.password_changed) parts.push(`รีเซ็ตรหัสผ่าน${d.officer_name ? `: ${d.officer_name}` : ''}`)
       return parts.join('\n')
     }
@@ -182,7 +178,6 @@ export default function AuditPage() {
 
   if (!user?.is_superuser) return <Navigate to="/" replace />
 
-  const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
   return (
     <div className="flex-1 min-h-0 overflow-hidden bg-background">
       <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-3 px-5 py-3 lg:px-8">
@@ -257,7 +252,7 @@ export default function AuditPage() {
                   <col />
                   <col className="w-32" />
                 </colgroup>
-                <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                <thead className={THEAD_CLS}>
                   <tr className="text-accent text-sm">
                     <th className="px-3 py-2 font-medium">เหตุการณ์</th>
                     <th className="px-3 py-2 font-medium">ผู้กระทำ</th>
@@ -280,7 +275,7 @@ export default function AuditPage() {
                         {summarize(item, provinceNames) || '—'}
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 whitespace-nowrap text-right">
-                        {AT_FORMAT.format(new Date(item.at))} น.
+                        {formatEventTime(item.at)}
                       </td>
                     </tr>
                   ))}
@@ -290,47 +285,7 @@ export default function AuditPage() {
           )}
 
           {items?.length > 0 && (
-            <div className="flex items-center justify-between pt-3 text-sm text-gray-600">
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(0)}
-                  disabled={page === 0}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  หน้าแรก
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                  disabled={page === 0}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  ก่อนหน้า
-                </button>
-              </div>
-              <span>
-                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} จาก {total}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
-                  disabled={page >= lastPage}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  ถัดไป
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(lastPage)}
-                  disabled={page >= lastPage}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  หน้าสุดท้าย
-                </button>
-              </div>
-            </div>
+            <PaginationBar page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
           )}
         </div>
       </div>

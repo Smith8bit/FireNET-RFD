@@ -1,5 +1,9 @@
 export const API_URL = import.meta.env.VITE_API_URL ?? ''
 
+// Shared row count for every paginated list/table in the console (officers,
+// dispatchers, history, audit, users). One source of truth for offset math.
+export const PAGE_SIZE = 20
+
 // The access cookie is short-lived; when it expires the server 401s. apiFetch
 // transparently posts to /auth/cookie/refresh (which swaps the httpOnly refresh
 // cookie for a fresh access cookie) and replays the request once. A single-flight
@@ -43,6 +47,13 @@ export const USERNAME_PATTERN = '[A-Za-z0-9._@+-]+'
 const USERNAME_RE = /^[A-Za-z0-9._@+-]{3,32}$/
 export const isValidUsername = (v) => USERNAME_RE.test((v ?? '').trim())
 
+// Case-insensitive free-text match used by the list-page search boxes: true if
+// any of `fields` on `item` contains `query`. `query` is expected already trimmed
+// and lower-cased by the caller (it's derived once per render); an empty query
+// matches everything.
+export const matchesQuery = (item, fields, query) =>
+  !query || fields.some((f) => (item[f] ?? '').toLowerCase().includes(query))
+
 export const ERROR_MESSAGES = {
   username_taken: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว',
   invalid_username: 'ชื่อผู้ใช้ต้องมี 3-32 ตัว ใช้ได้เฉพาะ ตัวอักษร ตัวเลข . _ @ + -',
@@ -61,3 +72,7 @@ export const errorText = (code) =>
 // shared field styling so every form in the management tabs looks identical
 export const INPUT_CLS = 'w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm'
 export const SELECT_CLS = 'w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700'
+
+// sticky table header shared by every list table (pins on scroll, draws its own
+// bottom rule via an inset shadow so the border scrolls with the header)
+export const THEAD_CLS = 'sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]'

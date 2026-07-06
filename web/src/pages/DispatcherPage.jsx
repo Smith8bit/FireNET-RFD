@@ -4,8 +4,10 @@ import { useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
-import { ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
+import { ERROR_MESSAGES, INPUT_CLS, PAGE_SIZE, SELECT_CLS, THEAD_CLS, USERNAME_PATTERN, errorText, isValidUsername, matchesQuery } from '../lib/shared'
 import { useRegions } from '../lib/useRegions'
+import PaginationBar from '../components/PaginationBar'
+import CenteredMessage from '../components/CenteredMessage'
 
 const regionLabel = (r) => r.name_th
 
@@ -114,8 +116,6 @@ function PermissionFields({ perms, onToggle, onSet, revertTo }) {
     </fieldset>
   )
 }
-
-const PAGE_SIZE = 20
 
 // Superuser-only: provision, edit, and remove dispatcher accounts, each scoped
 // to one region (regional office or province).
@@ -239,15 +239,8 @@ export default function DispatcherPage() {
   const loading = dispatchers === null
 
   const q = query.trim().toLowerCase()
-  const filteredDispatchers = (dispatchers ?? []).filter((d) => {
-    if (!q) return true
-    return (
-      (d.name ?? '').toLowerCase().includes(q) ||
-      (d.username ?? '').toLowerCase().includes(q) ||
-      (d.division ?? '').toLowerCase().includes(q) ||
-      (d.region_name_th ?? '').toLowerCase().includes(q)
-    )
-  })
+  const filteredDispatchers = (dispatchers ?? []).filter((d) =>
+    matchesQuery(d, ['name', 'username', 'division', 'region_name_th'], q))
   const dispatcherCols = canManage ? 4 : 3
 
   // Sort the filtered list by the chosen field, ascending, then flip for 'desc'.
@@ -320,20 +313,14 @@ export default function DispatcherPage() {
 
           <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
             {loading ? (
-              <div className="h-full flex justify-center items-center">
-                <p className="text-gray-400">กำลังโหลด…</p>
-              </div>
+              <CenteredMessage>กำลังโหลด…</CenteredMessage>
             ) : dispatchers.length === 0 ? (
-              <div className="h-full flex justify-center items-center">
-                <p className="text-gray-400">ยังไม่มีผู้ดูแล</p>
-              </div>
+              <CenteredMessage>ยังไม่มีผู้ดูแล</CenteredMessage>
             ) : filteredDispatchers.length === 0 ? (
-              <div className="h-full flex justify-center items-center">
-                <p className="text-gray-400">ไม่พบผู้ดูแลที่ตรงกับการค้นหา</p>
-              </div>
+              <CenteredMessage>ไม่พบผู้ดูแลที่ตรงกับการค้นหา</CenteredMessage>
             ) : (
               <table className="w-full table-fixed text-left border-collapse">
-                <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                <thead className={THEAD_CLS}>
                   <tr className="text-accent text-sm">
                     <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[24%]">ชื่อ / ชื่อผู้ใช้</th>
                     <th title="สังกัด" className="px-3 py-2 font-medium w-[24%]">สังกัด</th>
@@ -449,47 +436,7 @@ export default function DispatcherPage() {
           </div>
 
           {!loading && filteredDispatchers.length > 0 && (
-            <div className="flex items-center justify-between pt-3 mt-2 border-t border-gray-300 text-sm text-gray-600">
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(0)}
-                  disabled={safePage === 0}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  หน้าแรก
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                  disabled={safePage === 0}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  ก่อนหน้า
-                </button>
-              </div>
-              <span>
-                {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, total)} จาก {total}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(p + 1, lastPage))}
-                  disabled={safePage >= lastPage}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  ถัดไป
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(lastPage)}
-                  disabled={safePage >= lastPage}
-                  className="px-3 py-1 rounded-lg border border-gray-300 disabled:opacity-40 hover:bg-gray-50"
-                >
-                  หน้าสุดท้าย
-                </button>
-              </div>
-            </div>
+            <PaginationBar page={safePage} pageSize={PAGE_SIZE} total={total} onPage={setPage} className="mt-2 border-t border-gray-300" />
           )}
         </div>
 

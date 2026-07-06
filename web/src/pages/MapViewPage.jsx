@@ -4,13 +4,10 @@ import { ArrowsPointingOutIcon, UserGroupIcon, ChevronDoubleRightIcon, ChevronDo
 import { useMapSelection, useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { useFireData } from '../lib/useFireData'
+import { FIRE_COLORS } from '../lib/fireColors'
 import Map from '../components/map'
 import Card from '../components/card'
 import ExpandedCard from '../components/expandedCard'
-
-// ponytail: mirrors FIRE_COLORS in components/map.jsx — a fixed brand palette, not
-// exported from there to keep that file fast-refresh clean. Update both if it changes.
-const FIRE_COLORS = { free: '#ef4444', booked: '#facc15', resolved: '#d1d5dc' }
 
 import satelliteStyle from '../components/layers/satellite.json'
 import baseStyle from '../components/layers/base.json'

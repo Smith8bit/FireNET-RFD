@@ -2,9 +2,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
-import { apiFetch, INPUT_CLS } from '../lib/shared'
-
-const PAGE_SIZE = 20
+import { apiFetch, INPUT_CLS, PAGE_SIZE, THEAD_CLS } from '../lib/shared'
+import CenteredMessage from '../components/CenteredMessage'
 
 // backend role strings → Thai labels (matches the app's vocabulary elsewhere)
 const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dispatcher: 'ผู้ดูแล', field_officer: 'เจ้าหน้าที่' }
@@ -155,12 +154,12 @@ export default function UsersPage() {
 
           <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
             {loading ? (
-              <div className="h-full flex justify-center items-center"><p className="text-gray-400">กำลังโหลด…</p></div>
+              <CenteredMessage>กำลังโหลด…</CenteredMessage>
             ) : items.length === 0 ? (
-              <div className="h-full flex justify-center items-center"><p className="text-gray-400">ไม่พบบัญชี</p></div>
+              <CenteredMessage>ไม่พบบัญชี</CenteredMessage>
             ) : (
               <table className="w-full table-fixed text-left border-collapse">
-                <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
+                <thead className={THEAD_CLS}>
                   <tr className="text-accent text-sm">
                     <th className="px-3 py-2 font-medium w-[28%]">ชื่อผู้ใช้</th>
                     <th className="px-3 py-2 font-medium w-[20%]">สังกัด</th>
