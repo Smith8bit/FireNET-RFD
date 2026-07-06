@@ -39,3 +39,5 @@ desktop.ini
 # Project-specific
 /web/dashboard
 backend/app/database/seed_mock_*.py
+/.claude
+.claude/settings.json
