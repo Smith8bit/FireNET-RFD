@@ -153,7 +153,6 @@ export default function AuthorizedLayout() {
       <Stack.Screen name="Account" options={detailOptions('บัญชีของฉัน')} />
       <Stack.Screen name="RegionChange" options={detailOptions('ย้ายพื้นที่รับผิดชอบ')} />
       <Stack.Screen name="History" options={detailOptions('ประวัติการดับไฟ')} />
-      <Stack.Screen name="ButtonDemo" options={detailOptions('ปุ่มแอนิเมชัน')} />
     </Stack>
   )
 }

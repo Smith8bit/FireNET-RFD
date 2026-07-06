@@ -23,7 +23,6 @@ const ROWS: Row[] = [
   { icon: 'person-circle-outline', label: 'บัญชีของฉัน', route: '/(authorized)/Account' },
   { icon: 'swap-horizontal-outline', label: 'ย้ายพื้นที่รับผิดชอบ', route: '/(authorized)/RegionChange' },
   { icon: 'time-outline', label: 'ประวัติการดับไฟ', route: '/(authorized)/History' },
-  { icon: 'sparkles-outline', label: 'ปุ่มแอนิเมชัน (Demo)', route: '/(authorized)/ButtonDemo' },
 ]
 
 // Soft shadow via boxShadow (New Arch), NOT Android `elevation`: elevation
