@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '../lib/useAuthStore'
 import { apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { useRegions } from '../lib/useRegions'
 
 const PAGE_SIZE = 20
 
@@ -141,36 +142,11 @@ export default function AuditPage() {
   const [actorInput, setActorInput] = useState('')
   const [actor, setActor] = useState('')
   const [reload, setReload] = useState(0)
-  const [provinceNames, setProvinceNames] = useState({}) // ltree path -> Thai name
-  const provincesLoaded = useRef(false)
-
-  // load the province path→name map lazily — only once a visible row actually
-  // references a province (officer.update with a province_path), and only once
-  useEffect(() => {
-    if (provincesLoaded.current) return
-    const needsProvince = (items ?? []).some(
-      (it) =>
-        it.detail?.province_path ||
-        it.detail?.region_path ||
-        it.detail?.previous_province_path
-    )
-    if (!needsProvince) return
-    provincesLoaded.current = true
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await apiFetch('/regions')
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (cancelled) return
-        setProvinceNames(Object.fromEntries(data.map((p) => [p.path, p.name_th])))
-      } catch (e) {
-        console.warn('[AuditPage] provinces load failed:', e)
-        provincesLoaded.current = false // allow a retry on a later render
-      }
-    })()
-    return () => { cancelled = true }
-  }, [items])
+  const { regions } = useRegions()
+  const provinceNames = useMemo(
+    () => Object.fromEntries((regions ?? []).map((p) => [p.path, p.name_th])),
+    [regions],
+  )
 
   useEffect(() => {
     let cancelled = false

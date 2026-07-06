@@ -1,10 +1,11 @@
-﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
-import { apiFetch, ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
+import { ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
+import { useRegions } from '../lib/useRegions'
 
 const regionLabel = (r) => r.name_th
 
@@ -130,7 +131,8 @@ export default function DispatcherPage() {
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
   const [dispatchers, setDispatchers] = useState(null) // null = loading
-  const [regions, setRegions] = useState(null) // assignment options
+  const { regions: allRegions } = useRegions() // assignment options
+  const regions = useMemo(() => (allRegions ? [...allRegions].sort(byRegion) : null), [allRegions])
   const [query, setQuery] = useState('') // search by name/username/division/region
   const [sort, setSort] = useState('name') // 'name' = by display name, 'new' = by date added
   const [dir, setDir] = useState('asc') // 'asc' | 'desc'
@@ -189,25 +191,6 @@ export default function DispatcherPage() {
     setDeletingId(null)
     toast.error(errorText(m.code))
   })
-
-  // region options, fetched once and sorted (national → regional → province,
-  // then by Thai name) so a dispatcher can be scoped to any level incl. nationwide
-  useEffect(() => {
-    if (regions !== null) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await apiFetch('/regions')
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (!cancelled) setRegions([...data].sort(byRegion))
-      } catch (e) {
-        console.warn('[DispatcherPage] regions load failed:', e)
-        if (!cancelled) setRegions([])
-      }
-    })()
-    return () => { cancelled = true }
-  }, [regions])
 
   if (!can(user, 'dispatchers.view')) return <Navigate to="/" replace />
 

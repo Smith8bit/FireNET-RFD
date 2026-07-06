@@ -7,6 +7,8 @@ import { api } from '@/lib/api'
 export type ResolvePhoto = {
   uri: string // local file uri (already compressed)
   gps: { latitude: number; longitude: number } | null
+  kind?: 'image' | 'video' // default 'image'; video is optional supplementary evidence
+  thumbUri?: string // video-only: local poster frame for display (not uploaded)
 }
 
 export type Fire = {
@@ -111,12 +113,18 @@ export const useFireStore = create<FireState>()(
     if (note.trim()) form.append('note', note.trim())
     form.append('image_gps', JSON.stringify(photos.map((p) => p.gps)))
     photos.forEach((p, i) => {
-      form.append('images', { uri: p.uri, name: `photo-${i}.jpg`, type: 'image/jpeg' } as any)
+      const video = p.kind === 'video'
+      // Backend sniffs the real type from the bytes, so name/type here are only hints.
+      form.append('images', {
+        uri: p.uri,
+        name: video ? `evidence-${i}.mp4` : `photo-${i}.jpg`,
+        type: video ? 'video/mp4' : 'image/jpeg',
+      } as any)
     })
     try {
       await api.post<Fire>('/officers/me/fire/resolve', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 60000, // photo upload on a field network
+        timeout: 120000, // photo/video upload on a field network
       })
     } catch (e) {
       if (

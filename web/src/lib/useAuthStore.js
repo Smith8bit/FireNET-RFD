@@ -2,6 +2,7 @@ import { create } from 'zustand'
 
 import { apiFetch, setOnSessionExpired } from './shared'
 import { useSocketStore } from './stateStore'
+import { clearRegionsCache } from './useRegions'
 
 // apiFetch transparently refreshes the access cookie on 401; the store just
 // treats responses as before.
@@ -68,6 +69,7 @@ export const useAuthStore = create((set, get) => ({
     }
     // drop the previous session's live data so the next login can't flash it
     useSocketStore.setState({ byType: {} })
+    clearRegionsCache()
     set({ user: null, status: 'guest' })
   },
 }))

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { File, Paths } from 'expo-file-system'
 import { Image } from 'expo-image'
 import * as MediaLibrary from 'expo-media-library'
+import { useVideoPlayer, VideoView } from 'expo-video'
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, FlatList, Modal, Pressable, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -18,16 +19,28 @@ type Item = {
   resolved_at: string
   note: string | null
   false_alarm: boolean
-  image_ids: string[]
+  images: { id: string; content_type: string }[]
 }
 
 const PAGE = 20
 
-// evidence images are served by the API (region-scoped), so the request needs the bearer token
-const imageSource = (fireId: string, imageId: string) => ({
+// content-type → saved-file extension (mirrors backend IMAGE_EXT/VIDEO_EXT)
+const EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+  'video/mp4': 'mp4', 'video/quicktime': 'mov',
+}
+
+// evidence files are served by the API (region-scoped), so the request needs the bearer token
+const evidenceSource = (fireId: string, imageId: string) => ({
   uri: `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
   headers: { Authorization: `Bearer ${getToken() ?? ''}` },
 })
+
+// mounts only while a video is open, so useVideoPlayer's player is created/released with it
+function EvidenceVideo({ fireId, imageId }: { fireId: string; imageId: string }) {
+  const player = useVideoPlayer(evidenceSource(fireId, imageId), (p) => { p.play() })
+  return <VideoView player={player} style={{ width: '100%', height: '80%' }} contentFit="contain" />
+}
 
 // shadow can't be expressed as a className faithfully on both platforms — keep it inline
 const cardShadow = {
@@ -52,23 +65,23 @@ export default function History() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  // the evidence image shown full-screen, or null when the viewer is closed
-  const [viewer, setViewer] = useState<{ fireId: string; imageId: string } | null>(null)
+  // the evidence file shown full-screen, or null when the viewer is closed
+  const [viewer, setViewer] = useState<{ fireId: string; imageId: string; contentType: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [perm, requestPerm] = MediaLibrary.usePermissions()
 
-  // download the (auth-gated) evidence image to a temp file, then add it to the gallery
-  const saveImage = useCallback(async (fireId: string, imageId: string) => {
+  // download the (auth-gated) evidence file to a temp file, then add it to the gallery
+  const saveEvidence = useCallback(async (fireId: string, imageId: string, contentType: string) => {
     if (saving) return
     setSaving(true)
     let file: File | null = null
     try {
       const granted = perm?.granted ? perm : await requestPerm()
       if (!granted.granted) {
-        toast.error('กรุณาอนุญาตให้แอปบันทึกรูปภาพลงในคลังภาพ')
+        toast.error('กรุณาอนุญาตให้แอปบันทึกไฟล์ลงในคลังภาพ')
         return
       }
-      const dest = new File(Paths.cache, `fire-${imageId}.jpg`)
+      const dest = new File(Paths.cache, `fire-${imageId}.${EXT[contentType] ?? 'bin'}`)
       if (dest.exists) dest.delete() // a stale temp from a crashed prior attempt would block the download
       file = await File.downloadFileAsync(
         `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
@@ -76,9 +89,9 @@ export default function History() {
         { headers: { Authorization: `Bearer ${getToken() ?? ''}` } },
       )
       await MediaLibrary.Asset.create(file.uri)
-      toast.success('บันทึกรูปภาพลงในคลังภาพเรียบร้อยแล้ว')
+      toast.success('บันทึกไฟล์ลงในคลังภาพเรียบร้อยแล้ว')
     } catch {
-      toast.error('ไม่สามารถบันทึกรูปภาพได้ กรุณาลองใหม่อีกครั้ง')
+      toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
       try { file?.delete() } catch {} // best-effort cleanup of the temp copy
       setSaving(false)
@@ -136,19 +149,30 @@ export default function History() {
             </Text>
             <Text className="text-sm font-head text-gray-500">{formatDetectedAt(item.resolved_at)}</Text>
             {item.note ? <Text className="mt-0.5 text-sm font-head text-muted-foreground">หมายเหตุ: {item.note}</Text> : null}
-            {item.image_ids.length > 0 && (
+            {item.images.length > 0 && (
               <View className="mt-1 flex-row gap-2">
-                {item.image_ids.map((id) => (
-                  <Pressable key={id} onPress={() => setViewer({ fireId: item.fire_id, imageId: id })}>
-                    <Image
-                      source={imageSource(item.fire_id, id)}
-                      style={{ width: 80, height: 80, borderRadius: 8 }}
-                      contentFit="cover"
-                      transition={150}
-                      recyclingKey={id}
-                    />
-                  </Pressable>
-                ))}
+                {item.images.map(({ id, content_type }) =>
+                  content_type.startsWith('video/') ? (
+                    <Pressable
+                      key={id}
+                      onPress={() => setViewer({ fireId: item.fire_id, imageId: id, contentType: content_type })}
+                      className="h-20 w-20 items-center justify-center rounded-lg bg-secondary"
+                    >
+                      <Ionicons name="play-circle" size={30} color="#ffffff" />
+                      <Text className="mt-0.5 text-xs font-head text-white">วิดีโอ</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable key={id} onPress={() => setViewer({ fireId: item.fire_id, imageId: id, contentType: content_type })}>
+                      <Image
+                        source={evidenceSource(item.fire_id, id)}
+                        style={{ width: 80, height: 80, borderRadius: 8 }}
+                        contentFit="cover"
+                        transition={150}
+                        recyclingKey={id}
+                      />
+                    </Pressable>
+                  ),
+                )}
               </View>
             )}
           </View>
@@ -166,14 +190,21 @@ export default function History() {
       </Pressable>
 
       <Modal visible={viewer !== null} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
-        <Pressable className="flex-1 items-center justify-center bg-black/90" onPress={() => setViewer(null)}>
+        <View className="flex-1 items-center justify-center bg-black/90">
+          {/* backdrop is a sibling *behind* the content — nesting the buttons inside a
+              Pressable made them fight it for the touch responder, needing double-taps */}
+          <Pressable className="absolute inset-0" onPress={() => setViewer(null)} />
           {viewer && (
-            <Image
-              source={imageSource(viewer.fireId, viewer.imageId)}
-              style={{ width: '100%', height: '80%' }}
-              contentFit="contain"
-              transition={150}
-            />
+            viewer.contentType.startsWith('video/')
+              ? <EvidenceVideo fireId={viewer.fireId} imageId={viewer.imageId} />
+              : (
+                <Image
+                  source={evidenceSource(viewer.fireId, viewer.imageId)}
+                  style={{ width: '100%', height: '80%' }}
+                  contentFit="contain"
+                  transition={150}
+                />
+              )
           )}
           <Pressable
             className="absolute right-5 top-14 h-10 w-10 items-center justify-center rounded-full bg-black/50"
@@ -185,17 +216,17 @@ export default function History() {
           {viewer && (
             <Pressable
               className="absolute bottom-12 flex-row items-center gap-2 rounded-full bg-black/50 px-5 py-3"
-              onPress={() => saveImage(viewer.fireId, viewer.imageId)}
+              onPress={() => saveEvidence(viewer.fireId, viewer.imageId, viewer.contentType)}
               disabled={saving}
               hitSlop={8}
             >
               {saving
                 ? <ActivityIndicator color="#fff" />
                 : <Ionicons name="download-outline" size={20} color="#fff" />}
-              <Text className="font-sans-medium text-white">{saving ? 'กำลังบันทึก...' : 'บันทึกรูปภาพ'}</Text>
+              <Text className="font-sans-medium text-white">{saving ? 'กำลังบันทึก...' : 'บันทึกไฟล์'}</Text>
             </Pressable>
           )}
-        </Pressable>
+        </View>
       </Modal>
     </SafeAreaView>
   )

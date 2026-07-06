@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { API_URL, apiFetch, INPUT_CLS, SELECT_CLS } from '../lib/shared'
+import { useRegions } from '../lib/useRegions'
 
 const PAGE_SIZE = 20
 
@@ -9,7 +10,13 @@ const FMT = new Intl.DateTimeFormat('th-TH', {
   day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
 })
 
-// Resolved-fire history with the officer's evidence (note, photos, who, when).
+// content-type → download filename extension (mirrors backend IMAGE_EXT/VIDEO_EXT)
+const EXT = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+  'video/mp4': 'mp4', 'video/quicktime': 'mov',
+}
+
+// Resolved-fire history with the officer's evidence (note, photos/video, who, when).
 export default function HistoryPage() {
   const user = useAuthStore((s) => s.user)
   const [items, setItems] = useState(null) // null = loading
@@ -17,40 +24,74 @@ export default function HistoryPage() {
   const [page, setPage] = useState(0)
   const [kind, setKind] = useState('') // '' = all, 'false' = real fire, 'true' = false alarm
   const [province, setProvince] = useState('') // '' = all provinces (matched by Thai name)
-  const [provinces, setProvinces] = useState([]) // dropdown options, Thai province names
-  const [onDate, setOnDate] = useState('')
+  const { provinces: provinceRegions } = useRegions() // dropdown options, region-scoped to the viewer
+  const provinces = useMemo(() => (provinceRegions ?? []).map((p) => p.name_th), [provinceRegions])
+  const [dateFrom, setDateFrom] = useState('') // inclusive start day
+  const [dateTo, setDateTo] = useState('') // inclusive end day
   const [searchInput, setSearchInput] = useState('') // raw text in the box
   const [search, setSearch] = useState('') // committed query (fire/officer name, location)
   const [error, setError] = useState(null)
   const [reload, setReload] = useState(0)
+  const [downloading, setDownloading] = useState(false)
+  const [viewer, setViewer] = useState(null) // { path, url, isVideo, filename } | null
+  const [savingEvidence, setSavingEvidence] = useState(false)
 
-  // province filter options, region-scoped to the viewer by the backend
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await apiFetch('/regions/provinces')
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (!cancelled) setProvinces(data.map((p) => p.name_th))
-      } catch (e) {
-        console.warn('[HistoryPage] provinces load failed:', e)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
-    if (kind) params.set('false_alarm', kind)
-    if (province) params.set('province', province)
-    if (search) params.set('search', search)
-    if (onDate) {
-      const start = new Date(`${onDate}T00:00:00`)
-      params.set('since', start.toISOString())
-      params.set('until', new Date(start.getTime() + 86_400_000).toISOString())
+  // fetch a single evidence file (auth cookie via apiFetch) and save it locally
+  async function saveEvidence(path, filename) {
+    setSavingEvidence(true)
+    try {
+      const res = await apiFetch(path)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.warn('[HistoryPage] evidence download failed:', e)
+    } finally {
+      setSavingEvidence(false)
     }
+  }
+
+  // Shared filter params (used by both the table query and the ZIP export).
+  // since = start of dateFrom; until = start of the day after dateTo (exclusive).
+  const buildFilterParams = () => {
+    const p = new URLSearchParams()
+    if (kind) p.set('false_alarm', kind)
+    if (province) p.set('province', province)
+    if (search) p.set('search', search)
+    if (dateFrom) p.set('since', new Date(`${dateFrom}T00:00:00`).toISOString())
+    if (dateTo) p.set('until', new Date(new Date(`${dateTo}T00:00:00`).getTime() + 86_400_000).toISOString())
+    return p
+  }
+
+  async function download() {
+    setDownloading(true)
+    setError(null)
+    try {
+      const res = await apiFetch(`/fires/resolutions/export?${buildFilterParams()}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `fire-history${dateFrom ? '_' + dateFrom : ''}${dateTo ? '_' + dateTo : ''}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.warn('[HistoryPage] export failed:', e)
+      setError('ดาวน์โหลดไม่สำเร็จ')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    const params = buildFilterParams()
+    params.set('limit', String(PAGE_SIZE))
+    params.set('offset', String(page * PAGE_SIZE))
     ;(async () => {
       try {
         const res = await apiFetch(`/fires/resolutions?${params}`)
@@ -68,7 +109,7 @@ export default function HistoryPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [page, kind, province, onDate, search, reload])
+  }, [page, kind, province, dateFrom, dateTo, search, reload])
 
   if (!can(user, 'fires.history')) return <Navigate to="/" replace />
 
@@ -108,12 +149,32 @@ export default function HistoryPage() {
             ))}
           </select>
 
-          <input
-            type="date"
-            value={onDate}
-            onChange={(e) => { setOnDate(e.target.value); setPage(0) }}
-            className={`${INPUT_CLS} max-w-fit text-accent`}
-          />
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(0) }}
+              className={`${INPUT_CLS} max-w-fit text-accent`}
+            />
+            <span className="text-accent">–</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => { setDateTo(e.target.value); setPage(0) }}
+              className={`${INPUT_CLS} max-w-fit text-accent`}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={download}
+            disabled={downloading}
+            className="text-md font-semibold text-blue-400 hover:text-blue-700 px-2 py-1.5 disabled:opacity-40"
+          >
+            {downloading ? 'กำลังดาวน์โหลด…' : 'ดาวน์โหลด'}
+          </button>
 
           <form
             onSubmit={(e) => { e.preventDefault(); setSearch(searchInput.trim()); setPage(0) }}
@@ -187,17 +248,35 @@ export default function HistoryPage() {
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light whitespace-pre-line wrap-break-word">
                         {it.note || '—'}
-                        {it.image_ids.length > 0 && (
+                        {it.images.length > 0 && (
                           <div className="mt-1 flex gap-1.5 flex-wrap">
-                            {it.image_ids.map((id) => (
-                              <a key={id} href={`${API_URL}/fires/${it.fire_id}/images/${id}`} target="_blank" rel="noreferrer">
-                                <img
-                                  src={`${API_URL}/fires/${it.fire_id}/images/${id}`}
-                                  alt="หลักฐาน"
-                                  className="h-16 w-16 object-cover rounded-lg border border-gray-200"
-                                />
-                              </a>
-                            ))}
+                            {it.images.map(({ id, content_type }) => {
+                              const path = `/fires/${it.fire_id}/images/${id}`
+                              const url = `${API_URL}${path}`
+                              const isVideo = content_type?.startsWith('video/')
+                              const filename = `evidence-${id}.${EXT[content_type] ?? 'bin'}`
+                              return (
+                                <button
+                                  key={id}
+                                  type="button"
+                                  onClick={() => setViewer({ path, url, isVideo, filename })}
+                                  className="relative h-16 w-16 overflow-hidden rounded-lg border border-gray-200 bg-black"
+                                >
+                                  {isVideo ? (
+                                    <>
+                                      <video src={url} muted preload="metadata" className="h-16 w-16 object-cover" />
+                                      <span className="absolute inset-0 flex items-center justify-center">
+                                        <svg viewBox="0 0 24 24" className="h-7 w-7 fill-white/90 drop-shadow">
+                                          <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <img src={url} alt="หลักฐาน" className="h-16 w-16 object-cover" />
+                                  )}
+                                </button>
+                              )
+                            })}
                           </div>
                         )}
                       </td>
@@ -257,6 +336,46 @@ export default function HistoryPage() {
         </div>
       </div>
       </div>
+
+      {/* Full-screen evidence viewer — click backdrop to close (mirrors the mobile app) */}
+      {viewer && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+          onClick={() => setViewer(null)}
+        >
+          {viewer.isVideo ? (
+            <video
+              src={viewer.url}
+              controls
+              autoPlay
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[85vh] max-w-[90vw]"
+            />
+          ) : (
+            <img
+              src={viewer.url}
+              alt="หลักฐาน"
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[85vh] max-w-[90vw] object-contain"
+            />
+          )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); saveEvidence(viewer.path, viewer.filename) }}
+            disabled={savingEvidence}
+            className="absolute right-20 top-5 flex h-10 items-center rounded-full bg-white/90 px-4 text-sm font-semibold text-gray-900 hover:bg-white disabled:opacity-50"
+          >
+            {savingEvidence ? 'กำลังดาวน์โหลด…' : 'ดาวน์โหลด'}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setViewer(null) }}
+            className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-2xl text-white hover:bg-black/70"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   )
 }

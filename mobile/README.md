@@ -68,7 +68,7 @@ Zustand · React Native Firebase (FCM push) · expo-location / -notifications /
   still renders with no signal in the field.
 
 ### History
-- The officer's resolved-fire history, with **auth-gated evidence photos**
+- The officer's resolved-fire history, with **auth-gated evidence photos/video**
   downloaded on demand and viewable in a gallery.
 
 ### Region change

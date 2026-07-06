@@ -163,7 +163,7 @@ class PgListener:
 
     async def _refresh_officers(self, include_pending: bool = False) -> None:
         from .manager import manager
-        from .officer_handlers import broadcast_admin_refresh
+        from .officers import broadcast_admin_refresh
 
         if not manager.active:
             return

@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     S3_SECURE: bool = False
     RESOLVE_MAX_IMAGES: int = 3
     RESOLVE_MAX_IMAGE_MB: int = 5
+    RESOLVE_MAX_VIDEO_MB: int = 40
     RESOLVE_NOTE_MAX_CHARS: int = 2000
     RESOLVE_RETRY_MINUTES: int = 10
     IMAGE_CHUNK_BYTES: int = 65536

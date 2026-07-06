@@ -1,7 +1,7 @@
 """
 Fire resolution endpoints — confirmed resolution and false-alarm reporting.
 
-Evidence (images) are uploaded to object storage before the DB record is written.
+Evidence (photos and an optional video) are uploaded to object storage before the DB record is written.
 If the DB commit fails, stored objects are deleted to prevent orphaned files.
 The reverse is not true: if storage upload fails, no DB record is created.
 
@@ -86,7 +86,7 @@ async def resolve_my_fire(
     session: AsyncSession = Depends(get_async_session),
 ) -> FireDetail:
     """
-    Mark the officer's booked fire as resolved with photo evidence.
+    Mark the officer's booked fire as resolved with photo/video evidence.
 
     Upload sequence:
       1. Validate all inputs (count, size, type) before touching storage.
@@ -118,10 +118,8 @@ async def resolve_my_fire(
     """
     if not images:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "at least one photo is required"
+            status.HTTP_400_BAD_REQUEST, "at least one photo or video is required"
         )
-    if len(images) > settings.RESOLVE_MAX_IMAGES:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "too many photos")
     if note is not None and len(note) > settings.RESOLVE_NOTE_MAX_CHARS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "note too long")
     gps = storage.parse_image_gps(image_gps, len(images))
@@ -141,15 +139,34 @@ async def resolve_my_fire(
         fo.fire_id = None
         await session.commit()
         raise HTTPException(status.HTTP_404_NOT_FOUND, "fire not found")
-    max_bytes = settings.RESOLVE_MAX_IMAGE_MB * 1024 * 1024
+    img_max = settings.RESOLVE_MAX_IMAGE_MB * 1024 * 1024
+    vid_max = settings.RESOLVE_MAX_VIDEO_MB * 1024 * 1024
     prepared: list[tuple[str, bytes, str]] = []
     day = f"{datetime.now(timezone.utc):%Y%m%d}"
+    n_images = n_videos = 0
     for upload in images:
-        data = await storage.read_capped(upload, max_bytes)
+        # Read up to the larger (video) cap since the type is only known after sniffing;
+        # the tighter per-type limit is enforced below.
+        data = await storage.read_capped(upload, max(img_max, vid_max))
         content_type = storage.sniff_image(data)
-        if content_type is None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported image type")
-        key = f"resolutions/{day}/{fire.id}/{uuid.uuid4().hex}.{storage.IMAGE_EXT[content_type]}"
+        if content_type is not None:
+            if len(data) > img_max:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "photo too large")
+            n_images += 1
+            if n_images > settings.RESOLVE_MAX_IMAGES:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "too many photos")
+            ext = storage.IMAGE_EXT[content_type]
+        else:
+            content_type = storage.sniff_video(data)
+            if content_type is None:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, "unsupported file type"
+                )
+            n_videos += 1
+            if n_videos > 1:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "only one video allowed")
+            ext = storage.VIDEO_EXT[content_type]
+        key = f"resolutions/{day}/{fire.id}/{uuid.uuid4().hex}.{ext}"
         prepared.append((key, data, content_type))
     stored: list[str] = []
     try:

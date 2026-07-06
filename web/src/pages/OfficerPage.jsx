@@ -4,7 +4,8 @@ import { useSocketStore, useMapSelection } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
-import { apiFetch, ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
+import { ERROR_MESSAGES, INPUT_CLS, SELECT_CLS, USERNAME_PATTERN, errorText, isValidUsername } from '../lib/shared'
+import { useRegions } from '../lib/useRegions'
 
 const PAGE_SIZE = 20
 
@@ -44,7 +45,7 @@ export default function OfficerPage() {
   const [sort, setSort] = useState('name') // 'name' = by display name, 'new' = by date added
   const [dir, setDir] = useState('asc') // 'asc' | 'desc'
   const [page, setPage] = useState(0)
-  const [provinces, setProvinces] = useState(null) // null = not loaded yet
+  const { provinces } = useRegions() // null = not loaded yet
   const [editingId, setEditingId] = useState(null) // user_id being edited
   const [editName, setEditName] = useState('')
   const [editDivision, setEditDivision] = useState('') // สังกัด
@@ -116,24 +117,6 @@ export default function OfficerPage() {
     setBusyId(null)
     toast.error(errorText(m.code))
   })
-
-  // provinces for the edit form's reassignment dropdown, loaded once
-  useEffect(() => {
-    if (provinces !== null) return
-    let cancelled = false
-      ; (async () => {
-        try {
-          const res = await apiFetch('/regions/provinces')
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const data = await res.json()
-          if (!cancelled) setProvinces(data)
-        } catch (e) {
-          console.warn('[OfficerPage] provinces load failed:', e)
-          if (!cancelled) setProvinces([])
-        }
-      })()
-    return () => { cancelled = true }
-  }, [provinces])
 
   if (!can(user, 'officers.view')) return <Navigate to="/" replace />
 
@@ -619,9 +602,10 @@ export default function OfficerPage() {
                     <table className="w-full table-fixed text-left border-collapse">
                       <thead className="sticky top-0 bg-foreground z-10 [&_th]:shadow-[inset_0_-1px_0_#d1d5db]">
                         <tr className="text-accent text-sm">
-                          <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[34%]">ชื่อ / ชื่อผู้ใช้</th>
-                          <th title="การย้ายพื้นที่" className="px-3 py-2 font-medium w-[34%]">การย้ายพื้นที่</th>
-                          {canDecide && <th className="px-3 py-2 font-medium w-[32%]"></th>}
+                          <th title="ชื่อ / ชื่อผู้ใช้" className="px-3 py-2 font-medium w-[28%]">ชื่อ / ชื่อผู้ใช้</th>
+                          <th title="สังกัด" className="px-3 py-2 font-medium w-[20%]">สังกัด</th>
+                          <th title="การย้ายพื้นที่" className="px-3 py-2 font-medium w-[28%]">การย้ายพื้นที่</th>
+                          {canDecide && <th className="px-3 py-2 font-medium w-[24%]"></th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -631,6 +615,7 @@ export default function OfficerPage() {
                               <p title={r.officer_name ?? r.username} className="text-md text-primary font-medium truncate">{r.officer_name ?? r.username}</p>
                               <p title={r.username} className="text-sm text-gray-500 font-light truncate">{r.username}</p>
                             </td>
+                            <td title={r.division || '—'} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{r.division || '—'}</td>
                             <td title={`${r.current_province} → ${r.requested_province}`} className="px-3 py-2.5 text-sm text-gray-500 font-light truncate">{r.current_province} → {r.requested_province}</td>
                             {canDecide && (
                               <td className="px-3 py-2 text-right">

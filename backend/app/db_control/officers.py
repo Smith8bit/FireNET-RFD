@@ -47,6 +47,7 @@ class RegionRequestRow(TypedDict):
     user_id: str
     officer_name: str | None
     username: str
+    division: str | None
     current_province: str
     requested_province: str
     created_at: str
@@ -204,6 +205,7 @@ async def fetch_region_requests(
             RegionChangeRequest.created_at,
             UserRegion.name.label("officer_name"),
             User.email.label("username"),
+            User.division.label("division"),
             cur.name_th.label("current_province"),
             dest.name_th.label("requested_province"),
         )
@@ -231,6 +233,7 @@ async def fetch_region_requests(
             "user_id": str(r.user_id),
             "officer_name": r.officer_name,
             "username": r.username,
+            "division": r.division,
             "current_province": r.current_province,
             "requested_province": r.requested_province,
             "created_at": r.created_at.isoformat(),

@@ -7,17 +7,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-# Absolute import (not `.storage`): the app is launched with this package's own directory
-# on sys.path (e.g. `uvicorn main:app` from within backend/app), unlike the rest of the
-# submodules below which are imported relatively as part of the `app` package.
-import storage
+from . import storage
 from .auth.authen import fastapi_users
 from .config import get_settings
 from .middleware import install_rate_limiting
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
-from .db_control.fires import expire_old_fires, sweep_orphan_images, update_fires
+from .db_control.fires import expire_old_fires, sweep_orphan_images
+from .db_control.firefetch import update_fires
 from .router.audit import router as audit_router
 from .router.auth import router as auth_router
 from .router.fires import router as fires_router
@@ -210,7 +208,7 @@ async def lifespan(app: FastAPI):
         await storage.ensure_bucket()
     except Exception as exc:
         # Non-fatal: the API can still serve most routes without object storage available;
-        # only evidence-photo upload/download would fail until MinIO comes up.
+        # only evidence photo/video upload/download would fail until MinIO comes up.
         logger.warning("storage bucket check failed (%s); is MinIO running?", exc)
     if settings.INGEST_ENABLED:
         # Fire an immediate ingest on boot (don't wait for the first scheduler interval to

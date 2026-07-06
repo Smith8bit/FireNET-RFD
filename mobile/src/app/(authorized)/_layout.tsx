@@ -6,15 +6,17 @@ import { useAuthSession } from '@/providers/AuthProvider'
 import { useFireStore } from '@/stores/fireStore'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
-import { Redirect, Tabs, router } from 'expo-router'
+import { Redirect, Stack, router } from 'expo-router'
 import { useEffect } from 'react'
 import { ActivityIndicator, AppState, Pressable, View } from 'react-native'
+import { useReducedMotion } from 'react-native-reanimated'
 
 const DEFAULT_POLL_MIN = 5
 const MIN_POLL_MIN = 1
 
 export default function AuthorizedLayout() {
   const { user, isLoading } = useAuthSession()
+  const reducedMotion = useReducedMotion()
   const online = useFireStore((s) => s.online)
   const pushLocation = useFireStore((s) => s.pushLocation)
   const loadStatus = useFireStore((s) => s.loadStatus)
@@ -34,7 +36,7 @@ export default function AuthorizedLayout() {
       () => {
         loadReservedFire()
         loadFires()
-        router.navigate('/(authorized)/Firespot')
+        router.navigate('/Firespot')
       },
       // cancellation: the booking was released — re-fetch (now returns no fire) so
       // the Firespot screen falls back to its default "no reserved fire" state
@@ -125,13 +127,16 @@ export default function AuthorizedLayout() {
   if (!user) return <Redirect href="/Login" />
   if (!user.is_verified) return <Redirect href="/Pending" />
 
-  // hidden detail screens (reached from Setting) get a header + back button; the
-  // tab bar is suppressed so they read as pushed pages, not tabs.
+  // Detail screens push OVER the tab bar as real stack pages with the authentic
+  // iOS push (slide-from-right + parallax on the page behind + swipe-back), on
+  // both platforms via react-native-screens' `ios_from_right`. Off under reduced
+  // motion. Header carries a back chevron + title.
+  const detailAnimation: 'none' | 'ios_from_right' = reducedMotion ? 'none' : 'ios_from_right'
   const detailOptions = (title: string) => ({
-    href: null as null,
-    headerShown: true,
     title,
-    tabBarStyle: { display: 'none' as const },
+    headerShown: true,
+    animation: detailAnimation,
+    fullScreenGestureEnabled: true, // iOS: swipe-back from anywhere, not just the edge
     headerLeft: () => (
       <Pressable onPress={() => router.back()} style={{ paddingHorizontal: 16 }}>
         <Ionicons name="chevron-back" size={24} color={colors.accent} />
@@ -143,41 +148,12 @@ export default function AuthorizedLayout() {
   })
 
   return (
-    <Tabs
-      backBehavior="history"
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.gray400,
-        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 12 },
-        tabBarStyle: { backgroundColor: colors.foreground, borderTopColor: colors.border, height: 80 },
-        tabBarItemStyle: { paddingBottom: 8 },
-      }}
-    >
-      <Tabs.Screen
-        name="MapView"
-        options={{
-          title: 'แผนที่',
-          tabBarIcon: ({ color, size }) => <Ionicons name="map-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="Firespot"
-        options={{
-          title: 'ไฟของคุณ',
-          tabBarIcon: ({ color, size }) => <Ionicons name="flame-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="Setting"
-        options={{
-          title: 'การตั้งค่า',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen name="Account" options={detailOptions('บัญชีของฉัน')} />
-      <Tabs.Screen name="RegionChange" options={detailOptions('ย้ายพื้นที่รับผิดชอบ')} />
-      <Tabs.Screen name="History" options={detailOptions('ประวัติการดับไฟ')} />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="Account" options={detailOptions('บัญชีของฉัน')} />
+      <Stack.Screen name="RegionChange" options={detailOptions('ย้ายพื้นที่รับผิดชอบ')} />
+      <Stack.Screen name="History" options={detailOptions('ประวัติการดับไฟ')} />
+      <Stack.Screen name="ButtonDemo" options={detailOptions('ปุ่มแอนิเมชัน')} />
+    </Stack>
   )
 }
