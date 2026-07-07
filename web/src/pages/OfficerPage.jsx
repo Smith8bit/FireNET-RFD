@@ -10,15 +10,26 @@ import { useRegions } from '../lib/useRegions'
 import PaginationBar from '../components/PaginationBar'
 import CenteredMessage from '../components/CenteredMessage'
 
+/**
+ * OfficerPage
+ * Route-level component (no props). Three-panel officer management screen:
+ * verified officers (edit/delete, paginated), accounts pending verification,
+ * and pending region-change requests. All data is driven by the shared
+ * websocket (useSocketStore) — this component sends command messages and
+ * reacts to their typed responses rather than issuing REST calls directly.
+ * Panel/action visibility is permission-gated per the canManage/canVerify/canViewReq/canDecide checks below.
+ *
+ * Returns: JSX.Element, or a redirect to '/' when the user lacks 'officers.view'.
+ */
 export default function OfficerPage() {
   const user = useAuthStore((s) => s.user)
   const send = useSocketStore((s) => s.send)
   const navigate = useNavigate()
   const setFocusedFire = useMapSelection((s) => s.setFocused)
-  const canManage = can(user, 'officer.manage')
-  const canVerify = can(user, 'officer.verify')
-  const canViewReq = can(user, 'region_requests.view')
-  const canDecide = can(user, 'region_request.decide')
+  const canManage = can(user, 'officer.manage') // edit/delete on verified officers
+  const canVerify = can(user, 'officer.verify') // approve/reject pending registrations
+  const canViewReq = can(user, 'region_requests.view') // see the region-change-requests panel at all
+  const canDecide = can(user, 'region_request.decide') // approve/reject region-change requests
 
   const officersMsg = useSocketStore((s) => s.byType?.officers_in_region)
   const updatedMsg = useSocketStore((s) => s.byType?.officer_updated)
@@ -29,28 +40,31 @@ export default function OfficerPage() {
   const decidedMsg = useSocketStore((s) => s.byType?.region_request_decided)
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
-  const [officers, setOfficers] = useState([])
-  const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [sort, setSort] = useState('name')
-  const [dir, setDir] = useState('asc')
-  const [page, setPage] = useState(0)
+  const [officers, setOfficers] = useState([]) // array: verified officers in the caller's managed region(s)
+  const [query, setQuery] = useState('') // string: search box for the officers table
+  const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'online' | 'offline' | 'busy'
+  const [sort, setSort] = useState('name') // 'name' | 'new' | 'updated'
+  const [dir, setDir] = useState('asc') // 'asc' | 'desc'
+  const [page, setPage] = useState(0) // number: zero-based page index (client-side pagination)
   const { provinces } = useRegions()
-  const [editingId, setEditingId] = useState(null)
+  // --- Inline edit-row state (one officer editable at a time via editingId) ---
+  const [editingId, setEditingId] = useState(null) // string|null: user_id of the officer being edited
   const [editName, setEditName] = useState('')
   const [editDivision, setEditDivision] = useState('')
-  const [editProvince, setEditProvince] = useState('')
+  const [editProvince, setEditProvince] = useState('') // string: province code; '' = keep officer's current province
   const [editUsername, setEditUsername] = useState('')
-  const [editPassword, setEditPassword] = useState('')
-  const [savingId, setSavingId] = useState(null)
-  const [deletingId, setDeletingId] = useState(null)
+  const [editPassword, setEditPassword] = useState('') // string: left blank = keep existing password (see saveEdit)
+  const [savingId, setSavingId] = useState(null) // string|null: user_id currently being saved
+  const [deletingId, setDeletingId] = useState(null) // string|null: user_id currently being deleted
 
-  const [pending, setPending] = useState(null)
-  const [requests, setRequests] = useState(null)
-  const [busyId, setBusyId] = useState(null)
-  const [pendingQuery, setPendingQuery] = useState('')
-  const [requestQuery, setRequestQuery] = useState('')
+  const [pending, setPending] = useState(null) // array|null: null = awaiting first 'pending_officers' message
+  const [requests, setRequests] = useState(null) // array|null: null = awaiting first 'region_change_requests' message
+  const [busyId, setBusyId] = useState(null) // string|null: id (officer or request) currently mid-action, shared across the verify/reject/decide buttons
+  const [pendingQuery, setPendingQuery] = useState('') // string: search box for the pending-officers table
+  const [requestQuery, setRequestQuery] = useState('') // string: search box for the region-requests table
 
+  // Requests the officer list, pending registrations, and (if permitted) region-change
+  // requests once on mount. Re-fires if canViewReq flips true (e.g. after a permission change).
   useEffect(() => {
     send({ type: 'list_officers' })
     send({ type: 'list_pending_officers' })
@@ -72,6 +86,8 @@ export default function OfficerPage() {
     setRequests(requestsMsg.requests ?? [])
   }, [requestsMsg])
 
+  // useMessageEffect (vs plain useEffect) ensures each distinct server message fires its
+  // handler exactly once, even if the underlying store object reference is reused.
   useMessageEffect(updatedMsg, () => {
     setEditingId(null)
     setSavingId(null)
@@ -79,6 +95,8 @@ export default function OfficerPage() {
   })
 
   useMessageEffect(deletedMsg, (m) => {
+    // 'delete_officer' is reused for both real deletions and pending-registration rejection;
+    // check whether the id was pending beforehand to show the right toast message.
     const wasPending = (pending ?? []).some((o) => o.user_id === m.user_id)
     setOfficers((prev) => prev.filter((o) => o.user_id !== m.user_id))
     setPending((prev) => prev ? prev.filter((o) => o.user_id !== m.user_id) : prev)
@@ -100,6 +118,8 @@ export default function OfficerPage() {
     toast.success(m.status === 'approved' ? 'อนุมัติการย้ายพื้นที่แล้ว' : 'ปฏิเสธคำขอแล้ว')
   })
 
+  // Single shared error handler: clears whichever in-flight action state was pending,
+  // since the socket message doesn't indicate which request it was responding to.
   useMessageEffect(errorMsg, (m) => {
     setSavingId(null)
     setDeletingId(null)
@@ -107,8 +127,16 @@ export default function OfficerPage() {
     toast.error(errorText(m.code))
   })
 
+  // Access control: viewing this page at all requires 'officers.view'.
   if (!can(user, 'officers.view')) return <Navigate to="/" replace />
 
+  /**
+   * startEdit
+   * @param {object} o - the officer row to edit
+   * Seeds edit-row state from the officer's current values. `editProvince` is
+   * resolved from the officer's ltree province_path back to a province code
+   * (the form's dropdown works in codes); password always starts blank.
+   */
   const startEdit = (o) => {
     setEditingId(o.user_id)
     setEditName(o.name ?? '')
@@ -118,6 +146,12 @@ export default function OfficerPage() {
     setEditPassword('')
   }
 
+  /**
+   * saveEdit
+   * @param {object} o - the officer row being saved (source of the immutable user_id)
+   * Sends 'update_officer'. `province_code` and `password` are only included
+   * when set, so leaving either field untouched preserves the existing value server-side.
+   */
   const saveEdit = (o) => {
     if (!isValidUsername(editUsername)) { toast.error(ERROR_MESSAGES.invalid_username); return }
     setSavingId(o.user_id)
@@ -127,29 +161,47 @@ export default function OfficerPage() {
     send(payload)
   }
 
+  /**
+   * removeOfficer
+   * @param {object} o - the officer row to delete
+   * Confirms via a native dialog (irreversible action) before sending 'delete_officer'.
+   */
   const removeOfficer = (o) => {
     if (!window.confirm(`ลบเจ้าหน้าที่ ${o.name ?? o.username}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
     setDeletingId(o.user_id)
     send({ type: 'delete_officer', user_id: o.user_id })
   }
 
+  /** verify - @param {string} id user_id of a pending officer to approve */
   const verify = (id) => {
     setBusyId(id)
     send({ type: 'verify_officer', user_id: id })
   }
 
+  /**
+   * goToSpot
+   * @param {object} o - an officer row; only acts if they're currently assigned to a fire (o.fire_id)
+   * Focuses that fire on the shared map-selection store, then navigates to the map view.
+   */
   const goToSpot = (o) => {
     if (!o.fire_id) return
     setFocusedFire(o.fire_id)
     navigate('/map')
   }
 
+  /**
+   * reject
+   * @param {object} o - a pending officer registration to reject
+   * Rejecting a pending registration reuses 'delete_officer' since the account
+   * is simply removed either way; the toast wording is chosen by the deletedMsg handler.
+   */
   const reject = (o) => {
     if (!window.confirm(`ไม่อนุมัติการลงทะเบียนของ ${o.name ?? o.username}?\nบัญชีนี้จะถูกลบและไม่สามารถย้อนกลับได้`)) return
     setBusyId(o.user_id)
     send({ type: 'delete_officer', user_id: o.user_id })
   }
 
+  /** decide - @param {string} requestId - @param {'approve'|'reject'} action */
   const decide = (requestId, action) => {
     setBusyId(requestId)
     send({ type: 'decide_region_request', request_id: requestId, action })
@@ -159,13 +211,14 @@ export default function OfficerPage() {
   const loadingRequests = requests === null
 
   const q = query.trim().toLowerCase()
+  // Client-side filter: status filter first (cheap field checks), then the shared text-query matcher.
   const filteredOfficers = officers.filter((o) => {
     if (statusFilter === 'online' && !o.active) return false
     if (statusFilter === 'offline' && o.active) return false
     if (statusFilter === 'busy' && !o.fire_id) return false
     return matchesQuery(o, ['name', 'username', 'division', 'province_name_th'], q)
   })
-  const officerCols = canManage ? 5 : 4
+  const officerCols = canManage ? 5 : 4 // colSpan for the inline edit row must match the visible column count
 
   const cmp =
     sort === 'new'
@@ -178,11 +231,14 @@ export default function OfficerPage() {
 
   const total = sortedOfficers.length
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
+  // Clamps `page` if a search/filter shrank the result set below the current page's range.
   const safePage = Math.min(page, lastPage)
   const pagedOfficers = sortedOfficers.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  // Syncs the clamped page back into state; guarded so it only fires when clamping changed something.
   if (page !== safePage) setPage(safePage)
 
   const pq = pendingQuery.trim().toLowerCase()
+  // Pending/request lists are small and unpaginated, so filtering happens directly on render.
   const filteredPending = (pending ?? []).filter((o) =>
     matchesQuery(o, ['name', 'username', 'division', 'province_name_th'], pq))
 
@@ -201,6 +257,7 @@ export default function OfficerPage() {
 
         <div className="flex-1 min-h-0 w-full flex flex-row gap-4 ">
 
+          {/* Left panel: verified officers, paginated */}
           <div className="flex-1 flex flex-col min-h-0 bg-foreground h-full rounded-2xl max-w-1/2 p-4 shadow-md">
 
             <div className="mb-2 pb-2 border-b border-gray-300 flex flex-row items-center justify-between gap-4">
@@ -267,6 +324,7 @@ export default function OfficerPage() {
                   <tbody>
                     {pagedOfficers.map((o) => (
                       editingId === o.user_id ? (
+                        // Edit mode: replaces the entire row with a single full-width cell containing the edit form.
                         <tr key={o.field_officer_id} >
                           <td colSpan={officerCols} className="px-3 py-3">
                             <div className="space-y-2 text-accent">
@@ -351,6 +409,7 @@ export default function OfficerPage() {
                               {o.fire_id && (
                                 <span title="มีงานอยู่" className="shrink-0 w-2.5 h-2.5 rounded-full bg-yellow-400" />
                               )}
+                              {/* Name/username is clickable only when the officer is assigned to a fire, jumping to it on the map */}
                               {o.fire_id ? (
                                 <button type="button" onClick={() => goToSpot(o)} title="มีงานอยู่ — ดูบนแผนที่" className="min-w-0 text-left">
                                   <p className="text-md text-primary font-medium truncate hover:text-brand">{o.name ?? o.username}</p>
@@ -400,6 +459,7 @@ export default function OfficerPage() {
             )}
           </div>
 
+          {/* Right column: pending registrations + region-change requests, stacked */}
           <div className="flex flex-col flex-1 rounded-2xl max-w-1/2 gap-4">
 
             <div className="flex-1 flex flex-col min-h-0 bg-foreground rounded-2xl max-w-full p-4 shadow-md">
@@ -474,6 +534,7 @@ export default function OfficerPage() {
               </div>
             </div>
 
+            {/* Region-change-requests panel only rendered for users permitted to view them */}
             {canViewReq && (
               <div className="flex-1 flex flex-col min-h-0 bg-foreground rounded-2xl max-w-full p-4 shadow-md">
 

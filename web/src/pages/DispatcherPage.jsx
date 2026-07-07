@@ -9,13 +9,17 @@ import { useRegions } from '../lib/useRegions'
 import PaginationBar from '../components/PaginationBar'
 import CenteredMessage from '../components/CenteredMessage'
 
+// Region option display text (Thai name); kept as a function for a single override point.
 const regionLabel = (r) => r.name_th
 
+// Sort weight for region levels so broader regions (national) list before narrower ones (province).
 const REGION_LEVEL_ORDER = { national: 0, regional: 1, province: 2 }
 const byRegion = (a, b) =>
   (REGION_LEVEL_ORDER[a.level] ?? 99) - (REGION_LEVEL_ORDER[b.level] ?? 99) ||
   (a.name_th ?? '').localeCompare(b.name_th ?? '', 'th')
 
+// Permission ids/labels selectable in the create/edit dispatcher forms.
+// Dependency: ids must match the backend's permission string constants exactly.
 const PERMISSION_OPTIONS = [
   { id: 'officers.view', label: 'มองเห็นเจ้าหน้าที่' },
   { id: 'officer.manage', label: 'จัดการเจ้าหน้าที่' },
@@ -26,11 +30,14 @@ const PERMISSION_OPTIONS = [
   { id: 'fires.history', label: 'ดูประวัติการดับไฟ' },
   { id: 'dispatchers.view', label: 'มองเห็นผู้ดูแล' },
 ]
+// Default permission set pre-selected when creating a new dispatcher.
 const DISPATCHER_DEFAULT = [
   'fires.view', 'officers.view', 'region_requests.view', 'officer.verify',
   'officer.manage', 'fire.appoint', 'region_request.decide', 'fires.history'
 ]
 
+// Permission dependency graph: selecting a key permission auto-grants (and locks) its listed
+// dependencies, so an admin can't create an inconsistent permission set (e.g. manage without view).
 const IMPLIES = {
   'officer.verify': ['officers.view'],
   'officer.manage': ['officers.view'],
@@ -40,6 +47,11 @@ const IMPLIES = {
   'dispatcher.manage': ['dispatchers.view'],
 }
 
+/**
+ * impliedPerms
+ * @param {string[]} perms - currently selected permission ids
+ * @returns {Set<string>} the union of all permissions implied by `perms` via IMPLIES
+ */
 const impliedPerms = (perms) => {
   const out = new Set()
   for (const p of perms) for (const v of IMPLIES[p] ?? []) out.add(v)
@@ -48,6 +60,19 @@ const impliedPerms = (perms) => {
 
 const ALL_PERMISSION_IDS = PERMISSION_OPTIONS.map((p) => p.id)
 
+/**
+ * PermissionFields
+ * Shared checkbox-grid editor for a dispatcher's permission set, used by both
+ * the create form and the inline edit row.
+ * @param {object} props
+ * @param {string[]} props.perms - currently selected (explicit) permission ids
+ * @param {(id: string) => void} props.onToggle - toggles a single permission id in `perms`
+ * @param {(perms: string[]) => void} props.onSet - replaces the entire `perms` array (select-all/clear/revert)
+ * @param {string[]} [props.revertTo] - permission set restored by the "คืนค่าเดิม" (revert) button
+ * @returns {JSX.Element}
+ * Note: an implied permission renders checked+disabled regardless of whether it's in `perms`,
+ * since IMPLIES guarantees it's effectively granted anyway.
+ */
 function PermissionFields({ perms, onToggle, onSet, revertTo }) {
   const implied = impliedPerms(perms)
   return (
@@ -103,49 +128,65 @@ function PermissionFields({ perms, onToggle, onSet, revertTo }) {
   )
 }
 
+/**
+ * DispatcherPage
+ * Route-level component (no props). Lists all regional dispatchers; superusers
+ * additionally get inline edit/delete on each row and a create-dispatcher form.
+ * Data flows over the shared websocket (useSocketStore) rather than plain REST:
+ * this component sends command messages and reacts to their typed responses.
+ *
+ * Returns: JSX.Element, or a redirect to '/' when the user lacks 'dispatchers.view'.
+ */
 export default function DispatcherPage() {
   const user = useAuthStore((s) => s.user)
   const send = useSocketStore((s) => s.send)
-  const canManage = user?.is_superuser
+  const canManage = user?.is_superuser // gates edit/delete/create UI; view access is a separate, broader permission
   const dispatchersMsg = useSocketStore((s) => s.byType?.dispatchers)
   const createdMsg = useSocketStore((s) => s.byType?.dispatcher_created)
   const updatedMsg = useSocketStore((s) => s.byType?.dispatcher_updated)
   const deletedMsg = useSocketStore((s) => s.byType?.dispatcher_deleted)
   const errorMsg = useSocketStore((s) => s.byType?.error)
 
-  const [dispatchers, setDispatchers] = useState(null)
+  const [dispatchers, setDispatchers] = useState(null) // array|null: null = awaiting first 'dispatchers' socket message
   const { regions: allRegions } = useRegions()
+  // Sorted once per regions change so both the create <select> and edit <select> share the same ordering.
   const regions = useMemo(() => (allRegions ? [...allRegions].sort(byRegion) : null), [allRegions])
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState('name')
-  const [dir, setDir] = useState('asc')
-  const [page, setPage] = useState(0)
+  const [query, setQuery] = useState('') // string: client-side search across name/username/division/region
+  const [sort, setSort] = useState('name') // 'name' | 'new': sort key
+  const [dir, setDir] = useState('asc') // 'asc' | 'desc': sort direction
+  const [page, setPage] = useState(0) // number: zero-based current page index (client-side pagination)
 
-  const [creating, setCreating] = useState(false)
+  // --- Create-dispatcher form state (canManage only) ---
+  const [creating, setCreating] = useState(false) // boolean: true while awaiting the server's create response
   const [newUsername, setNewUsername] = useState('')
   const [newName, setNewName] = useState('')
   const [newDivision, setNewDivision] = useState('')
   const [newPassword, setNewPassword] = useState('')
-  const [newRegion, setNewRegion] = useState('')
+  const [newRegion, setNewRegion] = useState('') // string: selected region id, required to submit
   const [newPerms, setNewPerms] = useState(DISPATCHER_DEFAULT)
 
-  const [editingId, setEditingId] = useState(null)
+  // --- Inline edit-row state (canManage only; one row editable at a time via editingId) ---
+  const [editingId, setEditingId] = useState(null) // string|null: user_id of the dispatcher currently being edited
   const [editName, setEditName] = useState('')
   const [editDivision, setEditDivision] = useState('')
   const [editUsername, setEditUsername] = useState('')
-  const [editPassword, setEditPassword] = useState('')
+  const [editPassword, setEditPassword] = useState('') // string: left blank = keep existing password (see saveEdit)
   const [editRegion, setEditRegion] = useState('')
   const [editPerms, setEditPerms] = useState([])
-  const [savingId, setSavingId] = useState(null)
-  const [deletingId, setDeletingId] = useState(null)
+  const [savingId, setSavingId] = useState(null) // string|null: user_id currently being saved (disables Save button)
+  const [deletingId, setDeletingId] = useState(null) // string|null: user_id currently being deleted (disables Delete button)
 
+  // Requests the full dispatcher list once on mount (and if `send`'s identity ever changes).
   useEffect(() => { send({ type: 'list_dispatchers' }) }, [send])
 
+  // Applies the latest 'dispatchers' snapshot pushed over the socket.
   useEffect(() => {
     if (!dispatchersMsg) return
     setDispatchers(dispatchersMsg.dispatchers ?? [])
   }, [dispatchersMsg])
 
+  // useMessageEffect (vs plain useEffect) ensures each distinct server message fires its
+  // handler exactly once, even if the underlying store object reference is reused.
   useMessageEffect(createdMsg, () => {
     setCreating(false)
     setNewUsername(''); setNewName(''); setNewDivision(''); setNewPassword(''); setNewRegion('')
@@ -160,12 +201,15 @@ export default function DispatcherPage() {
   })
 
   useMessageEffect(deletedMsg, (m) => {
+    // Optimistically removes the deleted dispatcher locally rather than waiting for a full re-list.
     setDispatchers((prev) => prev ? prev.filter((d) => d.user_id !== m.user_id) : prev)
     setEditingId(null)
     setDeletingId(null)
     toast.success('ลบผู้ดูแลแล้ว')
   })
 
+  // Single shared error handler: clears whichever in-flight action state was pending,
+  // since the socket message doesn't indicate which request it was responding to.
   useMessageEffect(errorMsg, (m) => {
     setCreating(false)
     setSavingId(null)
@@ -173,12 +217,21 @@ export default function DispatcherPage() {
     toast.error(errorText(m.code))
   })
 
+  // Access control: viewing the dispatcher list requires the 'dispatchers.view' permission.
   if (!can(user, 'dispatchers.view')) return <Navigate to="/" replace />
 
+  // Curried toggle helper: toggle(id) returns a list-updater fn, usable directly as a setState updater.
   const toggle = (id) => (list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
   const togglePerm = (id) => setNewPerms(toggle(id))
   const toggleEditPerm = (id) => setEditPerms(toggle(id))
 
+  /**
+   * createDispatcher
+   * @param {React.FormEvent<HTMLFormElement>} e
+   * Validates username format and that a region was chosen, then sends a
+   * 'create_dispatcher' command over the socket. Server response is handled
+   * asynchronously by the createdMsg/errorMsg effects above.
+   */
   const createDispatcher = (e) => {
     e.preventDefault()
     if (!isValidUsername(newUsername)) { toast.error(ERROR_MESSAGES.invalid_username); return }
@@ -192,6 +245,12 @@ export default function DispatcherPage() {
     setNewPerms(DISPATCHER_DEFAULT)
   }
 
+  /**
+   * startEdit
+   * @param {object} d - the dispatcher row to edit
+   * Seeds the edit-row state from the selected dispatcher's current values.
+   * Password is always started blank since the server never returns it.
+   */
   const startEdit = (d) => {
     setEditingId(d.user_id)
     setEditName(d.name ?? '')
@@ -202,6 +261,13 @@ export default function DispatcherPage() {
     setEditPerms(d.permissions ?? [])
   }
 
+  /**
+   * saveEdit
+   * @param {object} d - the dispatcher row being saved (source of the immutable user_id)
+   * Sends an 'update_dispatcher' command. `region_id` and `password` are only
+   * included when set, so the server keeps the existing value for either field
+   * when the admin didn't intend to change it.
+   */
   const saveEdit = (d) => {
     if (!isValidUsername(editUsername)) { toast.error(ERROR_MESSAGES.invalid_username); return }
     setSavingId(d.user_id)
@@ -211,6 +277,11 @@ export default function DispatcherPage() {
     send(payload)
   }
 
+  /**
+   * removeDispatcher
+   * @param {object} d - the dispatcher row to delete
+   * Confirms via a native dialog (irreversible action) before sending 'delete_dispatcher'.
+   */
   const removeDispatcher = (d) => {
     if (!window.confirm(`ลบผู้ดูแล ${d.name ?? d.username}?\nการกระทำนี้ไม่สามารถย้อนกลับได้`)) return
     setDeletingId(d.user_id)
@@ -220,9 +291,10 @@ export default function DispatcherPage() {
   const loading = dispatchers === null
 
   const q = query.trim().toLowerCase()
+  // Client-side filter: full dispatcher list is small enough that server-side search isn't needed.
   const filteredDispatchers = (dispatchers ?? []).filter((d) =>
     matchesQuery(d, ['name', 'username', 'division', 'region_name_th'], q))
-  const dispatcherCols = canManage ? 4 : 3
+  const dispatcherCols = canManage ? 4 : 3 // colSpan for the inline edit row must match the visible column count
 
   const cmp =
     sort === 'new'
@@ -233,8 +305,11 @@ export default function DispatcherPage() {
 
   const total = sortedDispatchers.length
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
+  // Clamps `page` if a search/filter shrank the result set below the current page's range.
   const safePage = Math.min(page, lastPage)
   const pagedDispatchers = sortedDispatchers.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  // Syncs the clamped page back into state; guarded by the equality check so it only
+  // fires (and re-renders) when clamping actually changed something.
   if (page !== safePage) setPage(safePage)
 
   return (
@@ -304,6 +379,7 @@ export default function DispatcherPage() {
                 <tbody>
                   {pagedDispatchers.map((d) => (
                     editingId === d.user_id ? (
+                      // Edit mode: replaces the entire row with a single full-width cell containing the edit form.
                       <tr key={d.user_id}>
                         <td colSpan={dispatcherCols} className="px-3 py-3">
                           <div className="space-y-2 text-accent">
@@ -413,6 +489,7 @@ export default function DispatcherPage() {
           )}
         </div>
 
+        {/* Create-dispatcher panel only rendered for superusers */}
         {canManage && (
           <div className="flex-1 flex flex-col min-h-0  bg-foreground h-full rounded-2xl max-w-1/3 p-4 shadow-md">
 

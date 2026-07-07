@@ -5,6 +5,8 @@ import { toast } from '../lib/toastStore'
 import { useMessageEffect } from '../lib/useMessageEffect'
 import { formatDate, formatTime } from '../lib/datetime'
 
+// Server error codes -> Thai user-facing messages for the "appoint officer" action.
+// Keyed by the `code` field of a websocket `error` message.
 const APPOINT_ERRORS = {
     out_of_scope: 'ไฟหรือเจ้าหน้าที่อยู่นอกพื้นที่ของคุณ',
     officer_busy: 'เจ้าหน้าที่มีไฟที่รับผิดชอบอยู่แล้ว',
@@ -15,11 +17,35 @@ const APPOINT_ERRORS = {
     forbidden: 'คุณไม่มีสิทธิ์มอบหมายงาน',
 }
 
+// Server error codes -> Thai user-facing messages for the "cancel booking" action.
 const CANCEL_ERRORS = {
     forbidden: 'คุณไม่มีสิทธิ์ยกเลิกการจองนี้',
     not_booked: 'ไฟนี้ไม่ได้ถูกจอง',
 }
 
+/**
+ * ExpandedCard
+ * Detail panel for a single fire selected on the map/list. Shows fire
+ * metadata and, for users with the `fire.appoint` permission, an officer
+ * assignment workflow: pick an available officer, appoint them, or cancel
+ * an existing booking. All actions are optimistic requests sent over the
+ * shared websocket (`useSocketStore.send`); the outcome arrives asynchronously
+ * as `officer_appointed` / `booking_cancelled` / `error` messages that this
+ * component listens for via `useMessageEffect` and reconciles against its
+ * own local `pending`/`cancelling` flags (so it ignores messages belonging
+ * to a different fire or to an action it didn't initiate).
+ *
+ * @param {object} props
+ * @param {object} props.fire - fire record (id, name, type, date, time, location fields,
+ *   `status` [resolved], `booked`, `holder_name`)
+ * @param {Array<{field_officer_id: string, name: string, division?: string,
+ *   province_name_th: string, active: boolean, busy: boolean}>} props.officers -
+ *   officers eligible for assignment to this fire
+ * @returns {JSX.Element} the fire detail + assignment panel
+ *
+ * Assumes `officers` is already scoped to the fire's region by the caller;
+ * this component only filters/disables by `busy`/`active` state, not location.
+ */
 export default function ExpandedCard({ fire, officers }) {
     const [selectedOfficer, setSelectedOfficer] = useState('')
     const [pending, setPending] = useState(false)
@@ -30,11 +56,17 @@ export default function ExpandedCard({ fire, officers }) {
     const cancelledMsg = useSocketStore((s) => s.byType?.booking_cancelled)
     const errorMsg = useSocketStore((s) => s.byType?.error)
 
+    // A resolved or already-booked fire can't accept a new assignment.
     const locked = fire.status || fire.booked
     const canCancel = canAppoint && fire.booked && !fire.status
 
+    // Officer list can go stale between selection and submit (e.g. they picked
+    // up another fire), so re-check busy status right before allowing appoint.
     const selectedBusy = officers.some((o) => o.field_officer_id === selectedOfficer && o.busy)
 
+    // Success/error pairs below are split per-action (appoint vs cancel) because
+    // both share the same `error` message stream; each handler gates on its own
+    // in-flight flag so an error from one action doesn't clear the other's state.
     useMessageEffect(appointedMsg, (m) => {
         if (!pending || m.fire_id !== fire.id) return
         setPending(false)
@@ -59,6 +91,8 @@ export default function ExpandedCard({ fire, officers }) {
         toast.error(CANCEL_ERRORS[m.code] ?? 'ยกเลิกไม่สำเร็จ')
     })
 
+    // Fire-and-wait: flips `pending`/`cancelling` immediately for optimistic UI,
+    // then relies on the effects above to resolve it once the server responds.
     const appoint = () => {
         if (!selectedOfficer || selectedBusy) return
         setPending(true)
@@ -126,6 +160,9 @@ export default function ExpandedCard({ fire, officers }) {
                 )}
             </div>
 
+            {/* Assignment workflow is only rendered for users with `fire.appoint`; the
+                whole block is dimmed/disabled (not unmounted) when `locked` so the
+                panel doesn't jump when a fire resolves or gets booked elsewhere. */}
             {canAppoint && (<>
             <div className={`flex-1 min-h-0 overflow-y-auto minimal-scrollbar pb-2 border-b-2 border-gray-300 ${locked ? 'opacity-50 pointer-events-none select-none' : ''}`} id="available-officers">
                 <p className="sticky top-0 z-10 bg-white py-2 text-md font-semibold text-gray-500">เจ้าหน้าที่ในพื้นที่</p>

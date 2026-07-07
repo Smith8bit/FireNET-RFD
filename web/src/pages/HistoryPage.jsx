@@ -6,30 +6,50 @@ import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
 import PaginationBar from '../components/PaginationBar'
 
+// Maps evidence attachment MIME types to a file extension for downloaded filenames.
+// Assumption: any content_type not listed here still downloads, just with a generic '.bin' extension.
 const EXT = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
   'video/mp4': 'mp4', 'video/quicktime': 'mov',
 }
 
+/**
+ * HistoryPage
+ * Route-level component (no props). Read-only log of resolved/false-alarm
+ * fires: filterable by outcome, province, date range, and free-text search,
+ * with server-side pagination, CSV/zip export, and an evidence media viewer.
+ *
+ * Returns: JSX.Element, or a redirect to '/' when the user lacks 'fires.history' permission.
+ */
 export default function HistoryPage() {
   const user = useAuthStore((s) => s.user)
-  const [items, setItems] = useState(null)
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [kind, setKind] = useState('')
-  const [province, setProvince] = useState('')
+  const [items, setItems] = useState(null) // array|null: null = loading, [] = loaded-but-empty
+  const [total, setTotal] = useState(0) // number: total matching rows from server, for PaginationBar
+  const [page, setPage] = useState(0) // number: zero-based current page index
+  const [kind, setKind] = useState('') // '' | 'true' | 'false': filters on the false_alarm flag
+  const [province, setProvince] = useState('') // string: exact province name filter, '' = all
   const { provinces: provinceRegions } = useRegions()
+  // Province filter options derived from the region tree's province-level nodes.
   const provinces = useMemo(() => (provinceRegions ?? []).map((p) => p.name_th), [provinceRegions])
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [error, setError] = useState(null)
-  const [reload, setReload] = useState(0)
-  const [downloading, setDownloading] = useState(false)
-  const [viewer, setViewer] = useState(null)
-  const [savingEvidence, setSavingEvidence] = useState(false)
+  const [dateFrom, setDateFrom] = useState('') // string: 'YYYY-MM-DD' lower bound (inclusive)
+  const [dateTo, setDateTo] = useState('') // string: 'YYYY-MM-DD' upper bound (inclusive)
+  const [searchInput, setSearchInput] = useState('') // string: live text of the search box (uncommitted)
+  const [search, setSearch] = useState('') // string: committed search term, applied on submit/blur
+  const [error, setError] = useState(null) // string|null: load/export error message
+  const [reload, setReload] = useState(0) // number: bumped to force-retrigger the fetch effect (manual "refresh")
+  const [downloading, setDownloading] = useState(false) // boolean: disables the export button mid-download
+  const [viewer, setViewer] = useState(null) // {path,url,isVideo,filename}|null: currently open evidence lightbox
+  const [savingEvidence, setSavingEvidence] = useState(false) // boolean: disables the viewer's download button mid-request
 
+  /**
+   * saveEvidence
+   * @param {string} path - API-relative path used to re-fetch the asset with auth headers (apiFetch)
+   * @param {string} filename - suggested filename for the browser download
+   * @returns {Promise<void>}
+   * Re-fetches the asset (rather than reusing the <img>/<video> src) because the
+   * displayed URL is unauthenticated; apiFetch attaches the credentials needed
+   * to actually retrieve the bytes, then triggers a synthetic anchor-click download.
+   */
   async function saveEvidence(path, filename) {
     setSavingEvidence(true)
     try {
@@ -48,16 +68,28 @@ export default function HistoryPage() {
     }
   }
 
+  /**
+   * buildFilterParams
+   * @returns {URLSearchParams} query params shared by both the list fetch and the zip export,
+   * so the exported data always matches what's currently on screen.
+   */
   const buildFilterParams = () => {
     const p = new URLSearchParams()
     if (kind) p.set('false_alarm', kind)
     if (province) p.set('province', province)
     if (search) p.set('search', search)
+    // Converts local-date inputs into UTC ISO bounds; dateTo is exclusive-end-of-day (+24h).
     if (dateFrom) p.set('since', new Date(`${dateFrom}T00:00:00`).toISOString())
     if (dateTo) p.set('until', new Date(new Date(`${dateTo}T00:00:00`).getTime() + 86_400_000).toISOString())
     return p
   }
 
+  /**
+   * download
+   * @returns {Promise<void>}
+   * Exports the currently filtered history as a zip (resolutions + evidence)
+   * and triggers a browser download named with the active date range.
+   */
   async function download() {
     setDownloading(true)
     setError(null)
@@ -78,8 +110,9 @@ export default function HistoryPage() {
     }
   }
 
+  // Fetches one page of resolution history whenever any filter, the page, or `reload` changes.
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false // guards against a stale response overwriting state after unmount/re-run
     const params = buildFilterParams()
     params.set('limit', String(PAGE_SIZE))
     params.set('offset', String(page * PAGE_SIZE))
@@ -102,6 +135,7 @@ export default function HistoryPage() {
     return () => { cancelled = true }
   }, [page, kind, province, dateFrom, dateTo, search, reload])
 
+  // Access control: only users with the fires.history permission may view this page.
   if (!can(user, 'fires.history')) return <Navigate to="/" replace />
 
   return (
@@ -115,6 +149,7 @@ export default function HistoryPage() {
       <div className="flex flex-col flex-1 min-h-0 w-full bg-foreground rounded-2xl p-4 shadow-md">
 
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-300">
+          {/* Outcome filter: '' = all, 'false' = extinguished, 'true' = false alarm (matches API's false_alarm flag) */}
           <select
             value={kind}
             onChange={(e) => { setKind(e.target.value); setPage(0) }}
@@ -136,6 +171,7 @@ export default function HistoryPage() {
             ))}
           </select>
 
+          {/* Date range: each bound's min/max is clamped to the other, preventing an inverted range */}
           <div className="flex items-center gap-1">
             <input
               type="date"
@@ -163,6 +199,7 @@ export default function HistoryPage() {
             {downloading ? 'กำลังดาวน์โหลด…' : 'ดาวน์โหลด'}
           </button>
 
+          {/* Search: committed on Enter (form submit) or on blur, not on every keystroke */}
           <form
             onSubmit={(e) => { e.preventDefault(); setSearch(searchInput.trim()); setPage(0) }}
             className="ml-auto flex flex-row w-78 items-center gap-2"
@@ -179,6 +216,7 @@ export default function HistoryPage() {
             />
           </form>
 
+          {/* Manual refresh: increments `reload` purely to retrigger the fetch effect */}
           <button
             type="button"
             onClick={() => setReload((n) => n + 1)}
@@ -188,6 +226,7 @@ export default function HistoryPage() {
           </button>
         </div>
 
+        {/* Centers the loading/error/empty states; switches to a scrollable column layout once rows exist */}
         <div className={`flex ${(items === null) || error || (items !== null && !error && items.length === 0) ? 'justify-center items-center flex-1' : 'flex-col flex-1 min-h-0'}`}>
           {items === null && <p className="text-gray-400">กำลังโหลด…</p>}
           {error && <p className="text-destructive">{error}</p>}
@@ -238,6 +277,8 @@ export default function HistoryPage() {
                         {it.images.length > 0 && (
                           <div className="mt-1 flex gap-1.5 flex-wrap">
                             {it.images.map(({ id, content_type }) => {
+                              // Builds both the API-relative path (for authenticated re-fetch on download)
+                              // and the direct URL (for inline <img>/<video> preview) from the same id.
                               const path = `/fires/${it.fire_id}/images/${id}`
                               const url = `${API_URL}${path}`
                               const isVideo = content_type?.startsWith('video/')
@@ -251,6 +292,7 @@ export default function HistoryPage() {
                                 >
                                   {isVideo ? (
                                     <>
+                                      {/* preload="metadata" avoids downloading full video just to show a thumbnail */}
                                       <video src={url} muted preload="metadata" className="h-16 w-16 object-cover" />
                                       <span className="absolute inset-0 flex items-center justify-center">
                                         <svg viewBox="0 0 24 24" className="h-7 w-7 fill-white/90 drop-shadow">
@@ -284,6 +326,7 @@ export default function HistoryPage() {
       </div>
       </div>
 
+      {/* Fullscreen evidence lightbox; clicking the backdrop closes it, clicking the media itself does not */}
       {viewer && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"

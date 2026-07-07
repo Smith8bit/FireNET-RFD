@@ -10,6 +10,14 @@ import { FIRE_COLORS } from '../lib/fireColors'
 const FIRES_SOURCE = 'fires'
 const FIRES_LAYER = 'fire-circles'
 
+/**
+ * Converts raw fire points into the GeoJSON FeatureCollection MapLibre needs
+ * for a geojson source. Only the fields the paint expression reads
+ * (`id`, `status`, `booked`) are carried into `properties`.
+ *
+ * @param {Array<{id: string|number, lng: number, lat: number, status: boolean, booked: boolean}>} points
+ * @returns {GeoJSON.FeatureCollection} point features keyed for `firePaint`
+ */
 function firesToGeoJSON(points) {
     return {
         type: 'FeatureCollection',
@@ -21,6 +29,16 @@ function firesToGeoJSON(points) {
     }
 }
 
+/**
+ * Builds a MapLibre `circle` paint spec for the fires layer, expressed as
+ * data-driven expressions so a single `setPaintProperty` call can restyle
+ * every point without re-fetching data. Precedence: the hovered/focused
+ * point (`activeId`) always wins the highlight color/size, then resolved,
+ * then booked, then falls back to "free" (unclaimed).
+ *
+ * @param {string|number|null|undefined} activeId - id of the hovered or focused fire, if any
+ * @returns {maplibregl.CirclePaintSpecification} paint properties for the fire-circles layer
+ */
 function firePaint(activeId) {
     const isActive = ['==', ['get', 'id'], activeId ?? '']
     return {
@@ -40,6 +58,18 @@ function firePaint(activeId) {
     }
 }
 
+/**
+ * Builds the plain-DOM marker element for a field officer (name/last-seen
+ * label over a status-colored avatar circle). Built with `document.createElement`
+ * rather than JSX because MapLibre markers own their DOM node directly and
+ * don't participate in the React tree; a small React root is mounted just for
+ * the `UserCircleIcon` so we can reuse the icon component without hand-rolling SVG.
+ *
+ * @param {boolean} active - whether the officer is currently online (green) or offline (gray)
+ * @param {string|undefined} name - officer display name; falls back to a generic Thai label
+ * @param {string|number|Date} lastUpdated - last location ping, formatted via `formatLastSeen`
+ * @returns {HTMLDivElement} marker element with a `_reactRoot` reference for later cleanup
+ */
 function makeOfficerEl(active, name, lastUpdated) {
     const wrapper = document.createElement('div')
     Object.assign(wrapper.style, {
@@ -100,12 +130,40 @@ function makeOfficerEl(active, name, lastUpdated) {
 
     wrapper.appendChild(label)
     wrapper.appendChild(circle)
+    // Exposed on the wrapper too so the marker-cleanup effect can unmount this
+    // root via `marker.getElement()` without needing to know the internal DOM shape.
     wrapper._reactRoot = circle._reactRoot
     return wrapper
 }
 
+/**
+ * MapView
+ * MapLibre GL map showing fire locations as a data-driven circle layer plus
+ * field-officer avatar markers, wired to the shared `useMapSelection` store
+ * so hovering/clicking a fire (here or in the sidebar list) stays in sync.
+ * The MapLibre instance is imperative and long-lived, so it's created once in
+ * an effect with an empty dependency array and mutated in place by the other
+ * effects below rather than recreated on every prop change (recreating it
+ * would be expensive and would reset the user's pan/zoom).
+ *
+ * @param {object} props
+ * @param {string|object} props.layer - MapLibre style (URL or style spec) for the current base layer
+ * @param {{lng: number, lat: number}} props.startPoint - initial map center
+ * @param {number} [props.startZoom=10] - initial zoom level
+ * @param {Array<{id: string|number, lng: number, lat: number, status: boolean, booked: boolean}>} props.points - fire locations
+ * @param {Array<{location?: {latitude: number, longitude: number}, active: boolean, name?: string, last_updated?: string}>} [props.officers=[]] - field officer positions
+ * @param {import('react').Ref<{resetView: () => void, zoomIn: () => void, zoomOut: () => void}>} ref - imperative handle for parent-driven map controls
+ * @returns {JSX.Element} a full-size map container
+ *
+ * Wrapped in `memo` at export so parents that re-render frequently (e.g. on
+ * websocket ticks) don't force MapLibre to reprocess unchanged props.
+ */
 const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10, points, officers = [] }, ref) {
     const mapRef = useRef(null)
+    // Mirrors the latest `points`/`activeId` in refs (rather than reading the
+    // prop/state closures directly) so the MapLibre event handlers registered
+    // once in the init effect below always see current data instead of the
+    // stale values captured at mount time.
     const pointsRef = useRef(points)
     const activeIdRef = useRef(null)
     const officerMarkerInstancesRef = useRef([])
@@ -115,6 +173,8 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
     const setFocused = useMapSelection((s) => s.setFocused)
     const clearSelection = useMapSelection((s) => s.clear)
 
+    // Exposes a minimal imperative API to the parent (toolbar buttons for
+    // reset/zoom) since MapLibre's own controls aren't React components.
     useImperativeHandle(ref, () => ({
         resetView: () => {
             mapRef.current?.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: startZoom, duration: 800 })
@@ -123,6 +183,9 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         zoomOut: () => mapRef.current?.zoomOut(),
     }), [startPoint, startZoom])
 
+    // One-time map construction. Runs only on mount ([] deps) — `layer`,
+    // `points`, and selection changes are applied to the existing instance by
+    // the effects below instead of tearing down and recreating the map.
     useEffect(() => {
         const map = new maplibregl.Map({
             container: 'map',
@@ -137,11 +200,19 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         map.dragRotate.disable()
         map.doubleClickZoom.disable()
 
+        // Source/layer must be (re-)added on every style load because
+        // `setStyle` (used when switching base layers) wipes custom
+        // sources/layers; the `getSource` guard avoids double-adding if
+        // `style.load` fires more than once for the same style.
         map.on('style.load', () => {
             if (map.getSource(FIRES_SOURCE)) return
             map.addSource(FIRES_SOURCE, { type: 'geojson', data: firesToGeoJSON(pointsRef.current) })
             map.addLayer({ id: FIRES_LAYER, type: 'circle', source: FIRES_SOURCE, paint: firePaint(activeIdRef.current) })
         })
+        // Clicking a fire circle focuses it; clicking empty map area clears
+        // the current selection (checked via a real hit-test, not just
+        // "click missed the layer", so clicks on other overlapping layers
+        // don't unintentionally clear selection).
         map.on('click', FIRES_LAYER, (e) => {
             const feature = e.features?.[0]
             if (feature) setFocused(feature.properties.id)
@@ -156,6 +227,8 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
 
         mapRef.current = map
 
+        // MapLibre doesn't auto-resize with its container (e.g. sidebar
+        // collapse/expand), so we watch it explicitly.
         const ro = new ResizeObserver(() => map.resize())
         ro.observe(map.getContainer())
 
@@ -165,6 +238,10 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         }
     }, [])
 
+    // Swaps the base layer (satellite/topo/etc.) in place. If the map is
+    // mid-load, `setStyle` is deferred to the `load` event instead of being
+    // called immediately, since MapLibre can drop a style change requested
+    // before the initial style has finished loading.
     useEffect(() => {
         const map = mapRef.current
         if (!map) return
@@ -177,12 +254,17 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         }
     }, [layer])
 
+    // Pushes updated fire data into the existing geojson source (cheap) rather
+    // than recreating the source/layer; also keeps `pointsRef` current for the
+    // event handlers registered once above.
     useEffect(() => {
         pointsRef.current = points
         const source = mapRef.current?.getSource(FIRES_SOURCE)
         if (source) source.setData(firesToGeoJSON(points))
     }, [points])
 
+    // Flies the camera to a fire when it becomes focused (from map click or
+    // sidebar selection). No-op if the id isn't in the current point set.
     useEffect(() => {
         const map = mapRef.current
         if (!map || !focusedId) return
@@ -190,6 +272,9 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         if (p) map.flyTo({ center: [p.lng, p.lat], zoom: 14, duration: 1000 })
     }, [focusedId])
 
+    // Restyles only the highlighted circle (hover takes precedence over focus)
+    // via `setPaintProperty`, which is far cheaper than touching source data
+    // for a change that doesn't affect the underlying fire records.
     useEffect(() => {
         const activeId = hoveredId ?? focusedId ?? null
         activeIdRef.current = activeId
@@ -201,6 +286,11 @@ const MapView = forwardRef(function MapView({ layer, startPoint, startZoom = 10,
         map.setPaintProperty(FIRES_LAYER, 'circle-stroke-width', paint['circle-stroke-width'])
     }, [hoveredId, focusedId])
 
+    // Officer markers are rebuilt from scratch on every `officers` update
+    // (rather than diffed/moved) since the list is typically small and
+    // markers are cheap to recreate; each old marker's mounted React root
+    // (from `makeOfficerEl`) is explicitly unmounted first to avoid leaking
+    // React roots as officers move or go offline.
     useEffect(() => {
         if (!mapRef.current) return
 

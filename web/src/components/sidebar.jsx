@@ -15,12 +15,28 @@ import { apiFetch } from "../lib/shared";
 import appIcon from "../assets/icon.png";
 import { useAuthStore, can } from "../lib/useAuthStore";
 
+/**
+ * Sidebar
+ * Primary app navigation rail. Renders a collapsible list of routes filtered
+ * by the current user's permissions (via `can`) and role flags, plus a
+ * superuser-only control for the global officer location-polling interval
+ * and a logout action. Assumes it is only ever mounted once the user is
+ * authenticated (it reads `user.name`/`user.username` without a null guard).
+ *
+ * @returns {JSX.Element} the navigation sidebar
+ *
+ * Depends on `useAuthStore` for the current user/logout, `react-router-dom`
+ * for active-route highlighting and navigation, and `apiFetch` for the
+ * poll-interval setting (superuser only).
+ */
 export default function Sidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
 
+  // Collapsed/expanded state persists across sessions via localStorage so the
+  // user's layout preference survives a page reload.
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebarCollapsed') === '1'
   )
@@ -28,6 +44,8 @@ export default function Sidebar() {
     localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0')
   }, [collapsed])
 
+  // Officer location-poll interval (minutes): a superuser-only setting fetched
+  // lazily since it's irrelevant (and inaccessible) for non-superusers.
   const [poll, setPoll] = useState('')
   const [pollSaved, setPollSaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -39,6 +57,9 @@ export default function Sidebar() {
       .catch(() => {})
   }, [user])
 
+  // Persists the poll interval; `saving`/`pollSaved` are timed flags purely
+  // for button feedback ("saving…" / "done") rather than tracking real async
+  // state, so they're reset via `setTimeout` regardless of request duration.
   const savePoll = async () => {
     const minutes = parseFloat(poll)
     if (!(minutes > 0) || saving) return
@@ -57,6 +78,10 @@ export default function Sidebar() {
     }
   }
 
+  // Map and dashboard are always visible; the rest are gated by fine-grained
+  // permissions (`can`) or the coarser `is_superuser` flag. `.filter(Boolean)`
+  // drops entries where the permission check returned `false` instead of a
+  // link object.
   const links = [
     { name: 'แผนที่', path: '/', icon: MapIcon },
     { name: 'แดชบอร์ด', path: '/dashboard', icon: DashboardIcon },
@@ -72,6 +97,8 @@ export default function Sidebar() {
     navigate('/login', {replace: true})
   }
 
+  // Assumes an authenticated user is always present by this point; `name`
+  // falls back to `username` since `name` may not be set for every account type.
   const initial = (user.name ?? user.username).charAt(0).toUpperCase()
   const fullLabel = `${user.name ?? user.username}${user.division ? ` · ${user.division}` : ''}`
 

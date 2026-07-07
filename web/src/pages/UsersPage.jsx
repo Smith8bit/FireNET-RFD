@@ -5,23 +5,39 @@ import { toast } from '../lib/toastStore'
 import { apiFetch, INPUT_CLS, PAGE_SIZE, THEAD_CLS } from '../lib/shared'
 import CenteredMessage from '../components/CenteredMessage'
 
+// Thai display labels for backend role codes.
 const ROLE_TH = { admin: 'ผู้ดูแลระบบ', dispatcher: 'ผู้ดูแล', field_officer: 'เจ้าหน้าที่' }
 
+/**
+ * UsersPage
+ * Route-level component (no props). Superuser-only account administration
+ * screen: search/filter/sort every user account, and revoke or restore
+ * account access (superuser accounts are exempt from revoke/restore).
+ *
+ * Returns: JSX.Element, or a redirect to '/' when the signed-in user is not a superuser.
+ */
 export default function UsersPage() {
   const user = useAuthStore((s) => s.user)
 
-  const [items, setItems] = useState([])
-  const [total, setTotal] = useState(0)
-  const [divisions, setDivisions] = useState([])
-  const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('')
-  const [division, setDivision] = useState('')
-  const [sort, setSort] = useState('name')
-  const [order, setOrder] = useState('asc')
-  const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState(null)
+  const [items, setItems] = useState([]) // array: current page of user rows
+  const [total, setTotal] = useState(0) // number: total matching accounts, drives the manual pagination footer
+  const [divisions, setDivisions] = useState([]) // array<string>: distinct division names for the filter dropdown (server-supplied, matches current filters)
+  const [query, setQuery] = useState('') // string: free-text search (username/division), debounced via the load effect
+  const [status, setStatus] = useState('') // '' | 'active' | 'suspended': account status filter
+  const [division, setDivision] = useState('') // string: exact division filter, '' = all
+  const [sort, setSort] = useState('name') // 'name' | 'sessions': sort key
+  const [order, setOrder] = useState('asc') // 'asc' | 'desc': sort direction
+  const [page, setPage] = useState(0) // number: zero-based current page index
+  const [loading, setLoading] = useState(true) // boolean: true while a list fetch is in flight
+  const [busyId, setBusyId] = useState(null) // string|null: id of the user row currently being revoked/restored (disables its button)
 
+  /**
+   * load
+   * @returns {Promise<void>}
+   * Fetches the current page of users using all active filters/sort/search.
+   * Memoized with useCallback so the debounce effect below can safely depend
+   * on it without re-creating the timer on every render.
+   */
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -43,13 +59,24 @@ export default function UsersPage() {
     }
   }, [query, page, status, division, sort, order])
 
+  // Debounces `load` by 300ms so fast typing in the search box doesn't fire a request per keystroke;
+  // non-text filters (status/division/sort/page) still settle quickly since they change `load`'s identity too.
   useEffect(() => {
     const id = setTimeout(load, 300)
     return () => clearTimeout(id)
   }, [load])
 
+  // Access control: only superusers may manage account access; everyone else is bounced to home.
   if (!user?.is_superuser) return <Navigate to="/" replace />
 
+  /**
+   * action
+   * @param {object} u - the target user row (must include id, username)
+   * @param {'revoke'|'restore'} kind - which account-access action to perform
+   * @returns {Promise<void>}
+   * Confirms with the user via a native dialog, calls the corresponding
+   * endpoint, then reloads the list so status/session counts stay accurate.
+   */
   const action = async (u, kind) => {
     const verb = kind === 'revoke' ? 'ระงับสิทธิ์' : 'คืนสิทธิ์'
     if (!window.confirm(`${verb}บัญชี ${u.username}?`)) return
@@ -69,6 +96,7 @@ export default function UsersPage() {
     }
   }
 
+  // Last valid page index given the current total; clamps to 0 when there are no results.
   const lastPage = Math.max(Math.ceil(total / PAGE_SIZE) - 1, 0)
 
   return (
@@ -185,6 +213,7 @@ export default function UsersPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right">
+                        {/* Superuser accounts can't be revoked/restored from this UI — no action shown */}
                         {u.is_superuser ? (
                           <span className="text-xs text-gray-400">—</span>
                         ) : u.is_active ? (
@@ -214,6 +243,7 @@ export default function UsersPage() {
             )}
           </div>
 
+          {/* Manual (non-shared) pagination footer, only shown once results exceed one page */}
           {total > PAGE_SIZE && (
             <div className="flex items-center justify-between pt-3 mt-2 border-t border-gray-300 text-sm text-gray-600">
               <button

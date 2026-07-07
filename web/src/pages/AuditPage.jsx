@@ -6,6 +6,9 @@ import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
 import PaginationBar from '../components/PaginationBar'
 
+// Human-readable Thai labels for every raw `action` code the backend audit
+// log can emit. Dependency: must stay in sync with the server's action enum;
+// any action not present here falls back to showing the raw code (see render).
 const ACTION_LABELS = {
   'fire.reserve': 'จองจุดไฟ',
   'fire.resolve': 'ดับไฟสำเร็จ',
@@ -33,6 +36,7 @@ const ACTION_LABELS = {
   'auth.restore_user': 'คืนสิทธิ์ผู้ใช้',
 }
 
+// Badge color per action "category" (the prefix before the dot, e.g. 'fire' from 'fire.reserve').
 const ACTION_COLORS = {
   fire: 'bg-orange-100 text-orange-700',
   officer: 'bg-blue-100 text-blue-700',
@@ -42,6 +46,7 @@ const ACTION_COLORS = {
   auth: 'bg-gray-100 text-gray-600',
 }
 
+// Labels for the category filter <select>; keys must match the action-code prefixes above.
 const CATEGORY_LABELS = {
   fire: 'จุดไฟ',
   officer: 'เจ้าหน้าที่',
@@ -51,14 +56,35 @@ const CATEGORY_LABELS = {
   auth: 'บัญชีผู้ใช้',
 }
 
+/**
+ * provName
+ * @param {Record<string, string>} names - map of region ltree path -> Thai display name
+ * @param {string|undefined} path - ltree path of a region (e.g. 'th.north.chiangmai')
+ * @returns {string|undefined} the resolved display name, or the raw path if unmapped, or the input unchanged if falsy
+ * Assumption: `names` may be incomplete (regions still loading) — falls back to the raw path.
+ */
 const provName = (names, path) => (path ? (names[path] ?? path) : path)
 
+/**
+ * summarize
+ * Builds the free-text "รายละเอียด" (detail) column for one audit log row.
+ * @param {object} item - one audit log entry as returned by the API
+ * @param {object} [item.detail] - action-specific payload, shape varies by item.action
+ * @param {string} item.action - dotted action code, used to pick the formatting branch
+ * @param {Record<string, string>} [names] - region path -> name lookup, used to resolve ltree paths to Thai names
+ * @returns {string} a (possibly multi-line, '\n'-joined) human-readable summary; '' if the action has no known format
+ * Note: every field on `detail` is optional/nullable since it originates from historical
+ * log rows that may predate a given field being added server-side; hence the extensive `??` fallbacks.
+ */
 function summarize(item, names = {}) {
   const d = item.detail ?? {}
   const prov = (path) => provName(names, path)
+  // Renders "<old province> → " when a previous path exists, else '' (for region-change rows).
   const arrowFrom = (prevPath) => (prevPath ? `${prov(prevPath)} → ` : '')
+  // Shared multi-line renderer for "create/verify/delete officer|dispatcher" style entries.
   const entity = (label, path) =>
     `${label}: ${d.name}\n สังกัด: ${d.division ?? '—'}\n ขอบเขต: ${prov(path)}`
+  // Builds the common "field changed: old → new" lines shared by officer.update / dispatcher.update.
   const renameParts = () => {
     const parts = []
     if (d.name) parts.push(`เปลี่ยนชื่อ: ${d.previous_name ? `${d.previous_name} → ` : ''}${d.name}`)
@@ -71,6 +97,7 @@ function summarize(item, names = {}) {
     case 'fire.ingest': {
       const base = `ดึงข้อมูล ${d.fetched ?? 0} รายการ · เพิ่มใหม่ ${d.inserted ?? 0}`
       const by = d.by_satellite
+      // Optional per-satellite breakdown; omitted entirely if the backend didn't send it.
       return by
         ? `${base}\n${Object.entries(by).map(([s, n]) => `${s}: ${n}`).join(' · ')}`
         : base
@@ -117,30 +144,41 @@ function summarize(item, names = {}) {
       if (d.password_changed) parts.push(`รีเซ็ตรหัสผ่าน${d.officer_name ? `: ${d.officer_name}` : ''}`)
       return parts.join('\n')
     }
+    // Actions with no dedicated formatter (e.g. auth.login, officer.online/offline) show '—' via the caller's `|| '—'`.
     default:
       return ''
   }
 }
 
+/**
+ * AuditPage
+ * Route-level component (no props). Superuser-only audit log viewer: lists
+ * every recorded system action with filtering by category, date, and actor,
+ * plus server-side pagination.
+ *
+ * Returns: JSX.Element, or a redirect to '/' when the signed-in user is not a superuser.
+ */
 export default function AuditPage() {
   const user = useAuthStore((s) => s.user)
-  const [items, setItems] = useState(null)
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [error, setError] = useState(null)
-  const [action, setAction] = useState('')
-  const [onDate, setOnDate] = useState('')
-  const [actorInput, setActorInput] = useState('')
-  const [actor, setActor] = useState('')
-  const [reload, setReload] = useState(0)
+  const [items, setItems] = useState(null) // array|null: null = loading, [] = loaded-but-empty
+  const [total, setTotal] = useState(0) // number: total row count from server, drives PaginationBar
+  const [page, setPage] = useState(0) // number: zero-based current page index
+  const [error, setError] = useState(null) // string|null: load error message shown in place of the table
+  const [action, setAction] = useState('') // string: selected category filter ('' = all)
+  const [onDate, setOnDate] = useState('') // string: 'YYYY-MM-DD' date filter from the date input
+  const [actorInput, setActorInput] = useState('') // string: live text of the actor search box (uncommitted)
+  const [actor, setActor] = useState('') // string: committed actor filter, applied on submit/blur
+  const [reload, setReload] = useState(0) // number: bumped to force-retrigger the fetch effect (manual "refresh")
   const { regions } = useRegions()
+  // Precompute a path -> Thai name lookup once per regions change, so summarize() avoids repeated scans.
   const provinceNames = useMemo(
     () => Object.fromEntries((regions ?? []).map((p) => [p.path, p.name_th])),
     [regions],
   )
 
+  // Fetches one page of audit log entries whenever any filter, the page, or `reload` changes.
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false // guards against a stale response overwriting state after unmount/re-run
     const params = new URLSearchParams({
       limit: String(PAGE_SIZE),
       offset: String(page * PAGE_SIZE),
@@ -148,6 +186,7 @@ export default function AuditPage() {
     if (action) params.set('action', action)
     if (actor) params.set('actor', actor)
     if (onDate) {
+      // Converts the local-date input into a [start-of-day, +24h) UTC ISO range for the API.
       const start = new Date(`${onDate}T00:00:00`)
       params.set('since', start.toISOString())
       params.set('until', new Date(start.getTime() + 86_400_000).toISOString())
@@ -171,6 +210,7 @@ export default function AuditPage() {
     return () => { cancelled = true }
   }, [page, action, actor, onDate, reload])
 
+  // Access control: only superusers may view the audit log; everyone else is bounced to home.
   if (!user?.is_superuser) return <Navigate to="/" replace />
 
   return (
@@ -185,6 +225,7 @@ export default function AuditPage() {
 
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-300">
 
+          {/* Category filter; resets to page 0 on change so results stay in range */}
           <select
             value={action}
             onChange={(e) => { setAction(e.target.value); setPage(0) }}
@@ -203,6 +244,8 @@ export default function AuditPage() {
             className={`${INPUT_CLS} max-w-fit text-accent`}
           />
 
+          {/* Actor search: committed on Enter (form submit) or on blur, not on every keystroke,
+              to avoid refetching on each character typed */}
           <form
             onSubmit={(e) => { e.preventDefault(); setActor(actorInput.trim()); setPage(0) }}
             className="ml-auto flex flex-row w-78 items-center gap-2"
@@ -219,6 +262,7 @@ export default function AuditPage() {
             />
           </form>
 
+          {/* Manual refresh: increments `reload` purely to retrigger the fetch effect */}
           <button
             type="button"
             onClick={() => setReload((n) => n + 1)}
@@ -228,6 +272,7 @@ export default function AuditPage() {
           </button>
         </div>
 
+        {/* Centers the loading/error/empty states; switches to a scrollable column layout once rows exist */}
         <div className={`flex ${(items === null) || error || (items !== null && !error && items.length === 0) ? 'justify-center items-center flex-1' : 'flex-col flex-1 min-h-0'}`}>
           {items === null && <p className="text-gray-400">กำลังโหลด…</p>}
           {error && <p className="text-destructive">{error}</p>}
@@ -256,11 +301,13 @@ export default function AuditPage() {
                   {items.map((item) => (
                     <tr key={item.id} className="border-b border-background hover:bg-background/50">
                       <td className="px-3 py-2.5 align-top">
+                        {/* Badge color keyed by the action's category prefix (text before the first dot) */}
                         <span title={ACTION_LABELS[item.action] ?? item.action} className={`block w-32 text-center text-xs font-semibold px-2 py-1.5 rounded-full truncate ${ACTION_COLORS[item.action.split('.')[0]] ?? 'bg-gray-100 text-gray-600'}`}>
                           {ACTION_LABELS[item.action] ?? item.action}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light break-all">
+                        {/* 'system' is the synthetic actor username for automated jobs (e.g. satellite ingest) */}
                         {item.actor_username === 'system' ? 'ระบบ' : item.actor_username}
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light whitespace-pre-line wrap-break-word">

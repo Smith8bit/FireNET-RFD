@@ -1,4 +1,22 @@
+/**
+ * PaginationBar
+ * Stateless pagination control: renders "first/prev/next/last" buttons and an
+ * "X–Y of total" range label. Page state itself is owned by the caller
+ * (via `onPage`) so this component can sit above any paginated list/table.
+ *
+ * @param {object} props
+ * @param {number} props.page - current zero-based page index
+ * @param {number} props.pageSize - number of items per page
+ * @param {number} props.total - total item count across all pages
+ * @param {(nextPage: number) => void} props.onPage - callback invoked with the target page index
+ * @param {string} [props.className=''] - extra classes appended to the root container
+ * @returns {JSX.Element} the pagination controls
+ *
+ * Assumes `pageSize > 0`; when `total === 0`, lastPage clamps to 0 so buttons
+ * disable correctly instead of going negative.
+ */
 export default function PaginationBar({ page, pageSize, total, onPage, className = '' }) {
+  // Clamp to 0 so an empty result set doesn't produce a negative last page.
   const lastPage = Math.max(Math.ceil(total / pageSize) - 1, 0)
   const start = page * pageSize + 1
   const end = Math.min((page + 1) * pageSize, total)
