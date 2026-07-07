@@ -22,7 +22,6 @@ export default function Pending() {
 
   return (
     <SafeAreaView className="flex-1 bg-secondary">
-      {/* Centered status card — large rounded border, no brand header. */}
       <View className="flex-1 items-center justify-center p-6">
         <View className="w-full justify-center gap-4 rounded-3xl bg-foreground p-6">
 

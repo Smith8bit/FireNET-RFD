@@ -5,10 +5,10 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import { api } from '@/lib/api'
 
 export type ResolvePhoto = {
-  uri: string // local file uri (already compressed)
+  uri: string
   gps: { latitude: number; longitude: number } | null
-  kind?: 'image' | 'video' // default 'image'; video is optional supplementary evidence
-  thumbUri?: string // video-only: local poster frame for display (not uploaded)
+  kind?: 'image' | 'video'
+  thumbUri?: string
 }
 
 export type Fire = {
@@ -17,10 +17,10 @@ export type Fire = {
   lat: number
   lng: number
   status: boolean
-  expired?: boolean // status was set by auto-expiry, not an officer
-  false_alarm?: boolean // closed as a false detection (no real fire), no photo evidence
+  expired?: boolean
+  false_alarm?: boolean
   booked: boolean
-  appointed?: boolean // dispatcher-assigned (vs self-reserved); officer can't self-cancel
+  appointed?: boolean
   detected_at: string
   tumboon: string | null
   aumper: string | null
@@ -74,7 +74,7 @@ export const useFireStore = create<FireState>()(
     try {
       const res = await api.patch<Fire | null>('/officers/me/fire', { fire_id: fire.id })
       set({ reservedFire: res.data ?? fire })
-      get().loadFires() // refresh booked flags for the list
+      get().loadFires()
     } catch (e) {
       if (axios.isAxiosError(e) && e.response?.status === 403) {
         throw new Error('ไฟนี้อยู่นอกพื้นที่รับผิดชอบของคุณ')
@@ -93,13 +93,11 @@ export const useFireStore = create<FireState>()(
     }
   },
 
-  // release a self-reserved fire (จอง → ยกเลิก). A dispatcher-appointed fire is
-  // rejected by the backend (403) — only a dispatcher can cancel that.
   cancelReservation: async () => {
     try {
       await api.patch('/officers/me/fire', { fire_id: null })
       set({ reservedFire: null })
-      get().loadFires() // refresh booked flags for the list
+      get().loadFires()
     } catch (e) {
       if (axios.isAxiosError(e) && e.response?.status === 403) {
         throw new Error('ไฟนี้ผู้ดูแลเป็นผู้มอบหมาย ต้องให้ผู้ดูแลยกเลิกเท่านั้น')
@@ -114,7 +112,6 @@ export const useFireStore = create<FireState>()(
     form.append('image_gps', JSON.stringify(photos.map((p) => p.gps)))
     photos.forEach((p, i) => {
       const video = p.kind === 'video'
-      // Backend sniffs the real type from the bytes, so name/type here are only hints.
       form.append('images', {
         uri: p.uri,
         name: video ? `evidence-${i}.mp4` : `photo-${i}.jpg`,
@@ -124,7 +121,7 @@ export const useFireStore = create<FireState>()(
     try {
       await api.post<Fire>('/officers/me/fire/resolve', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000, // photo/video upload on a field network
+        timeout: 120000,
       })
     } catch (e) {
       if (
@@ -136,12 +133,10 @@ export const useFireStore = create<FireState>()(
       }
       throw new Error('ไม่สามารถบันทึกการดับไฟได้ กรุณาลองใหม่อีกครั้ง')
     }
-    // fire is resolved → clear it so Firespot drops back to the no-fire state
     set({ reservedFire: null })
-    get().loadFires() // fire status changed → refresh the map list
+    get().loadFires()
   },
 
-  // close a reserved fire as a false detection — no photo evidence required
   reportFalseFire: async (note) => {
     try {
       await api.post<Fire>('/officers/me/fire/false-report', {
@@ -158,10 +153,9 @@ export const useFireStore = create<FireState>()(
       throw new Error('ไม่สามารถรายงานว่าไม่ใช่ไฟได้ กรุณาลองใหม่อีกครั้ง')
     }
     set({ reservedFire: null })
-    get().loadFires() // fire status changed → refresh the map list
+    get().loadFires()
   },
 
-  // explicit user-driven status change; sends the `active` flag
   setOnline: async (online, coords) => {
     try {
       await api.patch('/officers/me/location', { ...coords, active: online })
@@ -171,8 +165,6 @@ export const useFireStore = create<FireState>()(
     }
   },
 
-  // periodic heartbeat: refresh position only, never touch the online flag, so a
-  // poll that lands after the user toggles off can't silently re-activate them
   pushLocation: async (coords) => {
     try {
       await api.patch('/officers/me/location', coords)
@@ -186,7 +178,6 @@ export const useFireStore = create<FireState>()(
     } catch {}
   },
 
-  // restore the server-side online flag after an app restart
   loadStatus: async () => {
     try {
       const res = await api.get<{ active: boolean }>('/officers/me/status')
@@ -195,9 +186,6 @@ export const useFireStore = create<FireState>()(
   },
     }),
     {
-      // Stale fire list + reserved fire survive a restart so the app is usable
-      // offline. `online` is server-authoritative (loadStatus reconciles it), so
-      // it's left out — a persisted `true` could wrongly show online past the TTL.
       name: 'firenet-fire-store',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({ fires: s.fires, reservedFire: s.reservedFire }),

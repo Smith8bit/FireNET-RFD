@@ -25,14 +25,10 @@ const ROWS: Row[] = [
   { icon: 'time-outline', label: 'ประวัติการดับไฟ', route: '/(authorized)/History' },
 ]
 
-// Soft shadow via boxShadow (New Arch), NOT Android `elevation`: elevation
-// re-rasterizes each frame and shimmers while the tab transition translates the
-// screen; boxShadow composites with the view and moves with it cleanly.
 const cardShadow = { boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.10)' } as const
 
 const fmtMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MB`
 
-// Pre-download the officer's home region so the map works with no signal.
 function OfflineMapButton({ home }: { home: Home }) {
   const [percent, setPercent] = useState<number | null>(null)
   const [size, setSize] = useState<number | null>(null)
@@ -90,9 +86,6 @@ function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
     progress.value = reduced ? to : withTiming(to, { duration: 240, easing: Easing.out(Easing.quad) })
   }, [expanded, reduced, progress])
 
-  // Drive width from a 52px circle out to full width, right edge pinned by the
-  // parent's items-end. It reads as the circle expanding in place, not a pill
-  // flying in from the right. overflow-hidden clips the label until it fits.
   const style = useAnimatedStyle(() => ({
     width: fullW > 0 ? 52 + (fullW - 52) * progress.value : 52,
   }))

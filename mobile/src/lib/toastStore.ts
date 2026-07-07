@@ -1,9 +1,5 @@
 import { create } from 'zustand'
 
-// Mirror of web/src/lib/toastStore.js: a tiny global toast queue. Any component
-// (or plain module code) can push a toast via the `toast` helper below; a single
-// <Toaster> mounted at the app root renders the stack, so toasts survive route
-// changes and tab unmounts.
 export type ToastType = 'success' | 'error' | 'info'
 type ToastItem = { id: number; message: string; type: ToastType; duration: number }
 

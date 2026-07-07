@@ -3,11 +3,6 @@ import { Modal, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Toast from './Toast'
 
-// Single mount point for the global toast queue (RN port of web Toaster.jsx).
-// Wrapped in a transparent Modal so toasts float above everything — including
-// other screens' own <Modal>s, which each render in a native window on top of
-// the app and would otherwise hide a plain in-tree overlay. pointerEvents
-// "box-none" lets taps fall through to the screen except on the toast cards.
 export default function Toaster() {
   const toasts = useToastStore((s) => s.toasts)
   const dismiss = useToastStore((s) => s.dismiss)

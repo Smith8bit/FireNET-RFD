@@ -25,19 +25,16 @@ type Item = {
 
 const PAGE = 20
 
-// content-type → saved-file extension (mirrors backend IMAGE_EXT/VIDEO_EXT)
 const EXT: Record<string, string> = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
   'video/mp4': 'mp4', 'video/quicktime': 'mov',
 }
 
-// evidence files are served by the API (region-scoped), so the request needs the bearer token
 const evidenceSource = (fireId: string, imageId: string) => ({
   uri: `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
   headers: { Authorization: `Bearer ${getToken() ?? ''}` },
 })
 
-// mounts only while a video is open, so useVideoPlayer's player is created/released with it
 function EvidenceVideo({ fireId, imageId }: { fireId: string; imageId: string }) {
   const player = useVideoPlayer(evidenceSource(fireId, imageId), (p) => { p.play() })
   return <VideoView player={player} style={{ width: '100%', height: '80%' }} contentFit="contain" />
@@ -48,12 +45,10 @@ export default function History() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  // the evidence file shown full-screen, or null when the viewer is closed
   const [viewer, setViewer] = useState<{ fireId: string; imageId: string; contentType: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [perm, requestPerm] = MediaLibrary.usePermissions()
 
-  // download the (auth-gated) evidence file to a temp file, then add it to the gallery
   const saveEvidence = useCallback(async (fireId: string, imageId: string, contentType: string) => {
     if (saving) return
     setSaving(true)
@@ -65,7 +60,7 @@ export default function History() {
         return
       }
       const dest = new File(Paths.cache, `fire-${imageId}.${EXT[contentType] ?? 'bin'}`)
-      if (dest.exists) dest.delete() // a stale temp from a crashed prior attempt would block the download
+      if (dest.exists) dest.delete()
       file = await File.downloadFileAsync(
         `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
         dest,
@@ -76,7 +71,7 @@ export default function History() {
     } catch {
       toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
-      try { file?.delete() } catch {} // best-effort cleanup of the temp copy
+      try { file?.delete() } catch {}
       setSaving(false)
     }
   }, [saving, perm, requestPerm])
@@ -97,7 +92,7 @@ export default function History() {
     }
   }, [loading])
 
-  useEffect(() => { load(0) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(0) }, [])
 
   return (
     <SafeAreaView className="flex-1 bg-foreground" edges={['bottom']}>
@@ -107,9 +102,6 @@ export default function History() {
         contentContainerStyle={{ padding: 12 , gap: 3, flexGrow: 1 }}
         onEndReached={() => { if (loaded && items.length < total) load(items.length) }}
         onEndReachedThreshold={0.4}
-        // lazy-load evidence images: keep fewer off-screen rows mounted so their
-        // thumbnails only fetch as they near the viewport. (No removeClippedSubviews —
-        // on Android it mis-measures rows mounted after scroll, squishing the badge.)
         windowSize={5}
         initialNumToRender={6}
         maxToRenderPerBatch={6}
@@ -174,8 +166,6 @@ export default function History() {
 
       <Modal visible={viewer !== null} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <View className="flex-1 items-center justify-center bg-black/90">
-          {/* backdrop is a sibling *behind* the content — nesting the buttons inside a
-              Pressable made them fight it for the touch responder, needing double-taps */}
           <Pressable className="absolute inset-0" onPress={() => setViewer(null)} />
           {viewer && (
             viewer.contentType.startsWith('video/')

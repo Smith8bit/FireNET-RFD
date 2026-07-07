@@ -9,14 +9,6 @@ import Animated, {
   useReducedMotion,
 } from 'react-native-reanimated'
 
-// A bottom sheet that slides in AND out. React Native's <Modal> unmounts its
-// children the instant `visible` flips false, so a reanimated `exiting` on the
-// card never gets to play — the sheet just pops away. This keeps the Modal
-// mounted until the slide-out finishes (the exit callback owns the real unmount),
-// so open and close feel symmetric. Backdrop fades in step with the card.
-//
-// ponytail: exit-then-unmount state machine; the ceiling is one sheet at a time
-// (fine — it's a modal). Reach for @gorhom/bottom-sheet only if these need drag.
 export default function SlideUpModal({
   visible,
   onClose,
@@ -26,7 +18,7 @@ export default function SlideUpModal({
 }: {
   visible: boolean
   onClose: () => void
-  dismissable?: boolean // false while submitting: swallow backdrop taps + back button
+  dismissable?: boolean
   sheetStyle?: StyleProp<ViewStyle>
   children: React.ReactNode
 }) {

@@ -9,7 +9,7 @@ import { useCallback, useRef, useState } from 'react'
 import { Video } from 'react-native-compressor'
 
 export const EVIDENCE_MAX_PHOTOS = 3
-const VIDEO_MAX_MB = 40 // keep in sync with backend RESOLVE_MAX_VIDEO_MB
+const VIDEO_MAX_MB = 40
 
 function gpsFromExif(exif: Record<string, any> | null | undefined): ResolvePhoto['gps'] {
   if (!exif) return null
@@ -21,17 +21,10 @@ function gpsFromExif(exif: Record<string, any> | null | undefined): ResolvePhoto
   return { latitude: lat, longitude: lng }
 }
 
-/**
- * Photo/video evidence capture for the resolve form: camera + library pickers,
- * client-side compression, and EXIF-GPS extraction (falling back to a device fix).
- * `reset()` clears the collected evidence and re-acquires the device position; the
- * caller drives it when the form opens.
- */
 export function useEvidenceCapture() {
   const [photos, setPhotos] = useState<ResolvePhoto[]>([])
   const [video, setVideo] = useState<ResolvePhoto | null>(null)
   const [compressingVideo, setCompressingVideo] = useState(false)
-  // fallback GPS for photos without EXIF coordinates (e.g. library picks)
   const deviceGps = useRef<ResolvePhoto['gps']>(null)
 
   const reset = useCallback(() => {
@@ -47,7 +40,6 @@ export function useEvidenceCapture() {
   }, [])
 
   const addAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset) => {
-    // read EXIF GPS before compressing — re-encoding drops it
     const gps = gpsFromExif(asset.exif) ?? deviceGps.current
     const small = await manipulateAsync(asset.uri, [{ resize: { width: 1600 } }], {
       compress: 0.8,
@@ -82,7 +74,6 @@ export function useEvidenceCapture() {
 
   const removeVideo = useCallback(() => setVideo(null), [])
 
-  // one optional video clip; compressed before upload, GPS falls back to device fix
   const captureVideo = useCallback(
     async (fromLibrary: boolean) => {
       const perm = fromLibrary
@@ -99,9 +90,7 @@ export function useEvidenceCapture() {
       if (result.canceled || !result.assets[0]) return
       setCompressingVideo(true)
       try {
-        // manual/HD: cap the longest side at 720p so clips stay legible but small
         const compressed = await Video.compress(result.assets[0].uri, { compressionMethod: 'manual', maxSize: 1280 })
-        // backend rejects > VIDEO_MAX_MB; check here so the officer isn't stuck at upload time
         if (new File(compressed).size > VIDEO_MAX_MB * 1024 * 1024) {
           toast.error(`วิดีโอใหญ่เกินไป (สูงสุด ${VIDEO_MAX_MB}MB) กรุณาถ่ายให้สั้นลง`)
           return

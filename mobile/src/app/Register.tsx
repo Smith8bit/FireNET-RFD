@@ -16,17 +16,12 @@ import FieldBox from '@/components/FieldBox'
 import LabeledInput from '@/components/LabeledInput'
 import PROVINCES from '@/data/provinces.json'
 
-// Smoothly animate the card's height as it grows/shrinks between steps.
 const resize = LinearTransition.duration(250)
 
 const STEPS = ['ชื่อและบัญชีผู้ใช้', 'สังกัดและพื้นที่', 'รหัสผ่าน', 'ตรวจสอบข้อมูล'] as const
 
-// Plain style objects for the Dropdown (it doesn't accept className). It sits
-// inside a FieldBox that supplies the filled background, so it stays transparent.
 const dropdownStyle = { borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 2 } as const
 
-// Fixed row height so the dropdown's auto-scroll-to-selected (scrollToIndex) is
-// reliable for provinces far down the list — it needs a matching getItemLayout.
 const PROVINCE_ITEM_HEIGHT = 48
 
 export default function Register() {
@@ -43,8 +38,6 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Returns true when the fields belonging to the current step are valid;
-  // otherwise sets the error message and returns false.
   const validateStep = () => {
     const fail = (msg: string) => {
       setError(msg)
@@ -71,7 +64,6 @@ export default function Register() {
 
   const next = async () => {
     if (!validateStep()) return
-    // On the username step, make sure it isn't already taken before moving on.
     if (step === 0) {
       setChecking(true)
       try {
@@ -94,7 +86,7 @@ export default function Register() {
 
   const back = () => {
     setError(null)
-    if (step === 0) router.back() // first step → back to Login
+    if (step === 0) router.back()
     else setStep((s) => s - 1)
   }
 
@@ -110,9 +102,8 @@ export default function Register() {
       return
     }
     try {
-      await signIn(username.trim(), password) // -> gate routes to /Pending until admin verifies
+      await signIn(username.trim(), password)
     } catch {
-      // registered fine but auto-login failed (e.g. network blip)
       setError('สมัครสมาชิกสำเร็จแล้ว แต่เข้าสู่ระบบอัตโนมัติไม่สำเร็จ กรุณาเข้าสู่ระบบด้วยตนเอง')
     } finally {
       setSubmitting(false)
@@ -129,7 +120,6 @@ export default function Register() {
           <Text className="mb-4 self-center text-2xl font-sans-semibold text-card-foreground">สมัครสมาชิก</Text>
         </View>
 
-        {/* Step indicator — one bar per step, animating its fill up to the current step. */}
         <View className="flex-row gap-0">
           {STEPS.map((label, i) => (
             <ProgressSegment key={label} active={i <= step} />
@@ -137,7 +127,6 @@ export default function Register() {
         </View>
 
         <Animated.View layout={resize} className="gap-4">
-          {/* Title of the current step. */}
           <Text className="text-xl font-sans-semibold text-card-foreground">{STEPS[step]}</Text>
 
           {step === 0 && (
@@ -233,9 +222,8 @@ export default function Register() {
           )}
 
           {step === 3 && (
-            /* Final review of everything entered in the previous steps. */
             <View className=" gap-4 rounded-lg border-0 bg-background/40 p-4">
-              <Summary label="ชื่อ-นามสกุล" value={name.trim()}/>
+              <Summary label="ชื่อ-นามสกุล" value={name.trim()} />
               <Summary label="ชื่อผู้ใช้" value={username.trim()} />
               <Summary label="สังกัด" value={division.trim() || '—'} />
               <Summary label="จังหวัด" value={province?.name_th ?? '—'} />
@@ -246,8 +234,6 @@ export default function Register() {
         </Animated.View>
       </ScrollView>
 
-      {/* Floating circular nav — back (steps back, or exits to Login from the
-          first step) on the left, next/submit on the right. */}
       <View className="absolute inset-x-6 bottom-16 flex-row items-center justify-between">
         <TouchableOpacity
           onPress={back}
@@ -287,8 +273,6 @@ export default function Register() {
   )
 }
 
-// One segment of the step indicator. Its primary-colored fill animates its
-// width in/out as the step crosses this segment, instead of toggling instantly.
 function ProgressSegment({ active }: { active: boolean }) {
   const fill = useSharedValue(active ? 1 : 0)
   useEffect(() => {

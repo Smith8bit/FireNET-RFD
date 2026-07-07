@@ -18,10 +18,10 @@ const MAP_STYLE = base as unknown as StyleSpecification
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
 const FIRE_COLORS = {
-  resolved: '#d1d5dc', // ดับแล้ว
-  held: '#f97316', // ไฟที่เราจอง
-  booked: '#facc15', // ถูกเจ้าหน้าที่ท่านอื่นจอง
-  free: '#ef4444', // ไฟอิสระ กำลังไหม้
+  resolved: '#d1d5dc',
+  held: '#f97316',
+  booked: '#facc15',
+  free: '#ef4444',
 }
 
 function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCollection {
@@ -56,7 +56,6 @@ type FireRowProps = {
   onReserve: (fire: Fire) => void
 }
 
-// memoized so selection/status changes only re-render the affected rows
 const FireRow = React.memo(function FireRow({
   item,
   selected,
@@ -70,7 +69,7 @@ const FireRow = React.memo(function FireRow({
   return (
     <Pressable
       className={`flex-row items-center border-b-[0.75px] border-border px-6 ${selected ? 'bg-flame-light' : ''} ${!online ? 'opacity-50' : ''}`}
-      style={{ height: ROW_HEIGHT }} // must match getItemLayout
+      style={{ height: ROW_HEIGHT }}
       disabled={!online}
       onPress={() => onFocus(item)}
     >
@@ -116,7 +115,6 @@ export default function MapView() {
   const setOnline = useFireStore((s) => s.setOnline)
   const { user, refresh } = useAuthSession()
 
-  // reload covers all three tabs: fire list (map), reserved fire (Firespot), profile (Setting)
   const reloadAll = useCallback(() => {
     loadFires()
     loadReservedFire()
@@ -130,19 +128,15 @@ export default function MapView() {
   const cameraRef = useRef<CameraRef>(null)
   const { height } = useWindowDimensions()
 
-  // Fetch fires and own reservation on mount
   useEffect(() => {
     loadFires()
     loadReservedFire()
   }, [loadFires, loadReservedFire])
 
-  // ask for location permission on mount so the blue "you are here" puck can
-  // render (like Google Maps) without waiting for the officer to go online
   useEffect(() => {
     Location.requestForegroundPermissionsAsync().catch(() => {})
   }, [])
 
-  // จอง is locked while the officer holds an unresolved fire
   const heldFireId = reservedFire != null && !reservedFire.status ? reservedFire.id : null
   const holdingUnresolved = heldFireId != null
 
@@ -161,23 +155,19 @@ export default function MapView() {
     return sorted
   }, [fires, sortBy, sortAsc])
 
-  // tap the active chip again to flip direction; a new key gets its natural default
   const changeSort = useCallback(
     (key: 'time' | 'name') => {
       if (sortBy === key) {
         setSortAsc((v) => !v)
       } else {
         setSortBy(key)
-        setSortAsc(key === 'name') // name: ก→ฮ, time: newest first
+        setSortAsc(key === 'name')
       }
     },
     [sortBy],
   )
   const snapPoints = useMemo(() => ['5%', '60%', ], [])
 
-  // open the map on the officer's own region (served by /users/me/profile);
-  // initialViewState is read once on mount, and the layout guard guarantees
-  // `user` is loaded by then. Fall back to a whole-Thailand view.
   const initialViewState = useMemo(() => {
     const home = user?.home
     return {
@@ -186,7 +176,6 @@ export default function MapView() {
     }
   }, [user?.home])
 
-  // fly back to the officer's region (the same view the map opened on)
   const recenter = useCallback(() => {
     cameraRef.current?.flyTo({
       center: initialViewState.center,
@@ -205,11 +194,8 @@ export default function MapView() {
             toast.error('กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
             return
           }
-          // go online immediately; the layout poll pushes the first GPS fix
           await setOnline(true)
         } else {
-          // go offline immediately — never block on a GPS fix; attach a cached
-          // position if one is already available (instant), otherwise send none
           let coords: { latitude: number; longitude: number } | undefined
           try {
             const last = await Location.getLastKnownPositionAsync()
@@ -226,7 +212,6 @@ export default function MapView() {
     [setOnline],
   )
 
-  // scroll the bottom-sheet list so this fire's row is at the top
   const scrollToFire = useCallback(
     (fire: Fire) => {
       const index = sortedFires.findIndex((f) => f.id === fire.id)
@@ -286,7 +271,6 @@ export default function MapView() {
 
   const keyExtractor = useCallback((item: Fire) => item.id, [])
 
-  // fixed row height: no async measurement, and scrollToIndex is always exact
   const getItemLayout = useCallback(
     (_: unknown, index: number) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index }),
     [],
@@ -345,8 +329,6 @@ export default function MapView() {
           />
         </GeoJSONSource>
 
-        {/* blue "you are here" puck, like Google Maps; renders once location
-            permission is granted. Placed last so it draws above the fire dots. */}
         <UserLocation animated accuracy />
       </Map>
 
@@ -422,7 +404,6 @@ export default function MapView() {
           maxToRenderPerBatch={12}
           initialNumToRender={12}
           removeClippedSubviews
-          // contentContainerStyle={{ paddingBottom: 24 }}
           ListEmptyComponent={<Text className="py-6 text-center font-head text-gray-400">No active fires</Text>}
         />
       </BottomSheet>

@@ -1,8 +1,6 @@
 import SlideUpModal from '@/components/SlideUpModal'
 import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
-// The "report as not a real fire" bottom sheet: an optional note and confirm.
-// Purely presentational — the note and submit state live with the caller.
 export default function FalseReportForm({
   visible,
   onClose,

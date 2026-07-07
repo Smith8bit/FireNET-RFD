@@ -1,7 +1,5 @@
 import { Text, View } from 'react-native'
 
-// Filled, rounded field with a small label pinned to its top-left corner.
-// `className` overrides only the padding (defaults to the common px-4 py-3).
 export default function FieldBox({
   label,
   className,

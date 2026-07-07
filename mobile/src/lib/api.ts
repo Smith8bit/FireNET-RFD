@@ -11,27 +11,19 @@ const REFRESH_KEY = 'firenet_refresh_token'
 
 export const api = axios.create({ baseURL: API_URL })
 
-// The short-lived access token is kept in memory for the request interceptor and
-// mirrored to the device keystore (expo-secure-store) so the session survives app
-// restarts. The long-lived refresh token rides alongside it; when the access token
-// 401s, the response interceptor below silently swaps it for a fresh one.
-// Native cookie persistence in React Native is unreliable, so mobile uses tokens.
 let accessToken: string | null = null
 let refreshToken: string | null = null
 
-/** Restore the saved tokens at startup. Call before the first authenticated request. */
 export async function loadToken(): Promise<string | null> {
   accessToken = await SecureStore.getItemAsync(TOKEN_KEY)
   refreshToken = await SecureStore.getItemAsync(REFRESH_KEY)
   return accessToken
 }
 
-/** The in-memory bearer token, for callers that build their own requests (e.g. <Image> headers). */
 export function getToken(): string | null {
   return accessToken
 }
 
-/** Persist a fresh access (+ refresh) token pair from login or refresh. */
 export async function setToken(access: string, refresh?: string): Promise<void> {
   accessToken = access
   await SecureStore.setItemAsync(TOKEN_KEY, access)
@@ -60,19 +52,14 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// login failures are handled where they happen, not as a session expiry. (The
-// refresh call uses bare axios, so it never re-enters this interceptor.)
 const AUTH_PROBE_PATHS = ['/auth/jwt/login']
 
 let onUnauthorized: (() => void) | null = null
 
-/** Called once (AuthProvider) so an expired session sends the user back to Login. */
 export function setOnUnauthorized(handler: () => void) {
   onUnauthorized = handler
 }
 
-// Single-flight refresh: a burst of 401s shares one /refresh call instead of
-// stampeding the endpoint (and racing each other into reuse-revocation).
 let refreshing: Promise<string | null> | null = null
 
 async function refreshAccessToken(): Promise<string | null> {
@@ -85,7 +72,7 @@ async function refreshAccessToken(): Promise<string | null> {
     await setToken(res.data.access_token, res.data.refresh_token)
     return res.data.access_token
   } catch {
-    return null // refresh token expired/revoked → caller logs out
+    return null
   }
 }
 
@@ -101,7 +88,7 @@ api.interceptors.response.use(undefined, async (error) => {
     if (fresh) {
       original.headers = original.headers ?? {}
       original.headers.Authorization = `Bearer ${fresh}`
-      return api(original) // replay the original request with the new token
+      return api(original)
     }
     onUnauthorized?.()
   }

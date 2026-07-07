@@ -1,4 +1,4 @@
-﻿import PROVINCES from '@/data/provinces.json'
+import PROVINCES from '@/data/provinces.json'
 import { api } from '@/lib/api'
 import { apiErrorMessage } from '@/lib/apiError'
 import { shadows } from '@/lib/theme'
@@ -12,12 +12,8 @@ import { ActivityIndicator, Pressable, ScrollView, Text } from 'react-native'
 import { Dropdown } from 'react-native-element-dropdown'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-// Plain style objects for the Dropdown (it doesn't accept className). It sits
-// inside a FieldBox that supplies the filled background, so it stays transparent.
 const dropdownStyle = { borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 2 } as const
 
-// Fixed row height so the dropdown's auto-scroll-to-selected (scrollToIndex) is
-// reliable for provinces far down the list — it needs a matching getItemLayout.
 const PROVINCE_ITEM_HEIGHT = 48
 
 export default function RegionChange() {
@@ -26,8 +22,6 @@ export default function RegionChange() {
   const [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  // re-check whether a region-change request is still pending; a decided
-  // (approved/rejected) one clears `pending` so the dropdown returns
   const loadPending = useCallback(
     () =>
       api.get('/officers/me/region-change').then((r) => {
@@ -36,8 +30,6 @@ export default function RegionChange() {
     [],
   )
 
-  // refresh on every focus so the screen resets to the default dropdown once a
-  // request is decided (approved/rejected) — a still-pending one keeps disabling resubmit
   useFocusEffect(useCallback(() => { loadPending() }, [loadPending]))
 
   const onRefresh = useCallback(() => {

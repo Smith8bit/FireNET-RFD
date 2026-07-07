@@ -19,9 +19,6 @@ import {
   View,
 } from 'react-native'
 
-// React Native's Modal renders in its own native window on Android that doesn't
-// resize for the keyboard, so KeyboardAvoidingView has nothing to push against.
-// Track the keyboard height from the global Keyboard events instead.
 function useKeyboardHeight() {
   const [height, setHeight] = useState(0)
   useEffect(() => {
@@ -60,9 +57,6 @@ export default function Firespot() {
     loadReservedFire()
   }, [loadReservedFire])
 
-  // open Google Maps turn-by-turn navigation to the fire. On Android the
-  // google.navigation: scheme launches directions straight into the Google Maps
-  // app; everywhere else the universal maps URL opens the app (or the browser).
   const navigate = useCallback(() => {
     if (!reservedFire) return
     const { lat, lng } = reservedFire

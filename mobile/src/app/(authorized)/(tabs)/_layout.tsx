@@ -3,9 +3,6 @@ import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
 import { useReducedMotion } from 'react-native-reanimated'
 
-// The three primary tabs. Session concerns (auth guard, location tracking, push
-// handling) live in the parent stack layout so they keep running on the pushed
-// detail pages too; this layout is purely the tab bar + its screens.
 export default function TabsLayout() {
   const reducedMotion = useReducedMotion()
   return (
@@ -13,7 +10,6 @@ export default function TabsLayout() {
       backBehavior="history"
       screenOptions={{
         headerShown: false,
-        // crossfade between tabs. Off under reduced motion.
         animation: reducedMotion ? 'none' : 'fade',
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray400,

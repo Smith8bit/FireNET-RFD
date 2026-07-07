@@ -1,15 +1,3 @@
-/**
- * Firebase Cloud Messaging integration (Direct FCM via @react-native-firebase/messaging).
- *
- * Uses the v22 MODULAR API (getMessaging/onMessage/getToken/... as standalone
- * functions taking the Messaging instance first) — the namespaced
- * `messaging().onMessage(...)` form is deprecated and warns at runtime.
- *
- * Everything here is GUARDED: the messaging module is loaded lazily and any
- * failure (native module not present, no google-services.json, permission
- * denied) degrades to a no-op. That keeps the current dev build working before
- * the native rebuild — see mobile/PUSH_SETUP.md for the steps to go live.
- */
 import { PermissionsAndroid, Platform } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import { api } from './api'
@@ -19,16 +7,10 @@ type RemoteMessage = {
   notification?: { title?: string; body?: string }
 }
 type Messaging = any
-// the @react-native-firebase/messaging module namespace, which carries the
-// modular functions (getMessaging, onMessage, getToken, AuthorizationStatus, …)
 type Fcm = any
 
-/** Android channel for appointment alerts; HIGH importance gives a heads-up banner. */
 const ANDROID_CHANNEL_ID = 'appointments'
 
-// FCM does NOT display a notification while the app is foregrounded — it only
-// hands the message to onMessage. We re-present it as a local notification, and
-// this handler is what lets that local notification surface over the open app.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldPlaySound: true,
@@ -39,7 +21,6 @@ Notifications.setNotificationHandler({
 })
 
 let _channelReady = false
-/** Create the Android notification channel once (no-op on iOS / on repeat). */
 async function ensureAndroidChannel(): Promise<void> {
   if (_channelReady || Platform.OS !== 'android') return
   _channelReady = true
@@ -49,11 +30,10 @@ async function ensureAndroidChannel(): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
     })
   } catch {
-    _channelReady = false // allow a later retry
+    _channelReady = false
   }
 }
 
-/** Present an incoming FCM message as a local notification (foreground only). */
 async function presentLocal(m: RemoteMessage): Promise<void> {
   try {
     await ensureAndroidChannel()
@@ -63,22 +43,12 @@ async function presentLocal(m: RemoteMessage): Promise<void> {
         body: m.notification?.body ?? '',
         data: m.data ?? {},
       },
-      // deliver immediately; on Android route to the HIGH-importance channel so a
-      // heads-up banner shows over the open app (trigger:null uses the default
-      // channel, which has no heads-up — that's why foreground looked broken)
       trigger: Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : null,
     })
   } catch {
-    // display is best-effort; the in-app refresh still happens via onAppointment
   }
 }
 
-/**
- * Ask for the OS notification permission up front — independent of FCM and of
- * login state — so the dialog appears at app launch rather than only after a
- * verified field officer signs in. Safe to call on every launch: the OS shows
- * the dialog only the first time and resolves immediately thereafter.
- */
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
     await ensureAndroidChannel()
@@ -91,16 +61,14 @@ export async function requestNotificationPermission(): Promise<boolean> {
   }
 }
 
-let _fcm: Fcm | null | undefined // undefined = not yet attempted
+let _fcm: Fcm | null | undefined
 let _messaging: Messaging | null
 
-/** Lazily resolve { fcm module, messaging instance }, or null if the native module is absent. */
 function getFcm(): { fcm: Fcm; messaging: Messaging } | null {
   if (_fcm === undefined) {
     try {
-      // require (not import) so a missing native module fails here, not at bundle load
       _fcm = require('@react-native-firebase/messaging')
-      _messaging = _fcm.getMessaging() // modular: default app
+      _messaging = _fcm.getMessaging()
     } catch {
       console.log('[push] @react-native-firebase/messaging unavailable; push disabled')
       _fcm = null
@@ -113,7 +81,6 @@ function getFcm(): { fcm: Fcm; messaging: Messaging } | null {
 async function ensurePermission(fcm: Fcm, messaging: Messaging): Promise<boolean> {
   try {
     if (Platform.OS === 'android') {
-      // POST_NOTIFICATIONS is runtime-requested on Android 13+ (API 33); a no-op below that
       if (typeof Platform.Version === 'number' && Platform.Version >= 33) {
         const res = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
@@ -132,7 +99,6 @@ async function ensurePermission(fcm: Fcm, messaging: Messaging): Promise<boolean
   }
 }
 
-/** Request permission, fetch the FCM token, and register it with the backend. */
 export async function registerPushToken(): Promise<void> {
   const ctx = getFcm()
   if (!ctx) return
@@ -151,7 +117,6 @@ export async function registerPushToken(): Promise<void> {
   }
 }
 
-/** Best-effort: remove this device's token server-side, then locally. Used on sign-out. */
 export async function unregisterPushToken(): Promise<void> {
   const ctx = getFcm()
   if (!ctx) return
@@ -163,21 +128,11 @@ export async function unregisterPushToken(): Promise<void> {
     }
     await fcm.deleteToken(messaging).catch(() => {})
   } catch {
-    // ignore — sign-out proceeds regardless
   }
 }
 
 export type AppointmentHandler = (fireId: string | null) => void
 
-/**
- * Wire foreground + tap handlers.
- *  - `onAppointment(fireId)` fires for a fire-appointment notification.
- *  - `onCancellation(fireId)` fires when a booking is cancelled (dispatcher
- *    released the fire), so the app can reset the Firespot screen to its default
- *    (no reserved fire) state.
- * Both fire whether the message arrives in the foreground or is tapped to open
- * the app. Returns an unsubscribe function.
- */
 export function setupNotificationHandlers(
   onAppointment: AppointmentHandler,
   onCancellation?: AppointmentHandler,
@@ -196,7 +151,6 @@ export function setupNotificationHandlers(
   }
 
   const unsubMessage = fcm.onMessage(messaging, async (m: RemoteMessage) => {
-    // foreground: FCM won't show a banner itself, so present one locally
     await presentLocal(m)
     route(m)
   })
@@ -205,7 +159,6 @@ export function setupNotificationHandlers(
     api.put('/officers/me/push-token', { token, platform: Platform.OS }).catch(() => {})
   })
 
-  // app opened from a quit state by tapping the notification
   fcm
     .getInitialNotification(messaging)
     .then((m: RemoteMessage | null) => route(m))

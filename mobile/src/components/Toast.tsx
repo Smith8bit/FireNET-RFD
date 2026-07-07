@@ -4,9 +4,6 @@ import { useEffect } from 'react'
 import { Pressable, Text } from 'react-native'
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated'
 
-// Presentational toast card (RN port of web/src/components/toast.jsx). Positioning
-// + stacking are owned by <Toaster>; this just renders one message, self-dismisses
-// after `duration`, and dismisses on tap.
 const VARIANTS: Record<ToastType, { box: string; text: string; icon: keyof typeof Ionicons.glyphMap; iconColor: string }> = {
   success: { box: 'bg-green-50 border-green-200', text: 'text-green-800', icon: 'checkmark-circle', iconColor: '#15803d' },
   error: { box: 'bg-red-50 border-red-200', text: 'text-red-800', icon: 'alert-circle', iconColor: '#b91c1c' },

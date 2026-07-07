@@ -1,11 +1,3 @@
-/**
- * Background location updates (expo-location + expo-task-manager).
- *
- * While an officer is online, their position is pushed to the backend on the
- * cadence the superuser configured — even when the app is backgrounded — via an
- * Android foreground service. Importing this module registers the task; the
- * AuthorizedLayout drives start/stop off the `online` flag.
- */
 import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import { api, loadToken } from './api'
@@ -16,43 +8,26 @@ type LocationData = { locations?: Location.LocationObject[] }
 
 TaskManager.defineTask<LocationData>(LOCATION_TASK, async ({ data, error }) => {
   if (error || !data?.locations?.length) return
-  // freshest fix in the batch; coords-only push (a heartbeat never flips `active`)
   const { coords } = data.locations[data.locations.length - 1]
   try {
-    // headless task runs in a fresh JS context where the in-memory token is gone;
-    // loadToken() rehydrates it from the keystore for the request interceptor
     await loadToken()
     await api.patch('/officers/me/location', {
       latitude: coords.latitude,
       longitude: coords.longitude,
     })
   } catch {
-    // skip this tick; the next update retries
   }
 })
 
-/** Start (or restart with a new interval) background location updates. */
 export async function startBackgroundLocation(intervalMs: number): Promise<boolean> {
   const fg = await Location.requestForegroundPermissionsAsync()
   if (fg.status !== 'granted') return false
-  // background grant lets updates continue when the app isn't foregrounded; the
-  // foreground service keeps the task alive either way, so don't hard-fail on deny
   await Location.requestBackgroundPermissionsAsync().catch(() => {})
 
-  // Already looping: return without restarting so the AppState re-arm doesn't
-  // reset the timeInterval countdown (rapid foreground/background switching would
-  // otherwise starve the periodic push) or churn the foreground-service GPS.
-  // ponytail: trusts hasStarted() to read false after Doze kills the task. If a
-  // device reports stale `true` and recovery breaks, gate the restart on elapsed
-  // time since last start instead. MUST be verified on-device under forced Doze.
   if (await hasStarted()) return true
   await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-    // Balanced (~100m) not High: the heartbeat only places an officer on the admin
-    // map and gates province-level booking — 10m GPS is wasted battery here.
     accuracy: Location.Accuracy.Balanced,
     timeInterval: intervalMs,
-    // 0 (time-only): a stationary officer must keep emitting or they cross the
-    // 15-min online TTL and wrongly drop offline. Same reason pauses stay off.
     distanceInterval: 0,
     pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: true,
@@ -65,9 +40,6 @@ export async function startBackgroundLocation(intervalMs: number): Promise<boole
 }
 
 export async function stopBackgroundLocation(): Promise<void> {
-  // "task not found" (never registered in this JS context, or already stopped) is
-  // benign here — swallow it so a stop on a non-running task isn't an uncaught
-  // rejection. hasStarted() can report a stale true after the OS reclaims the task.
   try {
     if (await hasStarted()) await Location.stopLocationUpdatesAsync(LOCATION_TASK)
   } catch {}

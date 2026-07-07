@@ -4,8 +4,6 @@ import { colors } from '@/lib/theme'
 import { Ionicons } from '@expo/vector-icons'
 import { ActivityIndicator, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
-// The "record a resolution" bottom sheet: optional note plus photo/video evidence.
-// Purely presentational — the note lives with the caller, the media with `capture`.
 export default function ResolveEvidenceForm({
   visible,
   onClose,
@@ -33,8 +31,6 @@ export default function ResolveEvidenceForm({
       dismissable={!submitting}
       sheetStyle={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
     >
-      {/* keyboardShouldPersistTaps: without it the first tap on a button just
-          dismisses the keyboard (needs a second tap) when the note field is focused */}
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">บันทึกการดับไฟ</Text>
 
@@ -145,8 +141,6 @@ export default function ResolveEvidenceForm({
           >
             <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
           </TouchableOpacity>
-          {/* not blockaded by missing evidence — onSubmit validates and
-              toasts why; only disabled while actually working (in-flight / compressing) */}
           <TouchableOpacity
             className={`items-center rounded-xl p-3.5 ${submitting || compressingVideo ? 'bg-gray-300' : 'bg-success'}`}
             style={{ flex: 2 }}

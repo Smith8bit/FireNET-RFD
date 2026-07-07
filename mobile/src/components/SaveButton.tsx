@@ -1,6 +1,5 @@
 import { ActivityIndicator, Pressable, Text } from 'react-native'
 
-// Full-width primary action button that swaps its label for a spinner while busy.
 export default function SaveButton({
   label,
   onPress,
