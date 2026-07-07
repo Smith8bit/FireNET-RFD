@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Animated, {
   LinearTransition,
@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { Dropdown } from 'react-native-element-dropdown'
 import { Province, useAuthSession } from '@/providers/AuthProvider'
 import { api } from '@/lib/api'
+import FieldBox from '@/components/FieldBox'
+import LabeledInput from '@/components/LabeledInput'
 import PROVINCES from '@/data/provinces.json'
 
 // Smoothly animate the card's height as it grows/shrinks between steps.
@@ -297,32 +299,6 @@ function ProgressSegment({ active }: { active: boolean }) {
     <View className="h-1.5 flex-1 overflow-hidden bg-background/50">
       <Animated.View style={fillStyle} className="h-full bg-primary" />
     </View>
-  )
-}
-
-// Filled, rounded field with a small label pinned to its top-left corner.
-function FieldBox({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View className="rounded-2xl bg-background/40 px-4 py-3">
-      <Text className="text-sm font-head text-muted-foreground">{label}</Text>
-      {children}
-    </View>
-  )
-}
-
-// A FieldBox wrapping a TextInput — the input is transparent and unpadded so the
-// box supplies the background, padding, and the top-left label.
-function LabeledInput({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
-  return (
-    <FieldBox label={label}>
-      <TextInput
-        placeholderTextColor="#9ca3af"
-        {...props}
-        className="p-0 text-xl text-card-foreground"
-        // Fixed height + no Android font padding so the box never reflows while typing.
-        style={{ height: 34, includeFontPadding: false, textAlignVertical: 'center' }}
-      />
-    </FieldBox>
   )
 }
 

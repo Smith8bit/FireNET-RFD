@@ -20,6 +20,15 @@ export const colors = {
   destructive: '#C52020', // hsl(0 72% 45%)
 } as const
 
+// Shadow style objects for the few spots a Tailwind className can't reach faithfully
+// on both platforms. `float` is used by the floating map/refresh buttons; `card` by
+// elevated cards. Setting.tsx keeps its own boxShadow variant on purpose (elevation
+// shimmers while the tab transition translates the screen).
+export const shadows = {
+  float: { elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  card: { elevation: 2, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+} as const
+
 // Font families loaded in src/app/_layout.tsx (Kanit = web --font-sans body).
 export const fonts = {
   regular: 'Kanit_400Regular',

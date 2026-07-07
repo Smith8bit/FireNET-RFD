@@ -1,26 +1,16 @@
 ﻿import PROVINCES from '@/data/provinces.json'
 import { api } from '@/lib/api'
+import { apiErrorMessage } from '@/lib/apiError'
+import { shadows } from '@/lib/theme'
 import { toast } from '@/lib/toastStore'
+import FieldBox from '@/components/FieldBox'
+import SaveButton from '@/components/SaveButton'
 import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, Text } from 'react-native'
 import { Dropdown } from 'react-native-element-dropdown'
 import { SafeAreaView } from 'react-native-safe-area-context'
-
-// floating refresh button's shadow — kept inline since it has no faithful className
-const floatShadow = {
-  elevation: 4,
-  shadowColor: '#000',
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
-
-function errMsg(e: any, fallback: string) {
-  const d = e?.response?.data?.detail
-  return typeof d === 'string' ? d : fallback
-}
 
 // Plain style objects for the Dropdown (it doesn't accept className). It sits
 // inside a FieldBox that supplies the filled background, so it stays transparent.
@@ -66,7 +56,7 @@ export default function RegionChange() {
       setPending({ status: 'pending', province: r.data.province })
       toast.success('ส่งคำขอแล้ว คำขอย้ายพื้นที่จะถูกส่งให้ผู้ดูแลอนุมัติ')
     } catch (e) {
-      toast.error(errMsg(e, 'ไม่สามารถส่งคำขอได้'))
+      toast.error(apiErrorMessage(e, 'ไม่สามารถส่งคำขอได้'))
     } finally {
       setBusy(false)
     }
@@ -122,7 +112,7 @@ export default function RegionChange() {
 
       <Pressable
         className="absolute bottom-12 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
-        style={floatShadow}
+        style={shadows.float}
         onPress={onRefresh}
         disabled={refreshing}
         hitSlop={8}
@@ -130,27 +120,5 @@ export default function RegionChange() {
         {refreshing ? <ActivityIndicator color={'#FFFFFF'} /> : <Ionicons name="refresh" size={26} color={'#FFFFFF'} />}
       </Pressable>
     </SafeAreaView>
-  )
-}
-
-// Filled, rounded field with a small label pinned to its top-left corner.
-function FieldBox({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View className="rounded-2xl bg-background/40 px-4 py-3">
-      <Text className="text-sm font-head text-muted-foreground">{label}</Text>
-      {children}
-    </View>
-  )
-}
-
-function SaveButton({ label, onPress, loading }: { label: string; onPress: () => void; loading: boolean }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={loading}
-      className={`items-center rounded-2xl py-4 ${loading ? 'bg-gray-400' : 'bg-primary'}`}
-    >
-      {loading ? <ActivityIndicator color="#fff" /> : <Text className="text-base font-sans-semibold text-white">{label}</Text>}
-    </Pressable>
   )
 }

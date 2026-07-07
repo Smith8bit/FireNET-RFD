@@ -1,4 +1,5 @@
 import { api, getToken } from '@/lib/api'
+import { shadows } from '@/lib/theme'
 import { toast } from '@/lib/toastStore'
 import { formatDetectedAt } from '@/utils/format'
 import { Ionicons } from '@expo/vector-icons'
@@ -40,24 +41,6 @@ const evidenceSource = (fireId: string, imageId: string) => ({
 function EvidenceVideo({ fireId, imageId }: { fireId: string; imageId: string }) {
   const player = useVideoPlayer(evidenceSource(fireId, imageId), (p) => { p.play() })
   return <VideoView player={player} style={{ width: '100%', height: '80%' }} contentFit="contain" />
-}
-
-// shadow can't be expressed as a className faithfully on both platforms — keep it inline
-const cardShadow = {
-  elevation: 2,
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
-
-// floating refresh button's shadow — kept inline since it has no faithful className
-const floatShadow = {
-  elevation: 4,
-  shadowColor: '#000',
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
 }
 
 export default function History() {
@@ -181,7 +164,7 @@ export default function History() {
 
       <Pressable
         className="absolute bottom-12 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
-        style={floatShadow}
+        style={shadows.float}
         onPress={() => load(0)}
         disabled={loading}
         hitSlop={8}

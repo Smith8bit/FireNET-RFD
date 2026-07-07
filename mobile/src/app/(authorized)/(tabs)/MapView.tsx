@@ -1,5 +1,5 @@
 import base from '@/assets/layers/base.json';
-import { colors } from '@/lib/theme';
+import { colors, shadows } from '@/lib/theme';
 import { toast } from '@/lib/toastStore';
 import { useAuthSession } from '@/providers/AuthProvider';
 import { useFireStore, type Fire } from '@/stores/fireStore';
@@ -15,14 +15,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const MAP_STYLE = base as unknown as StyleSpecification
 
-// floating map controls' shadow — kept inline since it has no faithful className
-const floatShadow = {
-  elevation: 4,
-  shadowColor: '#000',
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
 const FIRE_COLORS = {
@@ -30,13 +22,6 @@ const FIRE_COLORS = {
   held: '#f97316', // ไฟที่เราจอง
   booked: '#facc15', // ถูกเจ้าหน้าที่ท่านอื่นจอง
   free: '#ef4444', // ไฟอิสระ กำลังไหม้
-}
-
-function fireColor(fire: Fire, heldFireId: string | null): string {
-  if (fire.status) return FIRE_COLORS.resolved
-  if (fire.id === heldFireId) return FIRE_COLORS.held
-  if (fire.booked) return FIRE_COLORS.booked
-  return FIRE_COLORS.free
 }
 
 function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCollection {
@@ -67,7 +52,6 @@ type FireRowProps = {
   bookedByOther: boolean
   disabled: boolean
   online: boolean
-  color: string
   onFocus: (fire: Fire) => void
   onReserve: (fire: Fire) => void
 }
@@ -80,7 +64,6 @@ const FireRow = React.memo(function FireRow({
   bookedByOther,
   disabled,
   online,
-  color,
   onFocus,
   onReserve,
 }: FireRowProps) {
@@ -293,7 +276,6 @@ export default function MapView() {
           bookedByOther={bookedByOther}
           disabled={!online || item.status || holdingUnresolved || bookedByOther}
           online={online}
-          color={fireColor(item, heldFireId)}
           onFocus={focusFire}
           onReserve={reserve}
         />
@@ -370,7 +352,7 @@ export default function MapView() {
 
       <TouchableOpacity
         className="absolute z-10 bottom-4 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
-        style={floatShadow}
+        style={shadows.float}
         onPress={reloadAll}
       >
         <Ionicons name="refresh" size={26} color={'#FFFFFF'} />
@@ -378,7 +360,7 @@ export default function MapView() {
 
       <TouchableOpacity
         className="absolute left-5 top-10 h-10 w-10 items-center justify-center rounded-full bg-white"
-        style={floatShadow}
+        style={shadows.float}
         onPress={recenter}
       >
         <Ionicons name="locate" size={20} color={colors.accent} />
@@ -386,7 +368,7 @@ export default function MapView() {
 
       <View
         className="absolute self-center top-10 flex-row items-center rounded-3xl bg-white px-3.5 py-1.5"
-        style={floatShadow}
+        style={shadows.float}
       >
         <View className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: online ? '#22c55e' : '#9ca3af' }} />
         <Text className="mr-2.5 text-sm font-sans-semibold text-accent">{online ? 'ออนไลน์' : 'ออฟไลน์'}</Text>
