@@ -3,6 +3,12 @@ import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
 import { useReducedMotion } from 'react-native-reanimated'
 
+/**
+ * Bottom tab navigator for the three main authorized screens (map, my fire,
+ * settings). Purely declarative route config — no data fetching here.
+ *
+ * @returns the configured `Tabs` navigator; screen order below determines tab order
+ */
 export default function TabsLayout() {
   const reducedMotion = useReducedMotion()
   return (

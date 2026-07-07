@@ -1,6 +1,21 @@
 import SlideUpModal from '@/components/SlideUpModal'
 import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
 
+/**
+ * Confirmation sheet for reporting a detected fire as a false positive.
+ *
+ * Purely presentational: all state (the note text, submit lifecycle) is owned
+ * by the caller so this component can be reused across screens that surface
+ * the same "mark as false report" flow.
+ *
+ * @param visible - whether the sheet is open
+ * @param onClose - dismiss handler for the cancel button / backdrop
+ * @param note - current optional note text (controlled)
+ * @param onNoteChange - fires on every keystroke in the note field
+ * @param submitting - true while the confirm request is in flight; disables all inputs/buttons and swaps the confirm button for a spinner
+ * @param onSubmit - fires when the user confirms the false report
+ * @param keyboardHeight - live keyboard height in px, added as bottom margin so the sheet isn't obscured while typing
+ */
 export default function FalseReportForm({
   visible,
   onClose,

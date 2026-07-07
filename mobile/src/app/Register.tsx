@@ -24,6 +24,14 @@ const dropdownStyle = { borderWidth: 0, backgroundColor: 'transparent', paddingV
 
 const PROVINCE_ITEM_HEIGHT = 48
 
+/**
+ * Multi-step registration wizard (name/username → division/province →
+ * password → review) rendered as a single screen with an animated step
+ * transition, rather than separate routes, so progress and form state
+ * persist naturally in local component state.
+ *
+ * @returns the current step's form fields plus shared progress/nav chrome
+ */
 export default function Register() {
   const { signUp, signIn } = useAuthSession()
   const router = useRouter()
@@ -38,6 +46,7 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // Validates only the fields belonging to the current step, so earlier steps aren't re-checked on every advance.
   const validateStep = () => {
     const fail = (msg: string) => {
       setError(msg)
@@ -62,6 +71,8 @@ export default function Register() {
 
   const [checking, setChecking] = useState(false)
 
+  // Advances to the next step; leaving step 0 additionally checks username availability server-side
+  // (a client-only check can't catch collisions), blocking advancement on either a taken name or a failed check.
   const next = async () => {
     if (!validateStep()) return
     if (step === 0) {
@@ -90,6 +101,9 @@ export default function Register() {
     else setStep((s) => s - 1)
   }
 
+  // `province` is asserted non-null because step 1's validateStep already guarantees it's set before reaching the final step.
+  // signUp and signIn are two independent requests: if signUp fails nothing was created, so we stop there;
+  // if it succeeds but the auto sign-in fails, the account still exists — the user is told to sign in manually rather than seeing a false failure.
   const onSubmit = async () => {
     if (submitting) return
     if (!validateStep()) return
@@ -183,6 +197,7 @@ export default function Register() {
                         {item.name_th}
                       </Text>
                     )}
+                    // Fixed row height lets the dropdown's list compute offsets without measuring, so it can jump straight to the selected province.
                     flatListProps={{
                       getItemLayout: (_, index) => ({
                         length: PROVINCE_ITEM_HEIGHT,
@@ -273,6 +288,12 @@ export default function Register() {
   )
 }
 
+/**
+ * One segment of the step progress bar; animates its fill in/out when
+ * `active` toggles so the bar transitions smoothly as the wizard advances.
+ *
+ * @param active - whether this step has been reached (fills) or not (empties)
+ */
 function ProgressSegment({ active }: { active: boolean }) {
   const fill = useSharedValue(active ? 1 : 0)
   useEffect(() => {
@@ -286,6 +307,12 @@ function ProgressSegment({ active }: { active: boolean }) {
   )
 }
 
+/**
+ * Read-only label/value row used on the final "review" step.
+ *
+ * @param label - field name
+ * @param value - field value; expected pre-trimmed/formatted by the caller (e.g. `'—'` for empty)
+ */
 function Summary({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-row justify-between gap-3">

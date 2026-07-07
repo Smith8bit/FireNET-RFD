@@ -19,6 +19,14 @@ import {
   View,
 } from 'react-native'
 
+/**
+ * Tracks the current keyboard height so evidence/false-report sheets can
+ * push their bottom margin up by that amount and avoid being covered.
+ * iOS uses the `will`-prefixed events (pre-empting the animation); Android
+ * has no equivalent and falls back to `did`.
+ *
+ * @returns current keyboard height in px, or 0 when hidden
+ */
 function useKeyboardHeight() {
   const [height, setHeight] = useState(0)
   useEffect(() => {
@@ -34,6 +42,14 @@ function useKeyboardHeight() {
   return height
 }
 
+/**
+ * Detail screen for the fire the current officer has reserved: shows fire
+ * info, lets them navigate to it, resolve it (with evidence) or report it as
+ * a false alarm, or cancel their reservation (self-assigned only — fires
+ * appointed by an admin cannot be cancelled by the officer).
+ *
+ * @returns an empty-state placeholder when nothing is reserved, otherwise the fire detail + action UI
+ */
 export default function Firespot() {
   const reservedFire = useFireStore((s) => s.reservedFire)
   const loadReservedFire = useFireStore((s) => s.loadReservedFire)
@@ -57,6 +73,8 @@ export default function Firespot() {
     loadReservedFire()
   }, [loadReservedFire])
 
+  // Prefers the native Google Maps navigation intent on Android (drops straight into turn-by-turn);
+  // falls back to the universal Google Maps web URL on iOS or if the native scheme isn't handled.
   const navigate = useCallback(() => {
     if (!reservedFire) return
     const { lat, lng } = reservedFire
@@ -75,6 +93,8 @@ export default function Firespot() {
     setFormVisible(true)
   }, [resetEvidence])
 
+  // Enforces "at least one photo or video" client-side before hitting the API;
+  // the video (if any) is appended after photos since the server expects a single flat evidence list.
   const submitResolve = useCallback(async () => {
     if (photos.length === 0 && !video) {
       toast.error('กรุณาแนบรูปถ่ายหรือวิดีโอหลักฐานอย่างน้อย 1 รายการ')
@@ -91,6 +111,7 @@ export default function Firespot() {
     }
   }, [note, photos, video, resolveFire])
 
+  // Native confirm dialog before releasing the reservation — this is destructive (another officer can then claim the fire).
   const confirmCancel = useCallback(() => {
     Alert.alert('ยกเลิกการจอง', 'ต้องการยกเลิกการจองไฟนี้ใช่หรือไม่? ไฟจะกลับไปให้ผู้อื่นรับผิดชอบได้', [
       { text: 'ไม่ใช่', style: 'cancel' },
@@ -208,6 +229,7 @@ export default function Firespot() {
             </Text>
           </TouchableOpacity>
 
+          {/* Cancelling is only offered for self-reserved fires; admin-appointed assignments must stay with the officer. */}
           {!reservedFire.appointed && (
             <TouchableOpacity
               className={`flex-row items-center justify-center rounded-xl border-2 w-1/3 bg-foreground py-3.5 ${!online ? 'border-gray-200' : 'border-destructive'} `}
@@ -256,6 +278,12 @@ export default function Firespot() {
   )
 }
 
+/**
+ * Label/value line in the fire info card.
+ *
+ * @param label - field name
+ * @param value - field value; renders `'-'` when null
+ */
 function Row({ label, value }: { label: string; value: string | null }) {
   return (
     <View className="flex-row  justify-between border-b border-border py-3">

@@ -1,3 +1,8 @@
+// Central design tokens — the single source of truth for colors, shadows,
+// and fonts so values aren't duplicated/drifted across components.
+// `as const` on each object narrows values to string literal types instead
+// of `string`, giving autocomplete and catching typos (e.g. `colors.primry`)
+// at compile time.
 export const colors = {
   foreground: '#FFFFFF',
   cardForeground: '#1A1A1A',
@@ -11,6 +16,9 @@ export const colors = {
   destructive: '#C52020',
 } as const
 
+// `elevation` drives shadow rendering on Android; the shadow* properties
+// drive it on iOS — both are included per style so a single token works
+// cross-platform.
 export const shadows = {
   float: { elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
   card: { elevation: 2, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },

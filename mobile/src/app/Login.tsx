@@ -21,6 +21,18 @@ import { useAuthSession } from '@/providers/AuthProvider'
 
 const resize = LinearTransition.duration(300)
 
+/**
+ * Landing/login screen: a branded header over a bottom sheet that toggles
+ * between a "choice" state (login or register) and an inline login form.
+ *
+ * The sheet is translated upward by the keyboard's own height as it opens,
+ * using the `will`-prefixed iOS events (which fire before the keyboard
+ * finishes animating) so the sheet moves in sync with the keyboard instead
+ * of visibly lagging behind it; Android has no `will` variant, so it falls
+ * back to the `did` events.
+ *
+ * @returns the login screen; internal `mode` state (not props) drives which sheet content shows
+ */
 export default function Login() {
   const { signIn } = useAuthSession()
   const router = useRouter()
@@ -31,11 +43,13 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // Drives the sheet's translateY so it tracks the keyboard instead of being covered by it.
   const keyboardOffset = useSharedValue(0)
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
     const show = Keyboard.addListener(showEvent, (e) => {
+      // Match the OS's own keyboard animation duration so the sheet doesn't outrun or lag it.
       keyboardOffset.value = withTiming(e.endCoordinates.height, { duration: e.duration || 250 })
     })
     const hide = Keyboard.addListener(hideEvent, (e) => {

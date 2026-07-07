@@ -1,5 +1,12 @@
 import { ActivityIndicator, Pressable, Text } from 'react-native'
 
+/**
+ * Primary submit button that swaps its label for a spinner while a request is pending.
+ *
+ * @param label - button text shown when not loading
+ * @param onPress - press handler; not invoked while `loading` is true (button is disabled)
+ * @param loading - true while the associated action is in flight
+ */
 export default function SaveButton({
   label,
   onPress,

@@ -16,8 +16,21 @@ import Toaster from "@/components/Toaster";
 import { requestNotificationPermission } from "@/lib/push";
 import "@/lib/locationTask";
 
+// Keep the native splash screen up until fonts are ready, avoiding a flash of fallback-font text.
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * Root layout for the whole app (outside any route group): loads custom
+ * fonts, requests notification permission once, and wraps every screen in
+ * `AuthProvider` plus the global `Toaster` so toasts can be triggered from
+ * anywhere without prop drilling.
+ *
+ * `../../global.css` and `@/lib/locationTask` are imported for their side
+ * effects only (Tailwind setup and background-location task registration,
+ * respectively) — neither exports anything consumed here.
+ *
+ * @returns null until fonts resolve (loaded or errored), then the app's `Stack` navigator
+ */
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Kanit_400Regular,
@@ -35,6 +48,7 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    // A font load error still unblocks the splash screen — the app renders with fallback fonts rather than hanging.
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync().catch(() => {});
     }

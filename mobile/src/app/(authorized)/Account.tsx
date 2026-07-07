@@ -15,6 +15,12 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+/**
+ * Account settings screen: edits profile fields (name, division) and
+ * optionally changes the password in a single combined save.
+ *
+ * @returns the profile edit form; local field state is seeded from the current session and not kept in sync with later external updates
+ */
 export default function Account() {
   const { user, refresh } = useAuthSession()
   const [name, setName] = useState(user?.name ?? '')
@@ -24,6 +30,8 @@ export default function Account() {
   const [passwordHidden, setPasswordHidden] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
 
+  // Password fields are optional: only validated/submitted if the user typed something,
+  // so leaving them blank keeps the existing password untouched.
   const saveAll = async () => {
     if (!name.trim()) {
       toast.error('กรุณากรอกชื่อ')
@@ -41,6 +49,7 @@ export default function Account() {
     }
     setBusy('save')
     try {
+      // Profile and password are separate endpoints; profile always saves, password only when provided.
       await api.patch('/officers/me/profile', { name: name.trim(), division: division.trim() })
       if (password) {
         await api.patch('/users/me', { password })

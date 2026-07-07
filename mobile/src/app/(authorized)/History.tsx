@@ -25,21 +25,36 @@ type Item = {
 
 const PAGE = 20
 
+// Fallback extension used when a content-type isn't one of the known evidence formats (should not normally occur).
 const EXT: Record<string, string> = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
   'video/mp4': 'mp4', 'video/quicktime': 'mov',
 }
 
+// Evidence files are served behind auth, so every request (thumbnail, full view, or download) needs the bearer token attached.
 const evidenceSource = (fireId: string, imageId: string) => ({
   uri: `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
   headers: { Authorization: `Bearer ${getToken() ?? ''}` },
 })
 
+/**
+ * Autoplaying inline video player for a single evidence video, used inside the fullscreen viewer modal.
+ *
+ * @param fireId - fire the evidence belongs to
+ * @param imageId - id of the specific evidence item (despite the name, may be a video)
+ */
 function EvidenceVideo({ fireId, imageId }: { fireId: string; imageId: string }) {
   const player = useVideoPlayer(evidenceSource(fireId, imageId), (p) => { p.play() })
   return <VideoView player={player} style={{ width: '100%', height: '80%' }} contentFit="contain" />
 }
 
+/**
+ * Paginated list of the officer's own resolved fire reports, each with any
+ * attached photo/video evidence viewable fullscreen and savable to the
+ * device's media library.
+ *
+ * @returns an infinite-scrolling list with a pull-to-reload button and an evidence viewer modal
+ */
 export default function History() {
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
@@ -49,6 +64,8 @@ export default function History() {
   const [saving, setSaving] = useState(false)
   const [perm, requestPerm] = MediaLibrary.usePermissions()
 
+  // MediaLibrary has no "save from URL" API, so the evidence file is downloaded to a scratch
+  // location in cache first, imported into the gallery, then the scratch copy is always cleaned up.
   const saveEvidence = useCallback(async (fireId: string, imageId: string, contentType: string) => {
     if (saving) return
     setSaving(true)
@@ -71,11 +88,13 @@ export default function History() {
     } catch {
       toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
+      // Best-effort cleanup: if the download itself failed, `file` is still null and there's nothing to delete.
       try { file?.delete() } catch {}
       setSaving(false)
     }
   }, [saving, perm, requestPerm])
 
+  // offset === 0 means "reload from scratch" (replace the list); any other offset means "load more" (append).
   const load = useCallback(async (offset: number) => {
     if (loading) return
     setLoading(true)
@@ -100,6 +119,7 @@ export default function History() {
         data={items}
         keyExtractor={(it) => it.fire_id}
         contentContainerStyle={{ padding: 12 , gap: 3, flexGrow: 1 }}
+        // Guards against firing before the first page has loaded, and stops once every item has been fetched.
         onEndReached={() => { if (loaded && items.length < total) load(items.length) }}
         onEndReachedThreshold={0.4}
         windowSize={5}
@@ -167,6 +187,7 @@ export default function History() {
       <Modal visible={viewer !== null} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <View className="flex-1 items-center justify-center bg-black/90">
           <Pressable className="absolute inset-0" onPress={() => setViewer(null)} />
+          {/* content_type from the server determines which fullscreen renderer to use for the selected evidence item. */}
           {viewer && (
             viewer.contentType.startsWith('video/')
               ? <EvidenceVideo fireId={viewer.fireId} imageId={viewer.imageId} />

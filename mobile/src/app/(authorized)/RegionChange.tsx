@@ -16,6 +16,13 @@ const dropdownStyle = { borderWidth: 0, backgroundColor: 'transparent', paddingV
 
 const PROVINCE_ITEM_HEIGHT = 48
 
+/**
+ * Lets an officer request a transfer to a different province. Requests go
+ * through an admin approval step, so once one is pending this screen shows
+ * status instead of the form until it's resolved server-side.
+ *
+ * @returns a province picker + submit button, or a pending-request notice if one already exists
+ */
 export default function RegionChange() {
   const [province, setProvince] = useState<string | null>(null)
   const [pending, setPending] = useState<{ status: string; province: string } | null>(null)
@@ -30,6 +37,8 @@ export default function RegionChange() {
     [],
   )
 
+  // Re-checks pending status every time this screen regains focus, since an admin may have
+  // approved/rejected the request while the officer was elsewhere in the app.
   useFocusEffect(useCallback(() => { loadPending() }, [loadPending]))
 
   const onRefresh = useCallback(() => {
@@ -75,6 +84,7 @@ export default function RegionChange() {
                 search
                 searchPlaceholder="ค้นหาจังหวัด..."
                 value={province}
+                // `item` typed `any` here because the dropdown library's generic item type doesn't infer from `data`/`valueField`.
                 onChange={(item: any) => setProvince(item.code)}
                 style={dropdownStyle}
                 selectedTextStyle={{ fontSize: 18, color: '#1A1A1A' }}
