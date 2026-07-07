@@ -1,47 +1,23 @@
+import FalseReportForm from '@/components/FalseReportForm'
+import ResolveEvidenceForm from '@/components/ResolveEvidenceForm'
+import { useEvidenceCapture } from '@/hooks/useEvidenceCapture'
 import { colors } from '@/lib/theme'
 import { toast } from '@/lib/toastStore'
-import { useFireStore, type ResolvePhoto } from '@/stores/fireStore'
+import { useFireStore } from '@/stores/fireStore'
 import { formatDetectedAt } from '@/utils/format'
 import { Ionicons } from '@expo/vector-icons'
-import { File } from 'expo-file-system'
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator'
-import * as ImagePicker from 'expo-image-picker'
-import * as Location from 'expo-location'
-import * as VideoThumbnails from 'expo-video-thumbnails'
-import { Video } from 'react-native-compressor'
 import { StatusBar } from 'expo-status-bar'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  ActivityIndicator,
   Alert,
-  Image,
   Keyboard,
   Linking,
   Platform,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
-import SlideUpModal from '@/components/SlideUpModal'
-
-// Map's "free/burning" red, kept literal so the active-fire icon/badge here match
-// the map markers (FIRE_COLORS.free in MapView).
-const BURNING = '#ef4444'
-
-const MAX_PHOTOS = 3
-const VIDEO_MAX_MB = 40 // keep in sync with backend RESOLVE_MAX_VIDEO_MB
-
-function gpsFromExif(exif: Record<string, any> | null | undefined): ResolvePhoto['gps'] {
-  if (!exif) return null
-  let lat = exif.GPSLatitude
-  let lng = exif.GPSLongitude
-  if (typeof lat !== 'number' || typeof lng !== 'number') return null
-  if (exif.GPSLatitudeRef === 'S' && lat > 0) lat = -lat
-  if (exif.GPSLongitudeRef === 'W' && lng > 0) lng = -lng
-  return { latitude: lat, longitude: lng }
-}
 
 // React Native's Modal renders in its own native window on Android that doesn't
 // resize for the keyboard, so KeyboardAvoidingView has nothing to push against.
@@ -72,15 +48,12 @@ export default function Firespot() {
 
   const [formVisible, setFormVisible] = useState(false)
   const [note, setNote] = useState('')
-  const [photos, setPhotos] = useState<ResolvePhoto[]>([])
-  const [video, setVideo] = useState<ResolvePhoto | null>(null)
-  const [compressingVideo, setCompressingVideo] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [falseFormVisible, setFalseFormVisible] = useState(false)
   const [falseNote, setFalseNote] = useState('')
   const [falseSubmitting, setFalseSubmitting] = useState(false)
-  // fallback GPS for photos without EXIF coordinates (e.g. library picks)
-  const deviceGps = useRef<ResolvePhoto['gps']>(null)
+  const capture = useEvidenceCapture()
+  const { reset: resetEvidence, photos, video } = capture
   const keyboardHeight = useKeyboardHeight()
 
   useEffect(() => {
@@ -104,86 +77,9 @@ export default function Firespot() {
 
   const openResolveForm = useCallback(() => {
     setNote('')
-    setPhotos([])
-    setVideo(null)
+    resetEvidence()
     setFormVisible(true)
-    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
-      .then((pos) => {
-        deviceGps.current = { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
-      })
-      .catch(() => {
-        deviceGps.current = null
-      })
-  }, [])
-
-  const addAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset) => {
-    // read EXIF GPS before compressing — re-encoding drops it
-    const gps = gpsFromExif(asset.exif) ?? deviceGps.current
-    const small = await manipulateAsync(asset.uri, [{ resize: { width: 1600 } }], {
-      compress: 0.8,
-      format: SaveFormat.JPEG,
-    })
-    setPhotos((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, { uri: small.uri, gps }]))
-  }, [])
-
-  const takePhoto = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync()
-    if (status !== 'granted') {
-      toast.error('กรุณาอนุญาตให้แอปใช้กล้อง')
-      return
-    }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 1, exif: true })
-    if (!result.canceled && result.assets[0]) await addAsset(result.assets[0])
-  }, [addAsset])
-
-  const pickPhoto = useCallback(async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (status !== 'granted') {
-      toast.error('กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ')
-      return
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 1, exif: true })
-    if (!result.canceled && result.assets[0]) await addAsset(result.assets[0])
-  }, [addAsset])
-
-  const removePhoto = useCallback((uri: string) => {
-    setPhotos((prev) => prev.filter((p) => p.uri !== uri))
-  }, [])
-
-  // one optional video clip; compressed before upload, GPS falls back to device fix
-  const captureVideo = useCallback(
-    async (fromLibrary: boolean) => {
-      const perm = fromLibrary
-        ? await ImagePicker.requestMediaLibraryPermissionsAsync()
-        : await ImagePicker.requestCameraPermissionsAsync()
-      if (perm.status !== 'granted') {
-        toast.error(fromLibrary ? 'กรุณาอนุญาตให้แอปเข้าถึงคลังภาพ' : 'กรุณาอนุญาตให้แอปใช้กล้อง')
-        return
-      }
-      const opts = { mediaTypes: 'videos' as const }
-      const result = fromLibrary
-        ? await ImagePicker.launchImageLibraryAsync(opts)
-        : await ImagePicker.launchCameraAsync(opts)
-      if (result.canceled || !result.assets[0]) return
-      setCompressingVideo(true)
-      try {
-        // manual/HD: cap the longest side at 720p so clips stay legible but small
-        const compressed = await Video.compress(result.assets[0].uri, { compressionMethod: 'manual', maxSize: 1280 })
-        // backend rejects > VIDEO_MAX_MB; check here so the officer isn't stuck at upload time
-        if (new File(compressed).size > VIDEO_MAX_MB * 1024 * 1024) {
-          toast.error(`วิดีโอใหญ่เกินไป (สูงสุด ${VIDEO_MAX_MB}MB) กรุณาถ่ายให้สั้นลง`)
-          return
-        }
-        const thumb = await VideoThumbnails.getThumbnailAsync(compressed).catch(() => null)
-        setVideo({ uri: compressed, gps: deviceGps.current, kind: 'video', thumbUri: thumb?.uri })
-      } catch {
-        toast.error('ไม่สามารถประมวลผลวิดีโอได้ กรุณาลองใหม่อีกครั้ง')
-      } finally {
-        setCompressingVideo(false)
-      }
-    },
-    [],
-  )
+  }, [resetEvidence])
 
   const submitResolve = useCallback(async () => {
     if (photos.length === 0 && !video) {
@@ -255,7 +151,7 @@ export default function Firespot() {
       <View className="mb-2 flex-row items-center bg-secondary p-3 rounded-full">
         <Ionicons name="flame-outline" size={28} color={'#FFFFFF'} />
         <Text className="ml-2 shrink text-xl font-sans-semibold text-white">{reservedFire.name}</Text>
-        
+
         <View
           className={`ml-auto flex-row items-center gap-1 self-start rounded-full px-3 py-1.5 ${
             reservedFire.appointed ? 'bg-brand' : 'bg-white'
@@ -272,8 +168,8 @@ export default function Firespot() {
             {reservedFire.appointed ? 'มอบหมายโดยผู้ดูแล' : 'จอง'}
           </Text>
         </View>
-        
-      </View>      
+
+      </View>
 
       <View className="bg-foreground p-2" >
         <Row label="ตรวจพบเมื่อ" value={formatDetectedAt(reservedFire.detected_at)} />
@@ -314,7 +210,7 @@ export default function Firespot() {
           >
             <Ionicons name="close-circle-outline" size={20} color={online ? colors.gray500 : colors.gray300} />
             <Text className={`ml-2 text-md font-sans-semibold ${!online ? 'text-gray-300' : 'text-gray-500'}`}>
-              ไม่ใช่ไฟ 
+              ไม่ใช่ไฟ
             </Text>
           </TouchableOpacity>
 
@@ -334,7 +230,7 @@ export default function Firespot() {
           )}
         </View>
 
-      </View>      
+      </View>
 
       <Text className="mt-3 text-center text-xs font-head text-gray-500">
         {online
@@ -342,189 +238,26 @@ export default function Firespot() {
           : 'คุณอยู่ในสถานะออฟไลน์ ต้องออนไลน์ก่อนจึงจะบันทึกผลได้'}
       </Text>
 
-      <SlideUpModal
+      <ResolveEvidenceForm
         visible={formVisible}
         onClose={() => setFormVisible(false)}
-        dismissable={!submitting}
-        sheetStyle={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
-      >
-            {/* keyboardShouldPersistTaps: without it the first tap on a button just
-                dismisses the keyboard (needs a second tap) when the note field is focused */}
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">บันทึกการดับไฟ</Text>
+        note={note}
+        onNoteChange={setNote}
+        submitting={submitting}
+        onSubmit={submitResolve}
+        keyboardHeight={keyboardHeight}
+        capture={capture}
+      />
 
-            <Text className="mb-0.5 mt-2 text-md font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="รายละเอียดเพิ่มเติม..."
-              multiline
-              maxLength={2000}
-              editable={!submitting}
-              className="min-h-20 rounded-md border border-border p-2.5 text-sm font-sans text-card-foreground"
-              style={{ textAlignVertical: 'top' }}
-            />
-
-            <Text className="mb-0.5 mt-2 text-sm font-head text-gray-500">
-              รูปถ่ายหลักฐาน (สูงสุด {MAX_PHOTOS} รูป — แนบรูปหรือวิดีโออย่างน้อย 1 รายการ)
-            </Text>
-            <View className="mt-1 flex-row gap-2.5">
-              {photos.map((p) => (
-                <View key={p.uri} className="relative">
-                  <Image source={{ uri: p.uri }} className="h-20 w-20 rounded-md bg-muted" />
-                  <TouchableOpacity
-                    className="absolute -right-1.5 -top-1.5 h-7 w-7 items-center justify-center rounded-full bg-destructive"
-                    onPress={() => removePhoto(p.uri)}
-                    disabled={submitting}
-                  >
-                    <Ionicons name="close" size={14} color="#ffffff" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {photos.length < MAX_PHOTOS && (
-                <>
-                  <TouchableOpacity
-                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
-                    onPress={takePhoto}
-                    disabled={submitting}
-                  >
-                    <Ionicons name="camera-outline" size={22} color={colors.gray500} />
-                    <Text className="mt-0.5 text-sm font-head text-gray-500">ถ่ายรูป</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
-                    onPress={pickPhoto}
-                    disabled={submitting}
-                  >
-                    <Ionicons name="images-outline" size={22} color={colors.gray500} />
-                    <Text className="mt-0.5 text-sm font-head text-gray-500">คลังภาพ</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
-            <Text className="mb-0.5 mt-3 text-sm font-head text-gray-500">
-              วิดีโอหลักฐาน (ไม่บังคับ)
-            </Text>
-            <View className="mt-1 flex-row gap-2.5">
-              {compressingVideo ? (
-                <View className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border">
-                  <ActivityIndicator color={colors.gray500} />
-                  <Text className="mt-1 text-xs font-head text-gray-500">กำลังบีบอัด...</Text>
-                </View>
-              ) : video ? (
-                <View className="relative">
-                  <View className="h-20 w-20 items-center justify-center overflow-hidden rounded-md bg-secondary">
-                    {video.thumbUri ? (
-                      <Image source={{ uri: video.thumbUri }} className="h-20 w-20" />
-                    ) : null}
-                    <View className="absolute inset-0 items-center justify-center">
-                      <Ionicons name="play-circle" size={30} color="#ffffff" />
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    className="absolute -right-1.5 -top-1.5 h-7 w-7 items-center justify-center rounded-full bg-destructive"
-                    onPress={() => setVideo(null)}
-                    disabled={submitting}
-                  >
-                    <Ionicons name="close" size={14} color="#ffffff" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <>
-                  <TouchableOpacity
-                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
-                    onPress={() => captureVideo(false)}
-                    disabled={submitting}
-                  >
-                    <Ionicons name="videocam-outline" size={22} color={colors.gray500} />
-                    <Text className="mt-0.5 text-sm font-head text-gray-500">ถ่ายวิดีโอ</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    className="h-20 w-20 items-center justify-center rounded-md border border-dashed border-border"
-                    onPress={() => captureVideo(true)}
-                    disabled={submitting}
-                  >
-                    <Ionicons name="film-outline" size={22} color={colors.gray500} />
-                    <Text className="mt-0.5 text-sm font-head text-gray-500">คลังวิดีโอ</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
-            <View className="mt-5 flex-row gap-3">
-              <TouchableOpacity
-                className="flex-1 items-center rounded-xl border-2 border-border p-3.5"
-                onPress={() => setFormVisible(false)}
-                disabled={submitting}
-              >
-                <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
-              </TouchableOpacity>
-              {/* not blockaded by missing evidence — submitResolve validates and
-                  toasts why; only disabled while actually working (in-flight / compressing) */}
-              <TouchableOpacity
-                className={`items-center rounded-xl p-3.5 ${submitting || compressingVideo ? 'bg-gray-300' : 'bg-success'}`}
-                style={{ flex: 2 }}
-                onPress={submitResolve}
-                disabled={submitting || compressingVideo}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text className="text-lg font-sans-semibold text-white">ยืนยันการดับไฟ</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-            </ScrollView>
-      </SlideUpModal>
-
-      <SlideUpModal
+      <FalseReportForm
         visible={falseFormVisible}
         onClose={() => setFalseFormVisible(false)}
-        dismissable={!falseSubmitting}
-        sheetStyle={{ marginBottom: keyboardHeight, maxHeight: '90%' }}
-      >
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text className="mb-3 text-xl self-center font-sans-semibold text-accent">แจ้งว่าไม่ใช่ไฟ</Text>
-            <Text className="mb-1 text-md text-center font-head text-accent">
-              ใช้เฉพาะเมื่อตรวจสอบแล้วพบว่าไม่มีไฟจริงในจุดนี้
-            </Text>
-
-            <Text className="mb-0.5 mt-2 text-md font-head text-gray-500">หมายเหตุ (ไม่บังคับ)</Text>
-            <TextInput
-              value={falseNote}
-              onChangeText={setFalseNote}
-              placeholder="เหตุผลหรือรายละเอียดเพิ่มเติม..."
-              multiline
-              maxLength={2000}
-              editable={!falseSubmitting}
-              className="min-h-20 rounded-md border border-border p-2.5 text-sm font-sans text-card-foreground"
-              style={{ textAlignVertical: 'top' }}
-            />
-
-            <View className="mt-5 flex-row gap-3">
-              <TouchableOpacity
-                className="flex-1 items-center rounded-xl border-2 border-border p-3.5"
-                onPress={() => setFalseFormVisible(false)}
-                disabled={falseSubmitting}
-              >
-                <Text className="text-lg font-sans-semibold text-gray-500">ยกเลิก</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className={`items-center rounded-xl p-3.5 ${falseSubmitting ? 'bg-gray-300' : 'bg-gray-500'}`}
-                style={{ flex: 2 }}
-                onPress={submitFalseReport}
-                disabled={falseSubmitting}
-              >
-                {falseSubmitting ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text className="text-lg font-sans-semibold text-white">ยืนยันว่าไม่ใช่ไฟ</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-            </ScrollView>
-      </SlideUpModal>
+        note={falseNote}
+        onNoteChange={setFalseNote}
+        submitting={falseSubmitting}
+        onSubmit={submitFalseReport}
+        keyboardHeight={keyboardHeight}
+      />
     </ScrollView>
   )
 }
