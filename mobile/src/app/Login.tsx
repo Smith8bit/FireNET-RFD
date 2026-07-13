@@ -19,10 +19,20 @@ import Animated, {
 import { useRouter } from 'expo-router'
 import { useAuthSession } from '@/providers/AuthProvider'
 
-// Smoothly animates the sheet's own height when the form grows/shrinks
-// between the choice and login modes. The header is decoupled and stays put.
 const resize = LinearTransition.duration(300)
 
+/**
+ * Landing/login screen: a branded header over a bottom sheet that toggles
+ * between a "choice" state (login or register) and an inline login form.
+ *
+ * The sheet is translated upward by the keyboard's own height as it opens,
+ * using the `will`-prefixed iOS events (which fire before the keyboard
+ * finishes animating) so the sheet moves in sync with the keyboard instead
+ * of visibly lagging behind it; Android has no `will` variant, so it falls
+ * back to the `did` events.
+ *
+ * @returns the login screen; internal `mode` state (not props) drives which sheet content shows
+ */
 export default function Login() {
   const { signIn } = useAuthSession()
   const router = useRouter()
@@ -33,16 +43,13 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // The form sheet is absolutely anchored to the bottom of the screen. With
-  // edge-to-edge enabled (default on modern Expo) the window doesn't resize for
-  // the keyboard, so it would otherwise cover the inputs — lift the sheet by the
-  // keyboard height ourselves, in sync with its show/hide animation. Android only
-  // emits the "Did" events; iOS emits the "Will" events (with a duration).
+  // Drives the sheet's translateY so it tracks the keyboard instead of being covered by it.
   const keyboardOffset = useSharedValue(0)
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
     const show = Keyboard.addListener(showEvent, (e) => {
+      // Match the OS's own keyboard animation duration so the sheet doesn't outrun or lag it.
       keyboardOffset.value = withTiming(e.endCoordinates.height, { duration: e.duration || 250 })
     })
     const hide = Keyboard.addListener(hideEvent, (e) => {
@@ -67,7 +74,7 @@ export default function Login() {
     }
     setSubmitting(true)
     try {
-      await signIn(username.trim(), password) // AuthProvider redirects on success
+      await signIn(username.trim(), password)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'เข้าสู่ระบบไม่สำเร็จ')
     } finally {
@@ -77,8 +84,6 @@ export default function Login() {
 
   return (
     <View className="flex-1 bg-secondary">
-      {/* Brand header — fills the whole screen behind the sheet. Its size is
-          fixed (no layout animation), so resizing the form sheet can't shift it. */}
       <SafeAreaView edges={['top']} className="flex-1">
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-5xl font-sans-semibold text-white">FireNET</Text>
@@ -87,10 +92,6 @@ export default function Login() {
         </View>
       </SafeAreaView>
 
-      {/* Login form sheet — floats above the brand header as an elevated card.
-          Absolutely anchored to the bottom so its height changes (choice vs login)
-          don't reflow the header above it. Shadow lives on the outer view
-          (overflow-hidden would clip it on iOS); the inner view clips content. */}
       <Animated.View
         layout={resize}
         className="absolute inset-x-4 bottom-0 pb-8 rounded-t-3xl bg-foreground"

@@ -4,25 +4,35 @@ import { ArrowsPointingOutIcon, UserGroupIcon, ChevronDoubleRightIcon, ChevronDo
 import { useMapSelection, useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 import { useFireData } from '../lib/useFireData'
+import { FIRE_COLORS } from '../lib/fireColors'
 import Map from '../components/map'
 import Card from '../components/card'
 import ExpandedCard from '../components/expandedCard'
-
-// ponytail: mirrors FIRE_COLORS in components/map.jsx — a fixed brand palette, not
-// exported from there to keep that file fast-refresh clean. Update both if it changes.
-const FIRE_COLORS = { free: '#ef4444', booked: '#facc15', resolved: '#d1d5dc' }
 
 import satelliteStyle from '../components/layers/satellite.json'
 import baseStyle from '../components/layers/base.json'
 import topoStyle from '../components/layers/topo.json'
 
+// Map basemap style options keyed by their Thai display label (used both as
+// the <select>/button labels and as the lookup key for the active style).
 const LAYERS = { 'ค่าเริ่มต้น': baseStyle, 'ดาวเทียม': satelliteStyle, 'ภูมิประเทศ': topoStyle }
-// fallback view (all of Thailand) until the profile's per-region home arrives
+// Fallback camera position used when the signed-in user has no saved `home` location.
 const DEFAULT_HOME = { lat: 13.05, lng: 101.45, zoom: 5.5 }
-const CARD_HEIGHT = 140 // px — must match Card's rendered height (py-3 + 3 text lines + border)
-const EMPTY_OFFICERS = [] // stable ref so <Map> doesn't re-render when officers are hidden
+// Fixed row height (px) required by react-window's virtualization to compute scroll offsets.
+const CARD_HEIGHT = 140
+// Stable empty-array reference so passing "no officers" never triggers a
+// downstream re-render solely due to a new [] identity on every render.
+const EMPTY_OFFICERS = []
 
-// one legend row: a filled dot (fires) or an outlined ring (officer markers) + label
+/**
+ * LegendDot
+ * @param {object} props
+ * @param {string} [props.color] - fill color for a solid dot (fire status legend entries)
+ * @param {string} [props.ring] - outline color for a ring-only dot (officer online/offline legend entries)
+ * @param {string} props.label - Thai text shown next to the dot
+ * @returns {JSX.Element} one row of the map legend
+ * Note: `ring` and `color` are mutually exclusive by convention (ring takes precedence when both would apply).
+ */
 function LegendDot({ color, ring, label }) {
   return (
     <div className="flex items-center gap-2">
@@ -37,6 +47,15 @@ function LegendDot({ color, ring, label }) {
   )
 }
 
+/**
+ * FireRow
+ * react-window row renderer for the virtualized fire list.
+ * @param {object} props
+ * @param {number} props.index - row index supplied by react-window
+ * @param {React.CSSProperties} props.style - absolute-position style supplied by react-window; must be applied verbatim
+ * @param {Array<object>} props.fires - the full (already sorted/filtered) fire list, indexed by `index`
+ * @returns {JSX.Element}
+ */
 function FireRow({ index, style, fires }) {
   const f = fires[index]
   return (
@@ -54,51 +73,69 @@ function FireRow({ index, style, fires }) {
   )
 }
 
+/**
+ * MapViewPage
+ * Route-level component (no props). Primary operational view: full-screen
+ * map of active/resolved fires plus a collapsible, sortable/filterable side
+ * list, live officer positions (permission-gated), and layer/zoom controls.
+ *
+ * Returns: JSX.Element.
+ */
 export default function MapViewPage() {
-  const [selectedLayer, setSelectedLayer] = useState(LAYERS['ค่าเริ่มต้น'])
-  const [listCollapsed, setListCollapsed] = useState(false)
-  const mapRef = useRef(null)
+  const [selectedLayer, setSelectedLayer] = useState(LAYERS['ค่าเริ่มต้น']) // object: currently active basemap style JSON
+  const [listCollapsed, setListCollapsed] = useState(false) // boolean: whether the right-hand fire list is hidden
+  const mapRef = useRef(null) // ref to the underlying Map component's imperative handle (resetView/zoomIn/zoomOut)
 
-  // per-user opening view: center + zoom of the region this admin is assigned to
+  // User's saved home view, or the module-level default if unset.
   const home = useAuthStore((s) => s.user?.home) ?? DEFAULT_HOME
-  // memoized so a layout-only re-render (panel collapse) keeps <Map> props stable
+  // Memoized so the Map component doesn't see a new object (and re-center) on every render.
   const startPoint = useMemo(() => ({ lat: home.lat, lng: home.lng }), [home.lat, home.lng])
 
-  const [officers, setOfficers] = useState([])
-  const [showOfficers, setShowOfficers] = useState(true)
-  const send = useSocketStore((s) => s.send)
-  const ready = useSocketStore((s) => s.ready)
-  const officersMsg = useSocketStore((s) => s.byType?.officers_map)
-  const canViewOfficers = can(useAuthStore((s) => s.user), 'officers.view')
+  const [officers, setOfficers] = useState([]) // array: latest officer positions/status from the socket
+  const [showOfficers, setShowOfficers] = useState(true) // boolean: toggles officer markers on the map
+  const send = useSocketStore((s) => s.send) // (msg: object) => void — sends a message over the shared websocket
+  const ready = useSocketStore((s) => s.ready) // boolean: whether the socket connection is open
+  const officersMsg = useSocketStore((s) => s.byType?.officers_map) // latest 'officers_map' message payload, if any
+  const canViewOfficers = can(useAuthStore((s) => s.user), 'officers.view') // permission gate for officer visibility/subscription
 
+  // Subscribes to officer position updates once the socket is ready, only if permitted.
+  // Dependency: server only responds to 'list_officers_MAP' for users with officers.view.
   useEffect(() => {
     if (!ready || !canViewOfficers) return
     send({ type: 'list_officers_MAP' })
   }, [ready, canViewOfficers])
 
+  // Applies each incoming officers_map socket message to local state.
   useEffect(() => {
     if (!officersMsg) return
     setOfficers(officersMsg.officers ?? [])
   }, [officersMsg])
 
-  const fires = useFireData()
+  const fires = useFireData() // array: live fire records from the shared fire-data hook/socket
 
-  // sort like mobile (tap the active chip again to flip direction) + filters
-  const [sortBy, setSortBy] = useState('time')
-  const [sortAsc, setSortAsc] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [provinceFilter, setProvinceFilter] = useState('')
-  const [satelliteFilter, setSatelliteFilter] = useState('')
+  const [sortBy, setSortBy] = useState('time') // 'time' | 'name': active sort key for the side list
+  const [sortAsc, setSortAsc] = useState(false) // boolean: sort direction for the current sortBy key
+  const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'free' | 'booked' | 'resolved'
+  const [provinceFilter, setProvinceFilter] = useState('') // string: exact province match, '' = no filter
+  const [satelliteFilter, setSatelliteFilter] = useState('') // string: exact satellite source match, '' = no filter
 
+  /**
+   * changeSort
+   * @param {'time'|'name'} key - the column to sort by
+   * Toggles direction when re-selecting the active key; switching to a new
+   * key resets direction, defaulting to ascending only for 'name' (alphabetical)
+   * since 'time' more usefully defaults to newest-first (descending).
+   */
   const changeSort = (key) => {
     if (sortBy === key) {
       setSortAsc((v) => !v)
     } else {
       setSortBy(key)
-      setSortAsc(key === 'name') // name: ก→ฮ, time: newest first
+      setSortAsc(key === 'name')
     }
   }
 
+  // Distinct, Thai-locale-sorted province options derived from the live fire set (not a static list).
   const provinces = useMemo(
     () =>
       [...new Set(fires.map((f) => f.province).filter(Boolean))].sort((a, b) =>
@@ -107,11 +144,13 @@ export default function MapViewPage() {
     [fires],
   )
 
+  // Distinct satellite-source options derived from the live fire set.
   const satellites = useMemo(
     () => [...new Set(fires.map((f) => f.satellite).filter(Boolean))].sort(),
     [fires],
   )
 
+  // Applies status/province/satellite filters in sequence; feeds both the map points and the side list.
   const filteredFires = useMemo(() => {
     let result = fires
     if (statusFilter === 'free') result = result.filter((f) => !f.status && !f.booked)
@@ -122,6 +161,7 @@ export default function MapViewPage() {
     return result
   }, [fires, statusFilter, provinceFilter, satelliteFilter])
 
+  // Sorted copy of filteredFires for the side list (map points don't need sorting).
   const listFires = useMemo(() => {
     const sorted = [...filteredFires]
     const dir = sortAsc ? 1 : -1
@@ -133,33 +173,34 @@ export default function MapViewPage() {
     return sorted
   }, [filteredFires, sortBy, sortAsc])
 
-  // the map shows the same fires the list does
+  // Minimal projection of filteredFires for the map layer, to avoid passing unused fields down.
   const points = useMemo(
     () => filteredFires.map((f) => ({ id: f.id, lat: f.lat, lng: f.lng, status: f.status, booked: f.booked })),
     [filteredFires],
   )
 
-  const focusedId = useMapSelection((s) => s.focusedId)
+  const focusedId = useMapSelection((s) => s.focusedId) // shared (cross-component) selection: id of the fire focused on the map
   const clearSelection = useMapSelection((s) => s.clear)
+  // Assumption: focusedId always refers to a fire in `fires`; if not found (e.g. it just
+  // expired/resolved off the list), `focused` becomes null and the detail panel closes.
   const focused = focusedId ? fires.find((f) => f.id === focusedId) : null
 
-  // focusing a fire (e.g. clicking its spot on the map) reveals its card, so
-  // open the panel if it was collapsed
+  // Auto-expands the side list whenever a fire becomes focused (e.g. selected on the map),
+  // so its detail card is visible even if the user had collapsed the panel.
   useEffect(() => {
     if (focusedId) setListCollapsed(false)
   }, [focusedId])
 
   return (
     <div className="relative flex flex-1 w-full overflow-hidden">
-      {/* Full-screen map fills the viewport; the sidebar and list panel float over it */}
+      {/* Full-viewport map layer sits behind all UI chrome (z-0) */}
       <div className="fixed inset-0 z-0">
         <Map ref={mapRef} layer={selectedLayer} points={points} startPoint={startPoint} startZoom={home.zoom} officers={showOfficers ? officers : EMPTY_OFFICERS} />
       </div>
 
-      {/* Map controls float top-right, shifting left of the panel when it's open */}
+      {/* Floating control stack (layers/reset/officers/zoom); shifts left when the side list is expanded */}
       <div className={`fixed top-3 z-10 flex flex-col items-end gap-2 transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'right-3' : 'right-[calc(25vw+0.75rem)]'}`}>
 
-        {/* Map tile controls Base/Satellite/Topography */}
         <div
           id="layers"
           className="flex rounded-lg overflow-hidden shadow-md divide-x divide-gray-300"
@@ -175,7 +216,6 @@ export default function MapViewPage() {
           ))}
         </div>
 
-        {/* Reset view button */}
         <button
           title="กลับไปจุดเริ่มต้น"
           className="flex items-center gap-1.5 bg-white rounded-lg shadow-md px-3 py-1.5 text-sm text-primary font-medium hover:bg-flame-light hover:text-primary"
@@ -185,7 +225,7 @@ export default function MapViewPage() {
           กลับไปจุดเริ่มต้น
         </button>
 
-        {/* Toggle officers in map */}
+        {/* Officer visibility toggle only rendered for users permitted to view officers */}
         {canViewOfficers && (
           <button
             title={showOfficers ? 'ซ่อนเจ้าหน้าที่' : 'แสดงเจ้าหน้าที่'}
@@ -198,7 +238,6 @@ export default function MapViewPage() {
           </button>
         )}
 
-        {/* Zoom in/out control */}
         <div id="zoom" className="flex flex-col rounded-lg overflow-hidden shadow-md divide-y divide-gray-300">
           <button
             title="ซูมเข้า"
@@ -220,7 +259,7 @@ export default function MapViewPage() {
 
       </div>
 
-      {/* Marker legend floats bottom-right, shifting left of the panel like the top controls */}
+      {/* Legend: same right-offset animation as the control stack so it tracks the side list */}
       <div className={`fixed bottom-3 z-10 bg-white/90 rounded-lg shadow-md px-3 py-2 text-xs text-primary transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'right-3' : 'right-[calc(25vw+0.75rem)]'}`}>
         <p className="font-semibold mb-1.5">สัญลักษณ์</p>
         <div className="flex flex-col gap-1">
@@ -236,10 +275,9 @@ export default function MapViewPage() {
         </div>
       </div>
 
-      {/* List panel floats over the right edge of the map */}
+      {/* Collapsible right side panel: width animates between 0 and 25vw */}
       <div className={`fixed top-0 right-0 h-full z-10 transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? 'w-0' : 'w-1/4'}`}>
-        
-        {/* collapse/expand handle: sits on the panel's outer edge, vertically centered */}
+
         <button
           title={listCollapsed ? 'แสดงรายการไฟ' : 'ซ่อนรายการไฟ'}
           onClick={() => setListCollapsed((v) => !v)}
@@ -250,10 +288,6 @@ export default function MapViewPage() {
             : <ChevronDoubleRightIcon className="w-5 h-5" />}
         </button>
 
-        {/* list panel stays mounted while the expanded card overlays it,
-            so the scroll position is kept naturally */}
-        {/* fixed width (matching the open panel) so the outer w-0 + overflow-hidden
-            clips it smoothly during the close transition instead of reflowing */}
         <div
           className="h-full w-[25vw] bg-background border-l border-background/50 shadow-xl overflow-hidden flex flex-col"
           id="map-controller"
@@ -323,6 +357,7 @@ export default function MapViewPage() {
             id="controller"
             className="flex-1 min-h-0 cursor-pointer"
           >
+            {/* Virtualized list: only visible rows are mounted, keeping large fire counts performant */}
             <List
               className="minimal-scrollbar"
               rowComponent={FireRow}
@@ -332,6 +367,7 @@ export default function MapViewPage() {
             />
           </div>
         </div>
+        {/* Detail overlay: replaces the list panel entirely while a fire is focused */}
         {focused && (
           <div className="absolute inset-0 z-10 bg-white py-2 overflow-hidden flex flex-col">
             <button

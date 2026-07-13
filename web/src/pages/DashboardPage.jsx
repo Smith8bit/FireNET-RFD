@@ -14,42 +14,66 @@ import { useFireData } from '../lib/useFireData'
 import { useMapSelection, useSocketStore } from '../lib/stateStore'
 import { useAuthStore, can } from '../lib/useAuthStore'
 
+// Thai-locale string comparator, reused by every sort in this file so province/district
+// names order the way a Thai reader expects (not raw code-point order).
 const collator = new Intl.Collator('th')
 const DAY_MS = 24 * 60 * 60 * 1000
-// Asia/Bangkok is a fixed UTC+7 (no DST, ever). Ingested detections carry Thai
-// wall-clock numbers tagged +00:00 (see backend db_control/fires.py), so elapsed
-// time vs a real clock comes up ~7h short and must be added back.
-// ponytail: hardcoded +7h; only wrong if Thailand ever adopts DST.
+// Fire timestamps from the backend are UTC; this offset re-bases "day" boundaries and
+// display formatting onto Thailand's UTC+7 clock without needing a timezone library.
 const THAI_OFFSET_MS = 7 * 60 * 60 * 1000
-// mirrors backend FIRE_EXPIRE_DAYS — open fires auto-expire after this many days
+// Matches the backend's auto-expiry window for unassigned fires; used to warn on the watchlist.
 const EXPIRE_DAYS = 10
 
+/**
+ * asDate
+ * @param {string|number|null|undefined} value
+ * @returns {Date|null} parsed Date, or null if `value` is falsy or unparseable
+ */
 function asDate(value) {
   const date = value ? new Date(value) : null
   return date && !Number.isNaN(date.getTime()) ? date : null
 }
 
-// real elapsed ms since a Thai-wall-clock detection timestamp
+/**
+ * detectedAgeMs
+ * @param {string} value - ISO timestamp a fire was detected (UTC)
+ * @param {number} nowMs - current time in epoch ms (passed in, not read live, so callers/memos stay pure)
+ * @returns {number|null} age in ms, adjusted by THAI_OFFSET_MS; null if `value` doesn't parse
+ */
 function detectedAgeMs(value, nowMs) {
   const t = Date.parse(value)
   return Number.isNaN(t) ? null : nowMs - t + THAI_OFFSET_MS
 }
 
-// Thai calendar date (YYYY-MM-DD) of a detected_at (already Thai wall-clock)
+/**
+ * detectedDayKey
+ * @param {string} value - ISO detection timestamp
+ * @returns {string|null} 'YYYY-MM-DD' UTC day key for grouping, or null if unparseable
+ */
 function detectedDayKey(value) {
   const d = asDate(value)
   return d ? d.toISOString().slice(0, 10) : null
 }
 
-// Thai calendar date of a real-UTC instant (resolve_time, now)
+/**
+ * utcDayKey
+ * @param {number} ms - epoch ms, expected to already be Thai-offset-adjusted by the caller
+ * @returns {string} 'YYYY-MM-DD' day key
+ */
 function utcDayKey(ms) {
   return new Date(ms + THAI_OFFSET_MS).toISOString().slice(0, 10)
 }
 
+/**
+ * formatDateTime
+ * @param {string} value - ISO timestamp
+ * @returns {string} Thai-locale 'DD MMM HH:mm' string, or '-' if unparseable
+ * Note: timeZone 'UTC' is intentional — callers pass already-offset values, so
+ * formatting in UTC avoids the runtime's local timezone double-shifting the display.
+ */
 function formatDateTime(value) {
   const date = asDate(value)
   if (!date) return '-'
-  // timeZone UTC so the stored Thai wall-clock numbers display literally
   return new Intl.DateTimeFormat('th-TH', {
     day: '2-digit',
     month: 'short',
@@ -59,6 +83,12 @@ function formatDateTime(value) {
   }).format(date)
 }
 
+/**
+ * formatAge
+ * @param {string} value - ISO detection timestamp
+ * @param {number} nowMs - current time in epoch ms
+ * @returns {string} human-readable elapsed time in Thai ('X นาที' / 'X ชม. Y นาที' / 'X วัน Y ชม.'), or '-' if unparseable
+ */
 function formatAge(value, nowMs) {
   const ageMs = detectedAgeMs(value, nowMs)
   if (ageMs === null) return '-'
@@ -69,6 +99,7 @@ function formatAge(value, nowMs) {
   return `${Math.floor(hours / 24)} วัน ${hours % 24} ชม.`
 }
 
+/** formatDateOnly - @param {Date} value @returns {string} Thai-locale 'D MMM YYYY', formatted in UTC (see formatDateTime note) */
 function formatDateOnly(value) {
   return new Intl.DateTimeFormat('th-TH', {
     day: 'numeric',
@@ -78,19 +109,31 @@ function formatDateOnly(value) {
   }).format(value)
 }
 
+/** formatShortDay - @param {Date} value @returns {string} Thai-locale 'DD MMM' axis label for the velocity chart */
 function formatShortDay(value) {
   return new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(value)
 }
 
+/** percent - @param {number} value @param {number} total @returns {number} rounded value/total*100, or 0 if total is falsy (avoids divide-by-zero/NaN) */
 function percent(value, total) {
   if (!total) return 0
   return Math.round((value / total) * 100)
 }
 
+/** clampPercent - same as percent() but clamped to [0,100], for safe use as a CSS width */
 function clampPercent(value, total) {
   return Math.max(0, Math.min(100, percent(value, total)))
 }
 
+/**
+ * groupRows
+ * Generic group-by-key reducer shared by every province/district aggregation below.
+ * @param {Array<object>} items - source records (fires)
+ * @param {(item: object) => string} keyFn - extracts the grouping key from an item; falsy keys fall back to 'ไม่ระบุ' (unspecified)
+ * @param {(key: string, item: object) => object} factory - builds a fresh accumulator row the first time a key is seen
+ * @param {(row: object, item: object) => void} update - mutates the row's running totals for each item (called once per item, including the first)
+ * @returns {Array<object>} one row per distinct key, insertion order (Map preserves it)
+ */
 function groupRows(items, keyFn, factory, update) {
   const grouped = new Map()
   for (const item of items) {
@@ -102,6 +145,17 @@ function groupRows(items, keyFn, factory, update) {
   return [...grouped.values()]
 }
 
+/**
+ * MetricCard
+ * Top-row KPI tile.
+ * @param {object} props
+ * @param {React.ComponentType} props.icon - heroicon component rendered in the tile's badge
+ * @param {string} props.title - small label above the value
+ * @param {string|number} props.value - the headline metric
+ * @param {string} props.detail - supporting context line below the value
+ * @param {'forest'|'red'|'amber'|'blue'|'slate'} [props.tone='forest'] - color scheme signaling severity/status
+ * @returns {JSX.Element}
+ */
 function MetricCard({ icon: Icon, title, value, detail, tone = 'forest' }) {
   const tones = {
     forest: 'border-flame bg-flame-light text-brand',
@@ -127,6 +181,16 @@ function MetricCard({ icon: Icon, title, value, detail, tone = 'forest' }) {
   )
 }
 
+/**
+ * Panel
+ * Shared card chrome (header + scrollable body) for every dashboard section.
+ * @param {object} props
+ * @param {string} props.title
+ * @param {string} props.subtitle
+ * @param {React.ComponentType} [props.icon] - optional heroicon shown at the header's end
+ * @param {React.ReactNode} props.children - scrollable panel body
+ * @returns {JSX.Element}
+ */
 function Panel({ title, subtitle, icon: Icon, children }) {
   return (
     <section className="flex min-h-0 flex-col rounded-2xl bg-foreground shadow-md p-2">
@@ -142,6 +206,13 @@ function Panel({ title, subtitle, icon: Icon, children }) {
   )
 }
 
+/**
+ * StatusBadge
+ * @param {object} props
+ * @param {React.ReactNode} props.children - badge label
+ * @param {'green'|'red'|'amber'|'blue'|'slate'} [props.tone='slate']
+ * @returns {JSX.Element}
+ */
 function StatusBadge({ children, tone = 'slate' }) {
   const tones = {
     green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -157,6 +228,14 @@ function StatusBadge({ children, tone = 'slate' }) {
   )
 }
 
+/**
+ * ProgressBar
+ * @param {object} props
+ * @param {number} props.value - numerator
+ * @param {number} props.total - denominator; 0/falsy renders an empty bar via clampPercent's guard
+ * @param {string} [props.tone='bg-primary'] - Tailwind background class for the filled portion
+ * @returns {JSX.Element}
+ */
 function ProgressBar({ value, total, tone = 'bg-primary' }) {
   return (
     <div className="h-2 w-full rounded-full bg-background">
@@ -165,8 +244,17 @@ function ProgressBar({ value, total, tone = 'bg-primary' }) {
   )
 }
 
+/**
+ * VelocityColumnChart
+ * Dual-series (detected vs. resolved) column chart for the "info" tab.
+ * @param {object} props
+ * @param {Array<{key:string,label:string,detected:number,resolved:number}>} props.rows - one column per day, in chronological order
+ * @param {number} props.maxValue - largest single-series value across all rows, used to scale bar heights
+ * @returns {JSX.Element}
+ * Edge case: negative detected/resolved counts are clamped to 0 defensively (shouldn't occur, but guards the bar height math).
+ */
 function VelocityColumnChart({ rows, maxValue }) {
-  const safeMax = Math.max(maxValue, 1)
+  const safeMax = Math.max(maxValue, 1) // avoids division by zero when every row is empty
 
   if (!rows.length) {
     return <EmptyState>ยังไม่มีข้อมูลในช่วงที่แสดง</EmptyState>
@@ -216,15 +304,34 @@ function VelocityColumnChart({ rows, maxValue }) {
   )
 }
 
+/** EmptyState - @param {object} props @param {React.ReactNode} props.children - message shown in place of an empty list/table */
 function EmptyState({ children }) {
   return <p className="px-3 py-5 text-sm text-gray-400">{children}</p>
 }
 
+/**
+ * CompactRows
+ * Renders a divided list of rows, or an EmptyState if there are none.
+ * @param {object} props
+ * @param {Array<object>} props.rows
+ * @param {(row: object, index: number) => JSX.Element} props.renderRow - row renderer; each result must supply its own `key`
+ * @returns {JSX.Element}
+ */
 function CompactRows({ rows, renderRow }) {
   if (!rows.length) return <EmptyState>ยังไม่มีข้อมูลในช่วงที่แสดง</EmptyState>
   return <div className="divide-y divide-background">{rows.map(renderRow)}</div>
 }
 
+/**
+ * DashboardPage
+ * Route-level component (no props). Two-tab operational overview:
+ * "ops" (live status: open fires, backlog, officer availability, watchlist)
+ * and "info" (historical stats: closure rates, top provinces/districts, daily velocity).
+ * Fire data comes from the shared useFireData hook; officer data from the socket store,
+ * gated behind the 'officers.view' permission.
+ *
+ * Returns: JSX.Element.
+ */
 export default function DashboardPage() {
   const navigate = useNavigate()
   const fires = useFireData()
@@ -235,17 +342,26 @@ export default function DashboardPage() {
   const canViewOfficers = can(useAuthStore((s) => s.user), 'officers.view')
   const setFocusedFire = useMapSelection((s) => s.setFocused)
 
-  const [activeTab, setActiveTab] = useState('ops')
+  const [activeTab, setActiveTab] = useState('ops') // 'ops' | 'info'
+  // Snapshotted rather than read live so all age/backlog calculations in a render agree;
+  // refreshed explicitly by `refresh()`, not on a timer.
   const [nowMs, setNowMs] = useState(() => Date.now())
   const officers = useMemo(() => officersMsg?.officers ?? [], [officersMsg])
   const pendingOfficers = useMemo(() => pendingMsg?.officers ?? [], [pendingMsg])
 
+  // Requests officer data once the socket is ready, only if the user is permitted to see it.
   useEffect(() => {
     if (!ready || !canViewOfficers) return
     send({ type: 'list_officers' })
     send({ type: 'list_pending_officers' })
   }, [ready, send, canViewOfficers])
 
+  /**
+   * refresh
+   * Manual refresh handler bound to the header's reload button: re-stamps
+   * `nowMs` (so all age-based metrics recompute) and re-requests officer/fire
+   * data over the socket.
+   */
   const refresh = useCallback(() => {
     setNowMs(Date.now())
     if (ready) {
@@ -257,6 +373,12 @@ export default function DashboardPage() {
     }
   }, [ready, send, canViewOfficers])
 
+  /**
+   * openFireOnMap
+   * @param {string} fireId - id of the fire to focus
+   * Sets the shared map-selection state then navigates to the map view,
+   * so the fire's detail panel is already open on arrival.
+   */
   const openFireOnMap = useCallback(
     (fireId) => {
       setFocusedFire(fireId)
@@ -265,6 +387,7 @@ export default function DashboardPage() {
     [navigate, setFocusedFire],
   )
 
+  // Core fire-status partition used throughout both tabs.
   const summary = useMemo(() => {
     const open = fires.filter((f) => !f.status)
     const assigned = open.filter((f) => f.booked)
@@ -284,6 +407,7 @@ export default function DashboardPage() {
     return { online, busy, available }
   }, [officers])
 
+  // Per-province open/assigned/resolved counts, sorted so provinces with the most open fires lead.
   const provinceRows = useMemo(() => {
     return groupRows(
       fires,
@@ -299,6 +423,7 @@ export default function DashboardPage() {
       .sort((a, b) => b.open - a.open || b.total - a.total || collator.compare(a.province, b.province))
   }, [fires])
 
+  // Top 3 provinces by resolved-fire count, for the "info" tab leaderboard.
   const topProvinceRows = useMemo(() => {
     return groupRows(
       fires,
@@ -313,6 +438,8 @@ export default function DashboardPage() {
       .slice(0, 3)
   }, [fires])
 
+  // Top 3 districts (aumper), grouped by "district|province" so same-named districts
+  // in different provinces aren't merged together.
   const topDistrictRows = useMemo(() => {
     return groupRows(
       fires,
@@ -332,14 +459,15 @@ export default function DashboardPage() {
       .slice(0, 3)
   }, [fires])
 
+  // Unassigned fires, oldest-first, so the most urgent items surface at the top of the watchlist.
   const watchlist = useMemo(() => {
     return [...summary.unassigned]
       .sort((a, b) => (asDate(a.detected_at)?.getTime() ?? 0) - (asDate(b.detected_at)?.getTime() ?? 0))
   }, [summary.unassigned])
 
+  // Builds the daily detected-vs-resolved series for the velocity chart, spanning from the
+  // earliest fire's detection day (or today, capped to 14 days) through today.
   const dailyRows = useMemo(() => {
-    // span the full window of loaded fires (matches the metric cards) instead of a
-    // fixed 7 days, so the chart and the headline numbers share one reference frame
     const todayKey = utcDayKey(nowMs)
     let minKey = todayKey
     for (const fire of fires) {
@@ -356,10 +484,10 @@ export default function DashboardPage() {
     })
     const byKey = new Map(rows.map((row) => [row.key, row]))
     for (const fire of fires) {
+      // Each fire contributes to its detection day (always) and, separately, to its
+      // resolution day (only if closed) — the two events can land in different rows.
       const detectedRow = byKey.get(detectedDayKey(fire.detected_at))
       if (detectedRow) detectedRow.detected += 1
-      // closes count toward the day the fire was actually closed (resolve_time),
-      // not its detection day — that's true daily throughput, not a cohort
       if (fire.status && fire.resolve_time) {
         const closeRow = byKey.get(utcDayKey(Date.parse(fire.resolve_time)))
         if (closeRow) {
@@ -372,15 +500,14 @@ export default function DashboardPage() {
     return rows
   }, [fires, nowMs])
 
-  // backlog: open, unassigned, and already older than 3 days — the real workload
-  // pressure, unlike "coverage" which is structurally near-zero on a small fleet
+  // Count of unassigned fires older than 3 days — the "at risk of going stale" backlog metric.
   const backlog = useMemo(
     () => summary.unassigned.filter((f) => (detectedAgeMs(f.detected_at, nowMs) ?? 0) > 3 * DAY_MS).length,
     [summary.unassigned, nowMs],
   )
 
-  // closure rate over a mature cohort (fires old enough to have been acted on) —
-  // a window-wide rate is dragged to ~0 by fires detected today that can't be closed yet
+  // Cohort analysis: of fires old enough (>2 days) to reasonably have been handled by now,
+  // what fraction were actually closed (excluding auto-expired)? Avoids penalizing very fresh fires.
   const cohort = useMemo(() => {
     const matured = fires.filter((f) => (detectedAgeMs(f.detected_at, nowMs) ?? 0) > 2 * DAY_MS)
     const handled = matured.filter((f) => f.status && !f.expired)
@@ -389,9 +516,9 @@ export default function DashboardPage() {
 
   const todayLabel = useMemo(() => formatDateOnly(new Date(nowMs + THAI_OFFSET_MS)), [nowMs])
   const todayOutcomes = dailyRows[dailyRows.length - 1] ?? { detected: 0, resolved: 0, falseAlarm: 0, expired: 0 }
+  // Coverage defaults to 100% when there are no open fires (nothing left uncovered).
   const openCoverage = summary.open.length ? percent(summary.assigned.length, summary.open.length) : 100
   const cohortClosureRate = cohort.total ? percent(cohort.handled, cohort.total) : 0
-  // false-alarm rate among officer-attended closes (resolved + false alarm)
   const attendedCloses = summary.resolved.length + summary.falseAlarm.length
   const falseAlarmRate = attendedCloses ? percent(summary.falseAlarm.length, attendedCloses) : 0
   const topProvince = topProvinceRows[0]
@@ -438,6 +565,7 @@ export default function DashboardPage() {
 
         {activeTab === 'ops' ? (
           <>
+            {/* Live operational KPIs: open fires, stale backlog, officer availability, most recent detection */}
             <section className="grid shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MetricCard
                 icon={FireIcon}
@@ -495,6 +623,7 @@ export default function DashboardPage() {
                 <CompactRows
                   rows={watchlist}
                   renderRow={(fire) => {
+                    // Remaining days before this unassigned fire auto-expires server-side.
                     const daysLeft = EXPIRE_DAYS - (detectedAgeMs(fire.detected_at, nowMs) ?? 0) / DAY_MS
                     const nearExpiry = daysLeft <= 2
                     return (
@@ -576,6 +705,7 @@ export default function DashboardPage() {
           </>
         ) : (
           <>
+            {/* Historical/analytical KPIs: dataset size, closure rate, false-alarm rate, top province */}
             <section className="grid shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MetricCard
                 icon={MapPinIcon}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Animated, {
   LinearTransition,
@@ -12,21 +12,26 @@ import { Ionicons } from '@expo/vector-icons'
 import { Dropdown } from 'react-native-element-dropdown'
 import { Province, useAuthSession } from '@/providers/AuthProvider'
 import { api } from '@/lib/api'
+import FieldBox from '@/components/FieldBox'
+import LabeledInput from '@/components/LabeledInput'
 import PROVINCES from '@/data/provinces.json'
 
-// Smoothly animate the card's height as it grows/shrinks between steps.
 const resize = LinearTransition.duration(250)
 
 const STEPS = ['ชื่อและบัญชีผู้ใช้', 'สังกัดและพื้นที่', 'รหัสผ่าน', 'ตรวจสอบข้อมูล'] as const
 
-// Plain style objects for the Dropdown (it doesn't accept className). It sits
-// inside a FieldBox that supplies the filled background, so it stays transparent.
 const dropdownStyle = { borderWidth: 0, backgroundColor: 'transparent', paddingVertical: 2 } as const
 
-// Fixed row height so the dropdown's auto-scroll-to-selected (scrollToIndex) is
-// reliable for provinces far down the list — it needs a matching getItemLayout.
 const PROVINCE_ITEM_HEIGHT = 48
 
+/**
+ * Multi-step registration wizard (name/username → division/province →
+ * password → review) rendered as a single screen with an animated step
+ * transition, rather than separate routes, so progress and form state
+ * persist naturally in local component state.
+ *
+ * @returns the current step's form fields plus shared progress/nav chrome
+ */
 export default function Register() {
   const { signUp, signIn } = useAuthSession()
   const router = useRouter()
@@ -41,8 +46,7 @@ export default function Register() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Returns true when the fields belonging to the current step are valid;
-  // otherwise sets the error message and returns false.
+  // Validates only the fields belonging to the current step, so earlier steps aren't re-checked on every advance.
   const validateStep = () => {
     const fail = (msg: string) => {
       setError(msg)
@@ -67,9 +71,10 @@ export default function Register() {
 
   const [checking, setChecking] = useState(false)
 
+  // Advances to the next step; leaving step 0 additionally checks username availability server-side
+  // (a client-only check can't catch collisions), blocking advancement on either a taken name or a failed check.
   const next = async () => {
     if (!validateStep()) return
-    // On the username step, make sure it isn't already taken before moving on.
     if (step === 0) {
       setChecking(true)
       try {
@@ -92,10 +97,13 @@ export default function Register() {
 
   const back = () => {
     setError(null)
-    if (step === 0) router.back() // first step → back to Login
+    if (step === 0) router.back()
     else setStep((s) => s - 1)
   }
 
+  // `province` is asserted non-null because step 1's validateStep already guarantees it's set before reaching the final step.
+  // signUp and signIn are two independent requests: if signUp fails nothing was created, so we stop there;
+  // if it succeeds but the auto sign-in fails, the account still exists — the user is told to sign in manually rather than seeing a false failure.
   const onSubmit = async () => {
     if (submitting) return
     if (!validateStep()) return
@@ -108,9 +116,8 @@ export default function Register() {
       return
     }
     try {
-      await signIn(username.trim(), password) // -> gate routes to /Pending until admin verifies
+      await signIn(username.trim(), password)
     } catch {
-      // registered fine but auto-login failed (e.g. network blip)
       setError('สมัครสมาชิกสำเร็จแล้ว แต่เข้าสู่ระบบอัตโนมัติไม่สำเร็จ กรุณาเข้าสู่ระบบด้วยตนเอง')
     } finally {
       setSubmitting(false)
@@ -127,7 +134,6 @@ export default function Register() {
           <Text className="mb-4 self-center text-2xl font-sans-semibold text-card-foreground">สมัครสมาชิก</Text>
         </View>
 
-        {/* Step indicator — one bar per step, animating its fill up to the current step. */}
         <View className="flex-row gap-0">
           {STEPS.map((label, i) => (
             <ProgressSegment key={label} active={i <= step} />
@@ -135,7 +141,6 @@ export default function Register() {
         </View>
 
         <Animated.View layout={resize} className="gap-4">
-          {/* Title of the current step. */}
           <Text className="text-xl font-sans-semibold text-card-foreground">{STEPS[step]}</Text>
 
           {step === 0 && (
@@ -192,6 +197,7 @@ export default function Register() {
                         {item.name_th}
                       </Text>
                     )}
+                    // Fixed row height lets the dropdown's list compute offsets without measuring, so it can jump straight to the selected province.
                     flatListProps={{
                       getItemLayout: (_, index) => ({
                         length: PROVINCE_ITEM_HEIGHT,
@@ -231,9 +237,8 @@ export default function Register() {
           )}
 
           {step === 3 && (
-            /* Final review of everything entered in the previous steps. */
             <View className=" gap-4 rounded-lg border-0 bg-background/40 p-4">
-              <Summary label="ชื่อ-นามสกุล" value={name.trim()}/>
+              <Summary label="ชื่อ-นามสกุล" value={name.trim()} />
               <Summary label="ชื่อผู้ใช้" value={username.trim()} />
               <Summary label="สังกัด" value={division.trim() || '—'} />
               <Summary label="จังหวัด" value={province?.name_th ?? '—'} />
@@ -244,8 +249,6 @@ export default function Register() {
         </Animated.View>
       </ScrollView>
 
-      {/* Floating circular nav — back (steps back, or exits to Login from the
-          first step) on the left, next/submit on the right. */}
       <View className="absolute inset-x-6 bottom-16 flex-row items-center justify-between">
         <TouchableOpacity
           onPress={back}
@@ -285,8 +288,12 @@ export default function Register() {
   )
 }
 
-// One segment of the step indicator. Its primary-colored fill animates its
-// width in/out as the step crosses this segment, instead of toggling instantly.
+/**
+ * One segment of the step progress bar; animates its fill in/out when
+ * `active` toggles so the bar transitions smoothly as the wizard advances.
+ *
+ * @param active - whether this step has been reached (fills) or not (empties)
+ */
 function ProgressSegment({ active }: { active: boolean }) {
   const fill = useSharedValue(active ? 1 : 0)
   useEffect(() => {
@@ -300,32 +307,12 @@ function ProgressSegment({ active }: { active: boolean }) {
   )
 }
 
-// Filled, rounded field with a small label pinned to its top-left corner.
-function FieldBox({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View className="rounded-2xl bg-background/40 px-4 py-3">
-      <Text className="text-sm font-head text-muted-foreground">{label}</Text>
-      {children}
-    </View>
-  )
-}
-
-// A FieldBox wrapping a TextInput — the input is transparent and unpadded so the
-// box supplies the background, padding, and the top-left label.
-function LabeledInput({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
-  return (
-    <FieldBox label={label}>
-      <TextInput
-        placeholderTextColor="#9ca3af"
-        {...props}
-        className="p-0 text-xl text-card-foreground"
-        // Fixed height + no Android font padding so the box never reflows while typing.
-        style={{ height: 34, includeFontPadding: false, textAlignVertical: 'center' }}
-      />
-    </FieldBox>
-  )
-}
-
+/**
+ * Read-only label/value row used on the final "review" step.
+ *
+ * @param label - field name
+ * @param value - field value; expected pre-trimmed/formatted by the caller (e.g. `'—'` for empty)
+ */
 function Summary({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-row justify-between gap-3">

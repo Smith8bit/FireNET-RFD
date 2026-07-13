@@ -25,17 +25,20 @@ const ROWS: Row[] = [
   { icon: 'time-outline', label: 'ประวัติการดับไฟ', route: '/(authorized)/History' },
 ]
 
-// Soft shadow via boxShadow (New Arch), NOT Android `elevation`: elevation
-// re-rasterizes each frame and shimmers while the tab transition translates the
-// screen; boxShadow composites with the view and moves with it cleanly.
 const cardShadow = { boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.10)' } as const
 
 const fmtMB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(0)} MB`
 
-// Pre-download the officer's home region so the map works with no signal.
+/**
+ * Row that downloads (or re-downloads) the offline map tile pack for the
+ * officer's home province, showing progress and, once cached, its size.
+ *
+ * @param home - officer's home province/region, used to pick which tile pack to fetch
+ */
 function OfflineMapButton({ home }: { home: Home }) {
   const [percent, setPercent] = useState<number | null>(null)
   const [size, setSize] = useState<number | null>(null)
+  // Checks for an already-downloaded pack on mount so the row can show its cached size instead of a bare download prompt.
   useEffect(() => { homePackSize().then(setSize).catch(() => {}) }, [])
 
   const busy = percent !== null
@@ -78,11 +81,21 @@ function OfflineMapButton({ home }: { home: Home }) {
   )
 }
 
+/**
+ * Two-tap sign-out control: a compact circular icon that expands into a
+ * full-width "confirm logout" pill on first press, and only signs out on
+ * the second press — guards against accidental sign-outs without needing a
+ * separate confirmation dialog.
+ *
+ * @param onConfirm - called only after the button has already been expanded and is pressed again
+ */
 function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
   const [expanded, setExpanded] = useState(false)
   const reduced = useReducedMotion()
+  // Measured once via onLayout since the pill's expanded width depends on the container's available width.
   const [fullW, setFullW] = useState(0)
   const progress = useSharedValue(0)
+  // Collapses the button back to its icon-only state if the user navigates away mid-confirmation.
   useFocusEffect(useCallback(() => () => setExpanded(false), []))
 
   useEffect(() => {
@@ -90,9 +103,7 @@ function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
     progress.value = reduced ? to : withTiming(to, { duration: 240, easing: Easing.out(Easing.quad) })
   }, [expanded, reduced, progress])
 
-  // Drive width from a 52px circle out to full width, right edge pinned by the
-  // parent's items-end. It reads as the circle expanding in place, not a pill
-  // flying in from the right. overflow-hidden clips the label until it fits.
+  // Interpolates between the collapsed icon width (52) and the full measured width as progress animates.
   const style = useAnimatedStyle(() => ({
     width: fullW > 0 ? 52 + (fullW - 52) * progress.value : 52,
   }))
@@ -121,6 +132,12 @@ function LogoutButton({ onConfirm }: { onConfirm: () => void }) {
   )
 }
 
+/**
+ * Settings tab: profile summary, navigation into Account/RegionChange/History,
+ * offline map download, and sign-out.
+ *
+ * @returns the settings menu; `ROWS` drives the navigable link list, `user`/`signOut` come from the shared auth session
+ */
 export default function Setting() {
   const { user, signOut } = useAuthSession()
   return (

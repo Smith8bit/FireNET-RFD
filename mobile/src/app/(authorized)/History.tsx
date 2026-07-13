@@ -1,4 +1,5 @@
 import { api, getToken } from '@/lib/api'
+import { shadows } from '@/lib/theme'
 import { toast } from '@/lib/toastStore'
 import { formatDetectedAt } from '@/utils/format'
 import { Ionicons } from '@expo/vector-icons'
@@ -24,53 +25,47 @@ type Item = {
 
 const PAGE = 20
 
-// content-type → saved-file extension (mirrors backend IMAGE_EXT/VIDEO_EXT)
+// Fallback extension used when a content-type isn't one of the known evidence formats (should not normally occur).
 const EXT: Record<string, string> = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
   'video/mp4': 'mp4', 'video/quicktime': 'mov',
 }
 
-// evidence files are served by the API (region-scoped), so the request needs the bearer token
+// Evidence files are served behind auth, so every request (thumbnail, full view, or download) needs the bearer token attached.
 const evidenceSource = (fireId: string, imageId: string) => ({
   uri: `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
   headers: { Authorization: `Bearer ${getToken() ?? ''}` },
 })
 
-// mounts only while a video is open, so useVideoPlayer's player is created/released with it
+/**
+ * Autoplaying inline video player for a single evidence video, used inside the fullscreen viewer modal.
+ *
+ * @param fireId - fire the evidence belongs to
+ * @param imageId - id of the specific evidence item (despite the name, may be a video)
+ */
 function EvidenceVideo({ fireId, imageId }: { fireId: string; imageId: string }) {
   const player = useVideoPlayer(evidenceSource(fireId, imageId), (p) => { p.play() })
   return <VideoView player={player} style={{ width: '100%', height: '80%' }} contentFit="contain" />
 }
 
-// shadow can't be expressed as a className faithfully on both platforms — keep it inline
-const cardShadow = {
-  elevation: 2,
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
-
-// floating refresh button's shadow — kept inline since it has no faithful className
-const floatShadow = {
-  elevation: 4,
-  shadowColor: '#000',
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
-
+/**
+ * Paginated list of the officer's own resolved fire reports, each with any
+ * attached photo/video evidence viewable fullscreen and savable to the
+ * device's media library.
+ *
+ * @returns an infinite-scrolling list with a pull-to-reload button and an evidence viewer modal
+ */
 export default function History() {
   const [items, setItems] = useState<Item[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  // the evidence file shown full-screen, or null when the viewer is closed
   const [viewer, setViewer] = useState<{ fireId: string; imageId: string; contentType: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [perm, requestPerm] = MediaLibrary.usePermissions()
 
-  // download the (auth-gated) evidence file to a temp file, then add it to the gallery
+  // MediaLibrary has no "save from URL" API, so the evidence file is downloaded to a scratch
+  // location in cache first, imported into the gallery, then the scratch copy is always cleaned up.
   const saveEvidence = useCallback(async (fireId: string, imageId: string, contentType: string) => {
     if (saving) return
     setSaving(true)
@@ -82,7 +77,7 @@ export default function History() {
         return
       }
       const dest = new File(Paths.cache, `fire-${imageId}.${EXT[contentType] ?? 'bin'}`)
-      if (dest.exists) dest.delete() // a stale temp from a crashed prior attempt would block the download
+      if (dest.exists) dest.delete()
       file = await File.downloadFileAsync(
         `${api.defaults.baseURL}/fires/${fireId}/images/${imageId}`,
         dest,
@@ -93,11 +88,13 @@ export default function History() {
     } catch {
       toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง')
     } finally {
-      try { file?.delete() } catch {} // best-effort cleanup of the temp copy
+      // Best-effort cleanup: if the download itself failed, `file` is still null and there's nothing to delete.
+      try { file?.delete() } catch {}
       setSaving(false)
     }
   }, [saving, perm, requestPerm])
 
+  // offset === 0 means "reload from scratch" (replace the list); any other offset means "load more" (append).
   const load = useCallback(async (offset: number) => {
     if (loading) return
     setLoading(true)
@@ -114,7 +111,7 @@ export default function History() {
     }
   }, [loading])
 
-  useEffect(() => { load(0) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(0) }, [])
 
   return (
     <SafeAreaView className="flex-1 bg-foreground" edges={['bottom']}>
@@ -122,11 +119,9 @@ export default function History() {
         data={items}
         keyExtractor={(it) => it.fire_id}
         contentContainerStyle={{ padding: 12 , gap: 3, flexGrow: 1 }}
+        // Guards against firing before the first page has loaded, and stops once every item has been fetched.
         onEndReached={() => { if (loaded && items.length < total) load(items.length) }}
         onEndReachedThreshold={0.4}
-        // lazy-load evidence images: keep fewer off-screen rows mounted so their
-        // thumbnails only fetch as they near the viewport. (No removeClippedSubviews —
-        // on Android it mis-measures rows mounted after scroll, squishing the badge.)
         windowSize={5}
         initialNumToRender={6}
         maxToRenderPerBatch={6}
@@ -181,7 +176,7 @@ export default function History() {
 
       <Pressable
         className="absolute bottom-12 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
-        style={floatShadow}
+        style={shadows.float}
         onPress={() => load(0)}
         disabled={loading}
         hitSlop={8}
@@ -191,9 +186,8 @@ export default function History() {
 
       <Modal visible={viewer !== null} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <View className="flex-1 items-center justify-center bg-black/90">
-          {/* backdrop is a sibling *behind* the content — nesting the buttons inside a
-              Pressable made them fight it for the touch responder, needing double-taps */}
           <Pressable className="absolute inset-0" onPress={() => setViewer(null)} />
+          {/* content_type from the server determines which fullscreen renderer to use for the selected evidence item. */}
           {viewer && (
             viewer.contentType.startsWith('video/')
               ? <EvidenceVideo fireId={viewer.fireId} imageId={viewer.imageId} />

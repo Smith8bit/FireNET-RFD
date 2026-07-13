@@ -1,5 +1,5 @@
 import base from '@/assets/layers/base.json';
-import { colors } from '@/lib/theme';
+import { colors, shadows } from '@/lib/theme';
 import { toast } from '@/lib/toastStore';
 import { useAuthSession } from '@/providers/AuthProvider';
 import { useFireStore, type Fire } from '@/stores/fireStore';
@@ -15,30 +15,26 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const MAP_STYLE = base as unknown as StyleSpecification
 
-// floating map controls' shadow — kept inline since it has no faithful className
-const floatShadow = {
-  elevation: 4,
-  shadowColor: '#000',
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 2 },
-}
 const THAILAND_CENTER: [number, number] = [100.523186, 13.736717]
 
+// Marker fill colors by fire state, matched against in the MapLibre `circle-color` expression below.
 const FIRE_COLORS = {
-  resolved: '#d1d5dc', // ดับแล้ว
-  held: '#f97316', // ไฟที่เราจอง
-  booked: '#facc15', // ถูกเจ้าหน้าที่ท่านอื่นจอง
-  free: '#ef4444', // ไฟอิสระ กำลังไหม้
+  resolved: '#d1d5dc',
+  held: '#f97316',
+  booked: '#facc15',
+  free: '#ef4444',
 }
 
-function fireColor(fire: Fire, heldFireId: string | null): string {
-  if (fire.status) return FIRE_COLORS.resolved
-  if (fire.id === heldFireId) return FIRE_COLORS.held
-  if (fire.booked) return FIRE_COLORS.booked
-  return FIRE_COLORS.free
-}
-
+/**
+ * Converts store fire records into the GeoJSON feature collection MapLibre
+ * needs for its `GeoJSONSource`. `held` is computed here (rather than stored
+ * on `Fire`) since "held by me" is a client-local concept derived from the
+ * separately-loaded `reservedFire`, not part of the fire's own server state.
+ *
+ * @param fires - all fires currently visible on the map
+ * @param heldFireId - id of the fire the current officer has reserved and not yet resolved, or null
+ * @returns a `FeatureCollection` of point features, one per fire, carrying the properties used by the circle-color/radius paint expressions
+ */
 function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -58,6 +54,7 @@ function toGeoJSON(fires: Fire[], heldFireId: string | null): GeoJSON.FeatureCol
   }
 }
 
+// Fixed row height lets the bottom-sheet FlatList use `getItemLayout` for O(1) scroll-to-index instead of measuring.
 const ROW_HEIGHT = 96
 
 type FireRowProps = {
@@ -67,12 +64,23 @@ type FireRowProps = {
   bookedByOther: boolean
   disabled: boolean
   online: boolean
-  color: string
   onFocus: (fire: Fire) => void
   onReserve: (fire: Fire) => void
 }
 
-// memoized so selection/status changes only re-render the affected rows
+/**
+ * Single row in the fire list bottom sheet. Memoized because the list can
+ * hold many fires and re-renders on every store update (e.g. location pushes).
+ *
+ * @param item - the fire this row represents
+ * @param selected - true if this fire is the one currently focused on the map
+ * @param isHeld - true if this fire is the officer's own active reservation
+ * @param bookedByOther - true if another officer already holds this fire
+ * @param disabled - true if the row's reserve action should be hidden entirely (offline, resolved, already holding a different fire, or booked by someone else)
+ * @param online - whether the officer is online; row is dimmed and unpressable when offline
+ * @param onFocus - called on row tap, to center the map on this fire
+ * @param onReserve - called when the reserve arrow is tapped
+ */
 const FireRow = React.memo(function FireRow({
   item,
   selected,
@@ -80,14 +88,13 @@ const FireRow = React.memo(function FireRow({
   bookedByOther,
   disabled,
   online,
-  color,
   onFocus,
   onReserve,
 }: FireRowProps) {
   return (
     <Pressable
       className={`flex-row items-center border-b-[0.75px] border-border px-6 ${selected ? 'bg-flame-light' : ''} ${!online ? 'opacity-50' : ''}`}
-      style={{ height: ROW_HEIGHT }} // must match getItemLayout
+      style={{ height: ROW_HEIGHT }}
       disabled={!online}
       onPress={() => onFocus(item)}
     >
@@ -121,6 +128,13 @@ const FireRow = React.memo(function FireRow({
   )
 })
 
+/**
+ * Main map screen: shows all active fires as markers on a MapLibre map with
+ * a companion draggable bottom sheet listing them, plus an online/offline
+ * toggle that gates location sharing and fire reservation.
+ *
+ * @returns the map + fire list UI; view/reservation state is read from `useFireStore`, session/home location from `useAuthSession`
+ */
 export default function MapView() {
   const fires = useFireStore((s) => s.fires)
   const selectedFireId = useFireStore((s) => s.selectedFireId)
@@ -133,7 +147,6 @@ export default function MapView() {
   const setOnline = useFireStore((s) => s.setOnline)
   const { user, refresh } = useAuthSession()
 
-  // reload covers all three tabs: fire list (map), reserved fire (Firespot), profile (Setting)
   const reloadAll = useCallback(() => {
     loadFires()
     loadReservedFire()
@@ -147,19 +160,16 @@ export default function MapView() {
   const cameraRef = useRef<CameraRef>(null)
   const { height } = useWindowDimensions()
 
-  // Fetch fires and own reservation on mount
   useEffect(() => {
     loadFires()
     loadReservedFire()
   }, [loadFires, loadReservedFire])
 
-  // ask for location permission on mount so the blue "you are here" puck can
-  // render (like Google Maps) without waiting for the officer to go online
   useEffect(() => {
     Location.requestForegroundPermissionsAsync().catch(() => {})
   }, [])
 
-  // จอง is locked while the officer holds an unresolved fire
+  // "Held" only counts while the reservation is still unresolved; once resolved it's history, not an active hold.
   const heldFireId = reservedFire != null && !reservedFire.status ? reservedFire.id : null
   const holdingUnresolved = heldFireId != null
 
@@ -178,23 +188,22 @@ export default function MapView() {
     return sorted
   }, [fires, sortBy, sortAsc])
 
-  // tap the active chip again to flip direction; a new key gets its natural default
+  // Tapping the active sort key flips its direction; switching to a different key resets direction
+  // to a sensible default per key (name ascending, time descending/most-recent-first).
   const changeSort = useCallback(
     (key: 'time' | 'name') => {
       if (sortBy === key) {
         setSortAsc((v) => !v)
       } else {
         setSortBy(key)
-        setSortAsc(key === 'name') // name: ก→ฮ, time: newest first
+        setSortAsc(key === 'name')
       }
     },
     [sortBy],
   )
   const snapPoints = useMemo(() => ['5%', '60%', ], [])
 
-  // open the map on the officer's own region (served by /users/me/profile);
-  // initialViewState is read once on mount, and the layout guard guarantees
-  // `user` is loaded by then. Fall back to a whole-Thailand view.
+  // Camera starts centered on the officer's home province rather than a fixed national view, falling back to a Thailand-wide view if no home is set.
   const initialViewState = useMemo(() => {
     const home = user?.home
     return {
@@ -203,7 +212,6 @@ export default function MapView() {
     }
   }, [user?.home])
 
-  // fly back to the officer's region (the same view the map opened on)
   const recenter = useCallback(() => {
     cameraRef.current?.flyTo({
       center: initialViewState.center,
@@ -212,6 +220,8 @@ export default function MapView() {
     })
   }, [initialViewState])
 
+  // Going online requires location permission (background reporting depends on it, see the authorized layout);
+  // going offline attaches a last-known position (best-effort, non-blocking) so the server has a final fix.
   const toggleOnline = useCallback(
     async (value: boolean) => {
       setToggling(true)
@@ -222,11 +232,8 @@ export default function MapView() {
             toast.error('กรุณาอนุญาตให้แอปเข้าถึงตำแหน่งที่ตั้ง')
             return
           }
-          // go online immediately; the layout poll pushes the first GPS fix
           await setOnline(true)
         } else {
-          // go offline immediately — never block on a GPS fix; attach a cached
-          // position if one is already available (instant), otherwise send none
           let coords: { latitude: number; longitude: number } | undefined
           try {
             const last = await Location.getLastKnownPositionAsync()
@@ -243,7 +250,6 @@ export default function MapView() {
     [setOnline],
   )
 
-  // scroll the bottom-sheet list so this fire's row is at the top
   const scrollToFire = useCallback(
     (fire: Fire) => {
       const index = sortedFires.findIndex((f) => f.id === fire.id)
@@ -254,6 +260,8 @@ export default function MapView() {
     [sortedFires],
   )
 
+  // Selecting/focusing a fire is disabled while offline, matching the disabled list rows and map interactions.
+  // Padding the fly-to by half the screen height keeps the marker visible above the expanded bottom sheet.
   const focusFire = useCallback(
     (fire: Fire) => {
       if (!online) return
@@ -269,6 +277,7 @@ export default function MapView() {
     [height, selectFire, online],
   )
 
+  // On success, navigates to Firespot immediately since reserving a fire is the entry point into that resolve/report flow.
   const reserve = useCallback(
     async (fire: Fire) => {
       try {
@@ -293,7 +302,6 @@ export default function MapView() {
           bookedByOther={bookedByOther}
           disabled={!online || item.status || holdingUnresolved || bookedByOther}
           online={online}
-          color={fireColor(item, heldFireId)}
           onFocus={focusFire}
           onReserve={reserve}
         />
@@ -304,7 +312,6 @@ export default function MapView() {
 
   const keyExtractor = useCallback((item: Fire) => item.id, [])
 
-  // fixed row height: no async measurement, and scrollToIndex is always exact
   const getItemLayout = useCallback(
     (_: unknown, index: number) => ({ length: ROW_HEIGHT, offset: ROW_HEIGHT * index, index }),
     [],
@@ -322,6 +329,8 @@ export default function MapView() {
         <GeoJSONSource
           id="fires"
           data={firesGeoJSON}
+          // Tapping a marker both re-centers the camera on it and scrolls the list to match, keeping map and list in sync;
+          // stopPropagation prevents the underlying Map's onPress (which deselects) from also firing.
           onPress={(e) => {
             const feature = e.nativeEvent.features[0]
             const fire = fires.find((f) => f.id === feature?.properties?.id)
@@ -335,6 +344,8 @@ export default function MapView() {
           <Layer
             type="circle"
             id="fire-circles"
+            // Color encodes fire state (resolved/held-by-me/booked-by-other/free); resolved takes precedence
+            // over held/booked since a resolved fire is no longer actionable regardless of who reserved it.
             paint={{
               'circle-color': [
                 'case',
@@ -346,6 +357,7 @@ export default function MapView() {
                 FIRE_COLORS.booked,
                 FIRE_COLORS.free,
               ],
+              // Enlarges the currently-selected marker so it's visually distinguishable from the rest.
               'circle-radius': [
                 'case',
                 ['==', ['get', 'id'], selectedFireId ?? ''],
@@ -363,14 +375,12 @@ export default function MapView() {
           />
         </GeoJSONSource>
 
-        {/* blue "you are here" puck, like Google Maps; renders once location
-            permission is granted. Placed last so it draws above the fire dots. */}
         <UserLocation animated accuracy />
       </Map>
 
       <TouchableOpacity
         className="absolute z-10 bottom-4 right-4 h-16 w-16 items-center justify-center rounded-full bg-secondary"
-        style={floatShadow}
+        style={shadows.float}
         onPress={reloadAll}
       >
         <Ionicons name="refresh" size={26} color={'#FFFFFF'} />
@@ -378,7 +388,7 @@ export default function MapView() {
 
       <TouchableOpacity
         className="absolute left-5 top-10 h-10 w-10 items-center justify-center rounded-full bg-white"
-        style={floatShadow}
+        style={shadows.float}
         onPress={recenter}
       >
         <Ionicons name="locate" size={20} color={colors.accent} />
@@ -386,7 +396,7 @@ export default function MapView() {
 
       <View
         className="absolute self-center top-10 flex-row items-center rounded-3xl bg-white px-3.5 py-1.5"
-        style={floatShadow}
+        style={shadows.float}
       >
         <View className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: online ? '#22c55e' : '#9ca3af' }} />
         <Text className="mr-2.5 text-sm font-sans-semibold text-accent">{online ? 'ออนไลน์' : 'ออฟไลน์'}</Text>
@@ -399,6 +409,7 @@ export default function MapView() {
         />
       </View>
 
+      {/* Starts collapsed to a thin handle (index 0, 5%) so the map is the focus until a fire is picked or the user drags it open (60%). */}
       <BottomSheet
         ref={bottomSheetRef}
         index={0}
@@ -440,7 +451,6 @@ export default function MapView() {
           maxToRenderPerBatch={12}
           initialNumToRender={12}
           removeClippedSubviews
-          // contentContainerStyle={{ paddingBottom: 24 }}
           ListEmptyComponent={<Text className="py-6 text-center font-head text-gray-400">No active fires</Text>}
         />
       </BottomSheet>

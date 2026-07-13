@@ -1,24 +1,26 @@
 import { api } from '@/lib/api'
+import { apiErrorMessage } from '@/lib/apiError'
 import { toast } from '@/lib/toastStore'
 import { useAuthSession } from '@/providers/AuthProvider'
+import LabeledInput from '@/components/LabeledInput'
+import SaveButton from '@/components/SaveButton'
 import { useState } from 'react'
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-function errMsg(e: any, fallback: string) {
-  const d = e?.response?.data?.detail
-  return typeof d === 'string' ? d : fallback
-}
-
+/**
+ * Account settings screen: edits profile fields (name, division) and
+ * optionally changes the password in a single combined save.
+ *
+ * @returns the profile edit form; local field state is seeded from the current session and not kept in sync with later external updates
+ */
 export default function Account() {
   const { user, refresh } = useAuthSession()
   const [name, setName] = useState(user?.name ?? '')
@@ -28,6 +30,8 @@ export default function Account() {
   const [passwordHidden, setPasswordHidden] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
 
+  // Password fields are optional: only validated/submitted if the user typed something,
+  // so leaving them blank keeps the existing password untouched.
   const saveAll = async () => {
     if (!name.trim()) {
       toast.error('กรุณากรอกชื่อ')
@@ -45,6 +49,7 @@ export default function Account() {
     }
     setBusy('save')
     try {
+      // Profile and password are separate endpoints; profile always saves, password only when provided.
       await api.patch('/officers/me/profile', { name: name.trim(), division: division.trim() })
       if (password) {
         await api.patch('/users/me', { password })
@@ -54,7 +59,7 @@ export default function Account() {
       await refresh()
       toast.success('บันทึกข้อมูลแล้ว')
     } catch (e) {
-      toast.error(errMsg(e, 'ไม่สามารถบันทึกข้อมูลได้'))
+      toast.error(apiErrorMessage(e, 'ไม่สามารถบันทึกข้อมูลได้'))
     } finally {
       setBusy(null)
     }
@@ -70,11 +75,13 @@ export default function Account() {
           <View className="gap-4">
             <Text className="text-xl font-sans-semibold text-card-foreground">ข้อมูลบัญชี</Text>
 
-            <LabeledInput label="ชื่อ - นามสกุล" value={name} onChangeText={setName} autoCapitalize="words" autoCorrect={false} />
-            <LabeledInput label="สังกัด" value={division} onChangeText={setDivision} autoCorrect={false} />
+            <LabeledInput label="ชื่อ - นามสกุล" boxClassName="px-3 py-2" inputClassName="text-lg" value={name} onChangeText={setName} autoCapitalize="words" autoCorrect={false} />
+            <LabeledInput label="สังกัด" boxClassName="px-3 py-2" inputClassName="text-lg" value={division} onChangeText={setDivision} autoCorrect={false} />
 
             <LabeledInput
               label="รหัสผ่านใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
+              boxClassName="px-3 py-2"
+              inputClassName="text-lg"
               value={password}
               onChangeText={setPassword}
               secureTextEntry={passwordHidden}
@@ -83,6 +90,8 @@ export default function Account() {
             />
             <LabeledInput
               label="ยืนยันรหัสผ่านใหม่"
+              boxClassName="px-3 py-2"
+              inputClassName="text-lg"
               value={confirm}
               onChangeText={setConfirm}
               secureTextEntry={passwordHidden}
@@ -97,43 +106,5 @@ export default function Account() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
-  )
-}
-
-// Filled, rounded field with a small label pinned to its top-left corner.
-function FieldBox({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View className="rounded-2xl bg-background/40 px-3 py-2">
-      <Text className="text-sm font-head text-muted-foreground">{label}</Text>
-      {children}
-    </View>
-  )
-}
-
-// A FieldBox wrapping a TextInput — the input is transparent and unpadded so the
-// box supplies the background, padding, and the top-left label.
-function LabeledInput({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
-  return (
-    <FieldBox label={label}>
-      <TextInput
-        placeholderTextColor="#9ca3af"
-        {...props}
-        className="p-0 text-lg text-card-foreground"
-        // Fixed height + no Android font padding so the box never reflows while typing.
-        style={{ height: 34, includeFontPadding: false, textAlignVertical: 'center' }}
-      />
-    </FieldBox>
-  )
-}
-
-function SaveButton({ label, onPress, loading }: { label: string; onPress: () => void; loading: boolean }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={loading}
-      className={`items-center rounded-2xl py-4 ${loading ? 'bg-gray-400' : 'bg-primary'}`}
-    >
-      {loading ? <ActivityIndicator color="#fff" /> : <Text className="text-base font-sans-semibold text-white">{label}</Text>}
-    </Pressable>
   )
 }

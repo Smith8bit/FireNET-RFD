@@ -41,3 +41,7 @@ desktop.ini
 backend/app/database/seed_mock_*.py
 /.claude
 .claude/settings.json
+.claude/settings.json
+PRODUCT.md
+test/test_export.py
+test/test_sniff_video.py

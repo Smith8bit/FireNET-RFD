@@ -4,6 +4,16 @@ import { ActivityIndicator, Pressable, Text, TouchableOpacity, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuthSession } from '@/providers/AuthProvider'
 
+/**
+ * Holding screen for accounts awaiting admin verification.
+ *
+ * Verification happens out-of-band (an admin action elsewhere), so this
+ * screen has no push/poll mechanism of its own — the user manually re-checks
+ * via `onRefresh`, which re-fetches the session and lets the `Redirect`
+ * below fire once `is_verified` flips to true.
+ *
+ * @returns a `Redirect` if the session is missing or already verified, otherwise the waiting UI
+ */
 export default function Pending() {
   const { user, refresh, signOut } = useAuthSession()
   const [checking, setChecking] = useState(false)
@@ -22,7 +32,6 @@ export default function Pending() {
 
   return (
     <SafeAreaView className="flex-1 bg-secondary">
-      {/* Centered status card — large rounded border, no brand header. */}
       <View className="flex-1 items-center justify-center p-6">
         <View className="w-full justify-center gap-4 rounded-3xl bg-foreground p-6">
 

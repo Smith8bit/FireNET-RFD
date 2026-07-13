@@ -9,14 +9,22 @@ import Animated, {
   useReducedMotion,
 } from 'react-native-reanimated'
 
-// A bottom sheet that slides in AND out. React Native's <Modal> unmounts its
-// children the instant `visible` flips false, so a reanimated `exiting` on the
-// card never gets to play — the sheet just pops away. This keeps the Modal
-// mounted until the slide-out finishes (the exit callback owns the real unmount),
-// so open and close feel symmetric. Backdrop fades in step with the card.
-//
-// ponytail: exit-then-unmount state machine; the ceiling is one sheet at a time
-// (fine — it's a modal). Reach for @gorhom/bottom-sheet only if these need drag.
+/**
+ * Bottom sheet modal that slides up on open and slides down on close.
+ *
+ * `visible` (controlled by the parent) and `mounted` (local) are deliberately
+ * decoupled: when `visible` flips to false we must keep the RN `Modal`
+ * mounted long enough for the exit animation to play, then unmount on the
+ * animation's completion callback. Without this split the modal would
+ * disappear instantly instead of sliding out.
+ *
+ * @param visible - whether the sheet should be open; false triggers the exit animation rather than an immediate unmount
+ * @param onClose - called when the backdrop is pressed or the sheet is dismissed via hardware back (Android)
+ * @param dismissable - when false, backdrop/back-button dismissal is ignored (e.g. while a submit is in-flight); defaults to true
+ * @param sheetStyle - style forwarded to the sheet container, e.g. to reserve space for the keyboard
+ * @param children - sheet content
+ * @returns null while unmounted (before first open, or after the exit animation finishes)
+ */
 export default function SlideUpModal({
   visible,
   onClose,
@@ -26,10 +34,11 @@ export default function SlideUpModal({
 }: {
   visible: boolean
   onClose: () => void
-  dismissable?: boolean // false while submitting: swallow backdrop taps + back button
+  dismissable?: boolean
   sheetStyle?: StyleProp<ViewStyle>
   children: React.ReactNode
 }) {
+  // Tracks whether the underlying RN Modal is in the tree; stays true during the exit animation.
   const [mounted, setMounted] = useState(visible)
   const reduced = useReducedMotion()
 
@@ -39,10 +48,13 @@ export default function SlideUpModal({
 
   if (!mounted) return null
 
+  // Respect the OS "reduce motion" setting by collapsing the animation to effectively instant.
   const dur = reduced ? 1 : 250
   const requestClose = () => dismissable && onClose()
 
   return (
+    // `visible` is always true here (Modal itself is only rendered while `mounted`);
+    // RN's own `visible` prop is bypassed so we control show/hide via our own animations instead.
     <Modal transparent visible animationType="none" onRequestClose={requestClose}>
       <View className="flex-1 justify-end">
         {visible && (
@@ -58,6 +70,7 @@ export default function SlideUpModal({
               entering={SlideInDown.duration(dur)}
               exiting={SlideOutDown.duration(dur).withCallback((finished) => {
                 'worklet'
+                // Runs on the UI thread; hop back to JS to unmount only once the slide-out actually completes.
                 if (finished) runOnJS(setMounted)(false)
               })}
               className="rounded-t-3xl bg-foreground p-5"

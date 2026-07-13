@@ -1,11 +1,30 @@
 import { useMapSelection } from '../lib/stateStore'
 import { formatDate, formatTime } from '../lib/datetime'
 
+/**
+ * Card
+ * Compact list-row representation of a single fire, shown in the sidebar
+ * list that mirrors the map's fire markers. Hovering/clicking a card syncs
+ * the shared `useMapSelection` store so the map can highlight/fly to the
+ * same fire (and vice versa).
+ *
+ * @param {object} props
+ * @param {string} props.Title - fire name/title
+ * @param {string} props.Area - area/land-type label (e.g. forest, farmland)
+ * @param {string|Date} props.Date - detection date, passed through to `formatDate`/`formatTime`
+ * @param {string|Date} props.Time - detection time, passed through to `formatDate`/`formatTime`
+ * @param {string|number} props.id - fire identifier used for hover/focus selection
+ * @param {boolean} props.status - true when the fire has been resolved/extinguished
+ * @param {boolean} props.booked - true when an officer has already been assigned
+ * @returns {JSX.Element} a clickable row summarizing the fire's status and details
+ *
+ * Status precedence is resolved -> booked -> free (unclaimed), which drives
+ * both the Thai status label and the row's background color.
+ */
 export default function Card({ Title, Area, Date, Time, id, status, booked }) {
     const setHovered = useMapSelection((s) => s.setHovered)
     const setFocused = useMapSelection((s) => s.setFocused)
 
-    // same states/colors as the mobile fire list
     const label = status ? 'ดับแล้ว' : booked ? 'ถูกจอง' : 'ลุกไหม้'
     const free = !status && !booked
 

@@ -1,7 +1,24 @@
 import { useEffect } from 'react'
 
-// Presentational toast card. Positioning + stacking are owned by <Toaster>;
-// this just renders one message and self-dismisses after `duration`.
+/**
+ * Toast
+ * Single self-dismissing notification banner. Owns its own auto-close timer
+ * so the parent (`Toaster`) only needs to manage the list of active toasts,
+ * not their lifetimes.
+ *
+ * @param {object} props
+ * @param {string} props.message - text to display; an empty/falsy message renders nothing
+ * @param {'success'|'error'|'info'} [props.type='success'] - visual style and ARIA role/live-region urgency
+ * @param {() => void} props.onClose - called when the toast should be removed (timeout or manual close)
+ * @param {number} [props.duration=3000] - milliseconds before auto-dismiss
+ * @returns {JSX.Element|null} the toast banner, or null while there is no message
+ *
+ * Edge cases: the effect bails out early (no timer) when `message` is falsy,
+ * and always clears the previous timeout on re-render/unmount to avoid stale
+ * `onClose` calls firing after the toast has already changed or closed.
+ * `role`/`aria-live` switch to assertive for errors so screen readers
+ * interrupt for them, but stay polite for success/info.
+ */
 export default function Toast({ message, type = 'success', onClose, duration = 3000 }) {
   useEffect(() => {
     if (!message) return
