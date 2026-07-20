@@ -85,9 +85,8 @@ Follow steps 0–5 once. After that, `.\all-start.ps1` (Windows) starts everythi
 in one command — but it does **not** create the two config files from steps 1
 and 2, so it will fail on a fresh clone until you have done them.
 
-You can have the web console running and logged in after steps 0–4, but the
-setup isn't done until step 5 — the mobile app is part of this system, not an
-add-on, and it needs the most extra setup of the three components.
+Steps 0–4 get the web console running and logged in; step 5 adds the mobile
+app, which needs the most extra setup.
 
 ### Prerequisites
 
@@ -97,14 +96,11 @@ add-on, and it needs the most extra setup of the three components.
 | Node.js | 20.19+, 22.13+, or 24+ | Not just "20+" — Vite 8 needs `^20.19 \|\| >=22.12` and ESLint 10 needs `^20.19 \|\| ^22.13 \|\| >=24`, so 20.0–20.18, 21.x, and 22.0–22.12 all fail. Tested on 24. |
 | Docker | any recent | Runs Postgres/PostGIS + MinIO. Docker Desktop must be *running*, not just installed. |
 | Git | any | |
-| JDK | 17+ | **Step 5 only.** Needed by Gradle to build the app, and supplies `keytool` for the release keystore. Tested on Temurin 21. Android Studio bundles one. |
-| Android Studio + SDK | any recent | **Step 5 only.** Provides the Android SDK, `adb`, an emulator, and the `build-tools` that supply `aapt2` and `apksigner`. Set `ANDROID_HOME` to the SDK path — `publish-apk.ps1` uses it to verify a built APK, and warns (rather than fails) if it can't find it. |
+| JDK | 17+ | **Step 5 only.** Gradle builds with it; also supplies `keytool`. Android Studio bundles one. Tested on Temurin 21. |
+| Android Studio + SDK | any recent | **Step 5 only.** Provides the SDK, `adb`, an emulator, and the `build-tools` holding `aapt2`/`apksigner`. Set `ANDROID_HOME` — `publish-apk.ps1` only *warns* if it's missing, silently skipping its version check. |
 
 No PostGIS install is needed — Docker provides it. If you'd rather use your own
 Postgres it must have the `postgis` and `ltree` extensions available.
-
-The last two rows matter only for the mobile app (step 5). Steps 0–4 — backend,
-database, and web console — need just the first four.
 
 ### 0. Clone
 
@@ -135,10 +131,9 @@ the file to exist. The defaults work as-is:
 If you change the Postgres password, update `DATABASE_URL` in step 2; if you
 change the MinIO password, update `S3_SECRET_KEY` to the same value.
 
-> **These two files have no cross-check.** A mismatch doesn't fail here or at
-> backend startup — it shows up later as every API request 500ing (Postgres)
-> or evidence uploads failing (MinIO). If you change a password in one file,
-> immediately update the matching value in the other.
+> **Nothing cross-checks these two files.** A mismatch surfaces much later as
+> every API request 500ing (Postgres) or uploads failing (MinIO) — never as a
+> startup error. Change one, change the other.
 
 Check both containers are up before continuing:
 
@@ -223,10 +218,9 @@ Open <http://localhost:5173/firenet/> and sign in with:
 - **Username** — `adminRFD` (or your `INITIAL_SUPERUSER_USERNAME`)
 - **Password** — the `INITIAL_SUPERUSER_PASSWORD` you set in step 2
 
-That's a working local install of the backend and web console. If the login
-form clears and returns you to itself, `COOKIE_SECURE` is still `true` — see
-step 2. Continue to step 5 for the mobile app — it's the third required piece,
-not an add-on.
+That's a working backend and web console. If the login form clears and returns
+you to itself, `COOKIE_SECURE` is still `true` — see step 2. Step 5 adds the
+mobile app.
 
 ### 5. Mobile app
 
@@ -267,15 +261,10 @@ along the way. It creates the venv and `node_modules` if they're missing, but it
 does **not** create `docker-compose.yml` or `backend/.env`, so run it only after
 steps 1 and 2.
 
-> **It overwrites `mobile/.env` wholesale**, discarding every other line in that
-> file — comments, and any production `EXPO_PUBLIC_API_URL` you had there.
-> That's correct for local dev, but `EXPO_PUBLIC_API_URL` is baked into the APK
-> at build time, so running `all-start.ps1` and then `publish-apk.ps1` in the
-> same session ships officers a build that points at *your laptop's LAN IP*.
-> Nothing catches this: the app compiles, installs, passes the version check,
-> and simply can't reach the API from outside your network. **Re-set
-> `mobile/.env` to the production URL before any release build** — see
-> [Building and releasing the mobile app](#building-and-releasing-the-mobile-app).
+> **It overwrites `mobile/.env` wholesale**, discarding comments and any
+> production URL in it. Fine for dev — but that value is baked into the APK, so
+> reset it before any
+> [release build](#building-and-releasing-the-mobile-app).
 
 ### Troubleshooting
 
@@ -286,7 +275,7 @@ steps 1 and 2.
 | Login succeeds then immediately returns to the login page | `COOKIE_SECURE=true` over HTTP — step 2. |
 | Blank page / 404 at `http://localhost:5173` | Wrong URL. The dev server is based at `/firenet` — use <http://localhost:5173/firenet/>. |
 | `firenet-minio` exits right after `docker compose up` | MinIO root password shorter than 8 characters. Check `MINIO_ROOT_PASSWORD` in `docker-compose.yml`, and keep `S3_SECRET_KEY` equal to it. `docker compose logs minio` confirms it. |
-| `docker compose up` fails: `Conflict. The container name "/firenet-postgres" is already in use` | `docker-compose.yml` pins fixed container names, so any other Compose project (an old clone, a renamed/moved folder, an earlier experiment) that created a container with the same name blocks this one. `docker ps -a` to find it, `docker rm firenet-postgres firenet-minio` to free the names (only once you're sure you don't need whatever they held), then retry. |
+| `docker compose up` fails: `Conflict. The container name "/firenet-postgres" is already in use` | Container names are pinned, so an old clone or moved folder still holding them blocks this one. Find it with `docker ps -a`, then `docker rm firenet-postgres firenet-minio` (check you don't need their data first). |
 | `UnicodeEncodeError: 'charmap' codec can't encode character` during seeding | Fixed — the seed script no longer prints non-ASCII. If you see it on an older checkout, run with `PYTHONIOENCODING=utf-8`. A crash here leaves the DB **half-seeded**: run `docker compose down -v && docker compose up -d` to wipe it before retrying, or the retry will skip already-created rows. |
 | API starts but every request 500s on the database | Containers not up, or `DATABASE_URL` doesn't match your compose credentials. |
 | Uploads fail on fire resolution | `S3_SECRET_KEY` ≠ `MINIO_ROOT_PASSWORD`. MinIO applies its root password on *every* start, so these must agree. |
@@ -489,10 +478,9 @@ Two rules govern every release:
   downgrade and refuses it.
 - **`mobile/.env` must point at production before you build.**
   `EXPO_PUBLIC_API_URL` is compiled into the APK, and `all-start.ps1` rewrites
-  that file to your machine's LAN IP every time it runs. Build after a dev
-  session without resetting it and officers get an APK that can only reach a
-  laptop on your LAN. Check the file, don't assume — it is the one release
-  input nothing in the pipeline validates.
+  it to your LAN IP on every run — so building after a dev session ships
+  officers an app that can only reach your laptop. Nothing in the pipeline
+  validates this one. Check the file.
 
 ### Releasing
 
@@ -502,11 +490,9 @@ From the repo root:
 .\publish-apk.ps1 -VersionCode 2 -VersionName 1.0.1
 ```
 
-> **On a fresh clone, run `npx expo prebuild --platform android` in `mobile/`
-> first** (or pass `-Prebuild`). `mobile/android/` is git-ignored and therefore
-> absent after cloning, and step 1 below stamps the version straight into
-> `mobile/android/app/build.gradle` — so without it the script aborts on its
-> very first action with a missing-file error, before building anything.
+> **On a fresh clone, prebuild first** — `npx expo prebuild --platform android`
+> in `mobile/`, or pass `-Prebuild`. `mobile/android/` is git-ignored, so step 1
+> below has no `build.gradle` to stamp and the script aborts immediately.
 
 That single command:
 
@@ -552,11 +538,10 @@ scp backend/app_releases/firenet-1.0.1-2.apk backend/app_releases/android-latest
 ```
 
 No restart is needed: `backend/app_releases` is a live read-only bind mount into
-the API container. Commit the version bump in `mobile/app.json` so the repo
-matches what shipped — that file is the source of truth. `publish-apk.ps1` also
-stamps `mobile/android/app/build.gradle`, but **that one cannot be committed**:
-`mobile/android/` is git-ignored and regenerated by `expo prebuild` from
-`app.json`. Committing `app.json` alone is correct and sufficient.
+the API container. Commit the version bump in `mobile/app.json` — that alone is
+correct and sufficient. `publish-apk.ps1` also stamps
+`mobile/android/app/build.gradle`, but that file is git-ignored and regenerated
+from `app.json`, so it can't be committed.
 
 Verify without pulling the whole ~160 MB:
 
