@@ -45,8 +45,11 @@ param(
   # check still runs, so a stale APK is rejected rather than published.
   [switch]$SkipBuild,
   # Regenerate the native android/ project from app.json before building.
-  # Off by default: prebuild rewrites files under android/, and this repo checks
-  # that directory in. Use it after changing plugins/permissions in app.json.
+  # Off by default because prebuild is slow and a populated android/ is the
+  # normal case. NOTE: android/ is git-IGNORED (mobile/.gitignore), so a fresh
+  # clone has none and the stamping step below fails on the missing
+  # build.gradle — run `npx expo prebuild --platform android` once, or pass
+  # this switch. Also needed after changing plugins/permissions in app.json.
   [switch]$Prebuild,
   # Path to the signed release APK. Defaults to the standard Gradle output.
   [string]$ApkPath = "mobile/android/app/build/outputs/apk/release/app-release.apk",

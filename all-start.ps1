@@ -51,5 +51,5 @@ Start-Process powershell -ArgumentList '-NoExit', '-Command', "Set-Location '$ro
 Write-Host ""
 Write-Host "All components launching in separate windows:" -ForegroundColor Green
 Write-Host "  backend : http://${ip}:8000  (liveness check: http://${ip}:8000/)"
-Write-Host "  web     : http://localhost:5173"
+Write-Host "  web     : http://localhost:5173/firenet/  (the app is based at /firenet; the bare root 404s)"
 Write-Host "  mobile  : Expo dev server (open in a dev build - Expo Go lacks this app's native modules)"
