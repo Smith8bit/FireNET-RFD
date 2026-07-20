@@ -81,27 +81,51 @@ fireNet/
 
 ## Getting started (local development)
 
+Follow steps 0–4 once. After that, `.\all-start.ps1` (Windows) starts everything
+in one command — but it does **not** create the two config files from steps 1
+and 2, so it will fail on a fresh clone until you have done them.
+
+You can have the web console running and logged in after steps 0–4; the mobile
+app (step 5) is optional and needs the most extra setup.
+
 ### Prerequisites
 
-- Python 3.13+
-- Node.js 20+
-- Docker (for Postgres/PostGIS + MinIO), or your own PostGIS-enabled Postgres
+| Tool | Version | Notes |
+|------|---------|-------|
+| Python | 3.13+ | Tested on 3.14. `python --version` |
+| Node.js | 20.19+, 22.13+, or 24+ | Not just "20+" — Vite 8 needs `^20.19 \|\| >=22.12` and ESLint 10 needs `^20.19 \|\| ^22.13 \|\| >=24`, so 20.0–20.18, 21.x, and 22.0–22.12 all fail. Tested on 24. |
+| Docker | any recent | Runs Postgres/PostGIS + MinIO. Docker Desktop must be *running*, not just installed. |
+| Git | any | |
 
-### Quick start (Windows)
+No PostGIS install is needed — Docker provides it. If you'd rather use your own
+Postgres it must have the `postgis` and `ltree` extensions available.
 
-```powershell
-# Brings up Postgres + MinIO (docker), the FastAPI backend, the Vite web dev
-# server, and the Expo dev server — pointing mobile at this machine's LAN IP.
-.\all-start.ps1            # add -Fresh to drop & recreate the database
+### 0. Clone
+
+```bash
+git clone https://github.com/Smith8bit/FireNET-RFD.git
+cd FireNET-RFD
 ```
 
-The rest of this section is the manual, per-service equivalent.
-
 ### 1. Infrastructure (Postgres + MinIO)
+
+From the repo root:
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml   # gitignored; edit creds if needed
 docker compose up -d        # db on :5432, MinIO on :9000 (console :9001)
+```
+
+`docker-compose.yml` is git-ignored on purpose, so this copy is a **required**
+step, not an optional one — `backend/start.ps1` and `all-start.ps1` both expect
+the file to exist. Defaults are `firenet` / `firenet` / `firenet` for the
+Postgres user, password, and database; if you change them, change
+`DATABASE_URL` and `S3_SECRET_KEY` in step 2 to match.
+
+Check both containers are up before continuing:
+
+```bash
+docker compose ps           # firenet-postgres and firenet-minio should be "running"
 ```
 
 ### 2. Backend
@@ -109,23 +133,56 @@ docker compose up -d        # db on :5432, MinIO on :9000 (console :9001)
 ```bash
 cd backend
 python -m venv venv
-# Windows: .\venv\Scripts\activate     macOS/Linux: source venv/bin/activate
+# Windows:      .\venv\Scripts\activate
+# macOS/Linux:  source venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Configure environment: copy the template to .env and fill in real values
-copy .env.example .env             # PowerShell / cmd
-# cp .env.example .env              # macOS/Linux
+Now create `backend/.env` — the API **will not start without it**. It has no
+fallback values for secrets; a missing one is a pydantic `ValidationError` at
+boot naming the fields it wants.
 
-# Run the API (Swagger at http://localhost:8000/docs)
+```bash
+cp .env.example .env        # macOS/Linux
+# copy .env.example .env     # PowerShell / cmd
+```
+
+Then edit `backend/.env` and make these three changes:
+
+| Line | Change it to | Why |
+|------|--------------|-----|
+| `JWT_SECRET=change-me-to-a-long-random-string` | a long random string — `python -c "import secrets; print(secrets.token_urlsafe(48))"` | Signs your auth cookie. |
+| `INITIAL_SUPERUSER_PASSWORD=change-me` | any password you'll remember | This is the account you log in with in step 4. |
+| `COOKIE_SECURE=true` | **`false`** | The template defaults to production. Left `true`, the browser silently discards the auth cookie over plain `http://localhost` — login *appears* to succeed and then every page bounces you back to the login screen. |
+
+`S3_SECRET_KEY=change-me` also has no default, but the value only has to match
+`MINIO_ROOT_PASSWORD` in your `docker-compose.yml` — so set it to `firenet` if
+you kept the defaults from step 1.
+
+Start the API:
+
+```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-On first boot the app creates the schema, seeds the bootstrap superuser
-(`INITIAL_SUPERUSER_USERNAME` / `INITIAL_SUPERUSER_PASSWORD`), and — if
-`SEED_REGIONAL_ACCOUNTS=true` — provisions one dispatcher per region with random
-passwords written to a gitignored `seeded_accounts.csv` at the repo root.
+Open <http://localhost:8000/> — `{"service":"firenet","status":"ok"}` means it
+booted. (There is no Swagger UI: `/docs`, `/redoc`, and `/openapi.json` are
+disabled in `app/main.py` so the schema isn't exposed in production.)
+
+On first boot the app creates the schema, creates the MinIO bucket, seeds the
+region tree, and seeds the bootstrap superuser
+(`INITIAL_SUPERUSER_USERNAME`, default `adminRFD`, with the password you just
+set). With `SEED_REGIONAL_ACCOUNTS=true` it also provisions one dispatcher per
+region with random passwords, written to a git-ignored `seeded_accounts.csv` at
+the repo root — leave it `false` for a first run.
+
+The hourly hotspot ingest is on by default and points at the department's real
+public feed, so live firespots should appear on the map within a minute or two
+of the first boot. Set `INGEST_ENABLED=false` if you'd rather work offline.
 
 ### 3. Web console
+
+In a second terminal, from the repo root:
 
 ```bash
 cd web
@@ -133,15 +190,70 @@ npm install
 npm run dev                         # Vite dev server at http://localhost:5173
 ```
 
-`http://localhost:5173` is already allowed by the backend's default CORS config.
+The web app needs no configuration — `web/.env.development` is committed and
+already points at `http://localhost:8000`, and that origin is in the backend's
+default `CORS_ORIGINS`.
 
-### 4. Mobile app
+### 4. First login
+
+Open <http://localhost:5173> and sign in with:
+
+- **Username** — `adminRFD` (or your `INITIAL_SUPERUSER_USERNAME`)
+- **Password** — the `INITIAL_SUPERUSER_PASSWORD` you set in step 2
+
+That's a working local install. If the login form clears and returns you to
+itself, `COOKIE_SECURE` is still `true` — see step 2.
+
+### 5. Mobile app (optional)
+
+The mobile app needs more than `npm install`, and **Expo Go will not work** —
+the app depends on native modules (React Native Firebase, MapLibre) that aren't
+in the Expo Go runtime. You need a dev build on a real device or emulator,
+which means Android Studio + a JDK.
+
+You also need a **`mobile/google-services.json`** from a Firebase project.
+It's git-ignored (it holds project keys), so a fresh clone doesn't have one and
+`app.json` references it — without it the native build fails. Get it from the
+project's Firebase console, or create your own Firebase project with the package
+name `com.sitarthon.firenetmobile`.
 
 ```bash
 cd mobile
 npm install
-npx expo start                      # point the app's .env at your machine's LAN IP
+cp .env.example .env                # then set EXPO_PUBLIC_API_URL to your LAN IP
+npx expo prebuild --platform android   # mobile/android/ is generated, not committed
+npm run android                     # builds and installs the dev client
 ```
+
+`EXPO_PUBLIC_API_URL` must be your machine's **LAN IP**, not `localhost` — on a
+phone, `localhost` is the phone. For example `http://192.168.1.42:8000`.
+(`all-start.ps1` detects and writes this for you.)
+
+### Everyday startup (Windows)
+
+Once steps 0–5 are done, one command replaces them:
+
+```powershell
+.\all-start.ps1            # add -Fresh to drop & recreate the database
+```
+
+It brings up the Docker containers, then opens three windows: the API, the Vite
+dev server, and Expo — rewriting `mobile/.env` to this machine's current LAN IP
+along the way. It creates the venv and `node_modules` if they're missing, but it
+does **not** create `docker-compose.yml` or `backend/.env`, so run it only after
+steps 1 and 2.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---------|-------|
+| `ValidationError: JWT_SECRET Field required` at API startup | No `backend/.env` — step 2. |
+| `no configuration file provided` / compose errors from `start.ps1` | No `docker-compose.yml` — step 1. |
+| Login succeeds then immediately returns to the login page | `COOKIE_SECURE=true` over HTTP — step 2. |
+| API starts but every request 500s on the database | Containers not up, or `DATABASE_URL` doesn't match your compose credentials. |
+| Uploads fail on fire resolution | `S3_SECRET_KEY` ≠ `MINIO_ROOT_PASSWORD`. MinIO applies its root password on *every* start, so these must agree. |
+| Map is empty | Normal before the first ingest completes; check the API log for the ingest job, or that `INGEST_ENABLED` is true. |
+| Mobile app can't reach the API | `EXPO_PUBLIC_API_URL` is `localhost` instead of your LAN IP, or a firewall is blocking port 8000. |
 
 ## Configuration
 
@@ -184,7 +296,7 @@ Every command is run from the directory shown in the first column.
 
 | Command | What it does |
 |---------|--------------|
-| `uvicorn app.main:app --reload --port 8000` | Run the API with auto-reload. Swagger at `/docs`. |
+| `uvicorn app.main:app --reload --port 8000` | Run the API with auto-reload. Liveness check at `/`; there is no `/docs` — the OpenAPI endpoints are disabled. |
 | `.\start.ps1` | Starts the Postgres container (creating it if needed), waits for it to accept connections, then runs the API. |
 | `.\start.ps1 -Fresh` | Same, after dropping and recreating the database. |
 | `.\reset.ps1` | `docker compose down -v && up -d` — wipes the DB volume and brings the containers back. Destroys all local data. |
@@ -203,10 +315,10 @@ Every command is run from the directory shown in the first column.
 
 | Command | What it does |
 |---------|--------------|
-| `npx expo start` | Expo dev server. Point `mobile/.env` at your machine's LAN IP so the device can reach the API. |
+| `npx expo start` | Expo dev server. Point `mobile/.env` at your machine's LAN IP so the device can reach the API. Requires a dev build — Expo Go can't load this app's native modules. |
 | `npm run android` | `expo run:android` — build and launch the dev client on a connected device/emulator. |
 | `npm run lint` | ESLint over the app. |
-| `npx expo prebuild --platform android` | Regenerate the native `android/` project from `app.json`. Needed after changing plugins or permissions; `android/` is checked in, so review the diff. |
+| `npx expo prebuild --platform android` | Generate the native `android/` project from `app.json`. `android/` is git-ignored, so this is required once on a fresh clone, and again after changing plugins or permissions. |
 | `cd android && .\gradlew.bat assembleRelease` | Build a signed release APK by hand. Prefer `publish-apk.ps1`, which also stamps and verifies the version. |
 
 ### Production server
@@ -229,7 +341,8 @@ Two rules govern every release:
 - **Same keystore, always.** Every APK must be signed with
   `mobile/firenet-release.keystore` (credentials in `~/.gradle/gradle.properties`
   as `FIRENET_UPLOAD_*`). Android refuses an over-the-top install from a
-  different key.
+  different key. The keystore is git-ignored and held by the maintainers — a
+  fresh clone can build debug/dev builds but not a publishable release.
 - **`versionCode` only ever increases.** Android treats a lower code as a
   downgrade and refuses it.
 
