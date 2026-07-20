@@ -1,0 +1,45 @@
+PUT THE FCM SERVICE-ACCOUNT JSON IN THIS FOLDER (backend/)
+===========================================================
+
+WHAT
+    A Firebase service-account key (JSON) for the FireNET Firebase project.
+    This is the *server* credential used to SEND push notifications. It is not
+    the same file as mobile/google-services.json (that one is the client config).
+
+WHERE TO GET IT
+    Firebase console -> Project settings -> Service accounts
+    -> "Generate new private key". Downloads a file named something like:
+
+        tfms-fcm-firebase-adminsdk-fbsvc-<hash>.json
+
+HOW TO INSTALL IT
+    1. Drop the .json file in this folder (backend/).
+    2. Point backend/.env at it, by filename:
+
+           FCM_CREDENTIALS_FILE=tfms-fcm-firebase-adminsdk-fbsvc-<hash>.json
+
+       The path is resolved relative to backend/ locally, and relative to /app
+       in the container (the Dockerfile COPYs this folder to /app), so a bare
+       filename works in both places.
+
+FOR PRODUCTION, ALSO NOTE
+    infra/compose.yaml mounts this file by its EXACT filename:
+
+        ../backend/tfms-fcm-firebase-adminsdk-fbsvc-8bd030a43a.json:/secrets/fcm.json:ro
+
+    If your file is named differently, edit that line too. Docker silently
+    creates an empty DIRECTORY at the source path when the file is missing,
+    which is confusing to debug — check the path before `docker compose up`.
+
+WHAT HAPPENS WITHOUT IT
+    Nothing crashes. FCM_CREDENTIALS_FILE defaults to empty, and push sends are
+    logged and skipped. The rest of the app works normally, so this file is
+    optional for local development.
+
+DO NOT COMMIT IT
+    Already covered by .gitignore (`*-firebase-adminsdk-*.json`). This is a
+    live credential that can send push notifications to every installed app.
+
+LEAVE THIS .TXT IN PLACE
+    It is tracked in git as a marker for the next person setting up. Deleting it
+    locally just shows up as a pending deletion in your working tree.

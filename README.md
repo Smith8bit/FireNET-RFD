@@ -118,9 +118,16 @@ docker compose up -d        # db on :5432, MinIO on :9000 (console :9001)
 
 `docker-compose.yml` is git-ignored on purpose, so this copy is a **required**
 step, not an optional one — `backend/start.ps1` and `all-start.ps1` both expect
-the file to exist. Defaults are `firenet` / `firenet` / `firenet` for the
-Postgres user, password, and database; if you change them, change
-`DATABASE_URL` and `S3_SECRET_KEY` in step 2 to match.
+the file to exist. The defaults work as-is:
+
+| Setting | Default | Constraint |
+|---------|---------|------------|
+| Postgres user / password / db | `firenet` / `firenet` / `firenet` | — |
+| MinIO user | `firenet` | — |
+| MinIO password | `firenet123` | **8 characters minimum** — MinIO refuses to start below that, and the container dies at boot with no obvious hint. |
+
+If you change the Postgres password, update `DATABASE_URL` in step 2; if you
+change the MinIO password, update `S3_SECRET_KEY` to the same value.
 
 Check both containers are up before continuing:
 
@@ -155,9 +162,9 @@ Then edit `backend/.env` and make these three changes:
 | `INITIAL_SUPERUSER_PASSWORD=change-me` | any password you'll remember | This is the account you log in with in step 4. |
 | `COOKIE_SECURE=true` | **`false`** | The template defaults to production. Left `true`, the browser silently discards the auth cookie over plain `http://localhost` — login *appears* to succeed and then every page bounces you back to the login screen. |
 
-`S3_SECRET_KEY=change-me` also has no default, but the value only has to match
-`MINIO_ROOT_PASSWORD` in your `docker-compose.yml` — so set it to `firenet` if
-you kept the defaults from step 1.
+`S3_SECRET_KEY` is already set to `firenet123`, matching the MinIO default from
+step 1 — leave it alone unless you changed that password. It must stay at least
+8 characters.
 
 Start the API:
 
@@ -187,8 +194,12 @@ In a second terminal, from the repo root:
 ```bash
 cd web
 npm install
-npm run dev                         # Vite dev server at http://localhost:5173
+npm run dev                         # Vite dev server at http://localhost:5173/firenet/
 ```
+
+**Open <http://localhost:5173/firenet/>, not `http://localhost:5173`.**
+`vite.config.js` sets `base: '/firenet'` to match the production path prefix, so
+the bare root serves nothing useful.
 
 The web app needs no configuration — `web/.env.development` is committed and
 already points at `http://localhost:8000`, and that origin is in the backend's
@@ -196,7 +207,7 @@ default `CORS_ORIGINS`.
 
 ### 4. First login
 
-Open <http://localhost:5173> and sign in with:
+Open <http://localhost:5173/firenet/> and sign in with:
 
 - **Username** — `adminRFD` (or your `INITIAL_SUPERUSER_USERNAME`)
 - **Password** — the `INITIAL_SUPERUSER_PASSWORD` you set in step 2
@@ -250,12 +261,109 @@ steps 1 and 2.
 | `ValidationError: JWT_SECRET Field required` at API startup | No `backend/.env` — step 2. |
 | `no configuration file provided` / compose errors from `start.ps1` | No `docker-compose.yml` — step 1. |
 | Login succeeds then immediately returns to the login page | `COOKIE_SECURE=true` over HTTP — step 2. |
+| Blank page / 404 at `http://localhost:5173` | Wrong URL. The dev server is based at `/firenet` — use <http://localhost:5173/firenet/>. |
+| `firenet-minio` exits right after `docker compose up` | MinIO root password shorter than 8 characters. Check `MINIO_ROOT_PASSWORD` in `docker-compose.yml`, and keep `S3_SECRET_KEY` equal to it. `docker compose logs minio` confirms it. |
+| `UnicodeEncodeError: 'charmap' codec can't encode character` during seeding | Fixed — the seed script no longer prints non-ASCII. If you see it on an older checkout, run with `PYTHONIOENCODING=utf-8`. A crash here leaves the DB **half-seeded**: run `docker compose down -v && docker compose up -d` to wipe it before retrying, or the retry will skip already-created rows. |
 | API starts but every request 500s on the database | Containers not up, or `DATABASE_URL` doesn't match your compose credentials. |
 | Uploads fail on fire resolution | `S3_SECRET_KEY` ≠ `MINIO_ROOT_PASSWORD`. MinIO applies its root password on *every* start, so these must agree. |
 | Map is empty | Normal before the first ingest completes; check the API log for the ingest job, or that `INGEST_ENABLED` is true. |
 | Mobile app can't reach the API | `EXPO_PUBLIC_API_URL` is `localhost` instead of your LAN IP, or a firewall is blocking port 8000. |
 
-## Configuration
+## Configuration files
+
+Every config file the project needs, and where it comes from. Anything marked
+**git-ignored** does not exist in a fresh clone — you create it.
+
+| File | Needed for | How to get it | In git? |
+|------|------------|---------------|---------|
+| `docker-compose.yml` | local dev | `cp docker-compose.example.yml docker-compose.yml` | git-ignored |
+| `backend/.env` | the API, always | `cp backend/.env.example backend/.env`, then edit | git-ignored |
+| `web/.env.development` | `npm run dev` | **committed — nothing to do** | committed |
+| `web/.env.production` | `npm run build` | **committed — nothing to do** | committed |
+| `mobile/.env` | mobile only | `cp mobile/.env.example mobile/.env`, set your LAN IP | git-ignored |
+| `mobile/google-services.json` | mobile native build | Firebase console (package `com.sitarthon.firenetmobile`) — see `mobile/Put google-services.json here.txt` | git-ignored |
+| `infra/.env` | production only | `cp infra/.env.example infra/.env`, then edit | git-ignored |
+| FCM service-account JSON | push notifications (optional) | Firebase console → service accounts — see `backend/Put FCM here.txt` | git-ignored |
+| `mobile/firenet-release.keystore` | signing a release APK | from the maintainers — see `mobile/Put release keystore here.txt` | git-ignored |
+
+The three secrets that can't be templated (they're credentials, not config) each
+have a placeholder `.txt` sitting in the folder they belong in, explaining what
+the file is, where to obtain it, the exact filename expected, and what breaks
+without it. Leave the placeholders in place — they're markers for the next
+person, not scratch files.
+
+`infra/compose.yaml` and `docker-compose.example.yml` are committed and need no
+edits — you copy the latter, you never edit it in place.
+
+### Local development
+
+Three files, in this order. From the repo root:
+
+```bash
+# 1. Infrastructure — defaults work as-is, no edit needed
+cp docker-compose.example.yml docker-compose.yml
+
+# 2. Backend — copy, then make the three edits below
+cp backend/.env.example backend/.env
+
+# 3. Mobile — only if you're running the app; set your LAN IP, not localhost
+cp mobile/.env.example mobile/.env
+```
+
+In `backend/.env`, three lines need your attention:
+
+```ini
+JWT_SECRET=<paste a long random string>     # python -c "import secrets; print(secrets.token_urlsafe(48))"
+INITIAL_SUPERUSER_PASSWORD=<your password>  # you log in with this
+COOKIE_SECURE=false                         # MUST be false over http://localhost
+```
+
+Everything else in the template is already correct for local dev —
+`DATABASE_URL` and `S3_ENDPOINT` point at `localhost`, and `S3_SECRET_KEY`
+matches the compose default. Leave them.
+
+### Production
+
+Production needs **two** files on the server, and `backend/.env` is *not* the
+same file you use locally — `infra/compose.yaml` loads it via
+`env_file: ../backend/.env`, so it must hold production values.
+
+```bash
+cd infra
+cp .env.example .env      # set POSTGRES_PASSWORD and MINIO_ROOT_PASSWORD
+```
+
+`infra/.env` holds only the two container passwords. Compose declares both with
+`:?`, so it refuses to start rather than run with a blank password.
+
+Then `backend/.env` on the server, which differs from your local copy in ways
+that will silently break things if you copy it up unchanged:
+
+| Setting | Local | Production | If you get it wrong |
+|---------|-------|------------|---------------------|
+| `DATABASE_URL` host | `localhost:5432` | `firenet-postgres:5432` | API can't reach the DB — `localhost` inside the container is the container. |
+| `S3_ENDPOINT` | `localhost:9000` | `firenet-minio:9000` | Evidence uploads fail for the same reason. |
+| `COOKIE_SECURE` | `false` | `true` | Auth cookie sent over plain HTTP. |
+| `CORS_ORIGINS` | Vite dev server | `["https://wildfire.forest.go.th"]` | Console can't call the API. |
+| `PUBLIC_BASE_URL` | empty | `https://wildfire.forest.go.th/firenet/api` | Every in-app APK download 404s — see below. |
+
+The passwords inside `DATABASE_URL` and `S3_SECRET_KEY` must equal
+`POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` in `infra/.env`. They're in two
+separate files with no cross-check, so a mismatch shows up only at runtime.
+
+> **`PUBLIC_BASE_URL` is easy to miss.** It postdates the original deployment,
+> so an older `backend/.env` on the server won't have it. Left empty, the
+> backend derives the APK URL from `request.base_url`, which after Traefik's TLS
+> termination and prefix-strip yields the wrong scheme and drops `/firenet/api`.
+> Confirm it's set before shipping an app release.
+
+Two more things the production stack expects that aren't env files: `web/dist`
+must exist (`cd web && npm run build`) because nginx bind-mounts it, and
+`infra/compose.yaml` mounts an FCM service-account JSON by an exact filename —
+adjust that path if yours is named differently, or the container gets a
+directory where it wants a file.
+
+## Configuration reference
 
 Backend configuration is environment-driven (see `backend/.env.example`).
 Settings with **no in-code default are required** — the app refuses to boot
@@ -306,7 +414,7 @@ Every command is run from the directory shown in the first column.
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` | Vite dev server at `http://localhost:5173`. |
+| `npm run dev` | Vite dev server at `http://localhost:5173/firenet/` (the app is based at `/firenet`, not the root). |
 | `npm run build` | Production build into `web/dist` — required before deploying, the nginx container serves that directory. |
 | `npm run preview` | Serve the built `dist/` locally to check a production build. |
 | `npm run lint` | ESLint over the SPA. |
@@ -338,11 +446,21 @@ installs it from their file manager.
 
 Two rules govern every release:
 
-- **Same keystore, always.** Every APK must be signed with
-  `mobile/firenet-release.keystore` (credentials in `~/.gradle/gradle.properties`
-  as `FIRENET_UPLOAD_*`). Android refuses an over-the-top install from a
-  different key. The keystore is git-ignored and held by the maintainers — a
-  fresh clone can build debug/dev builds but not a publishable release.
+- **Same keystore, always.** Every APK must be signed with the production
+  keystore — conventionally `mobile/firenet-release.keystore`, though the actual
+  path comes from `FIRENET_UPLOAD_STORE_FILE` in `~/.gradle/gradle.properties`
+  alongside the other three `FIRENET_UPLOAD_*` properties. Android refuses an
+  over-the-top install from a different key. The keystore is git-ignored and
+  held by the maintainers — a fresh clone can build debug/dev builds but not a
+  publishable release. Setup: `mobile/Put release keystore here.txt`.
+
+  > **This fails silently.** With those properties absent, the release build
+  > doesn't error — [`withReleaseSigning.js`](mobile/plugins/withReleaseSigning.js)
+  > falls back to the *debug* keystore. The APK builds, publishes, and then
+  > refuses to install over any real release. `publish-apk.ps1` verifies the
+  > version code but not the signing key, so nothing catches it before officers
+  > do. Check with `apksigner verify --print-certs <apk>` — the certificate must
+  > match previous releases, not "Android Debug".
 - **`versionCode` only ever increases.** Android treats a lower code as a
   downgrade and refuses it.
 
@@ -424,10 +542,16 @@ Production runs from `infra/` with Docker Compose behind an existing Traefik
 instance:
 
 ```bash
+cd web && npm run build && cd ..    # nginx bind-mounts web/dist; build it first
 cd infra
 cp .env.example .env                # POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD
 docker compose -f compose.yaml up -d --build
 ```
+
+Set up `infra/.env` **and** the server's `backend/.env` first — see
+[Configuration files → Production](#production), which lists the settings that
+must differ from your local copy (container hostnames, `COOKIE_SECURE`,
+`CORS_ORIGINS`, `PUBLIC_BASE_URL`).
 
 - **db** (PostGIS) and **minio** stay on a private `internal` network with no
   host ports.
