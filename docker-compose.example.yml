@@ -33,7 +33,8 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-firenet}
       # Must match backend/.env S3_SECRET_KEY (MinIO applies these on every start).
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-firenet}
+      # Minimum 8 characters — MinIO refuses to start with a shorter root password.
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-firenet123}
     ports:
       - "9000:9000"
       - "9001:9001"

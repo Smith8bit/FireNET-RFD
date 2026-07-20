@@ -196,7 +196,7 @@ async def seed_superuser() -> None:
                 )
             )
             await session.commit()
-            print(f"[seed] assigned superuser → national region ({national.name_en})")
+            print(f"[seed] assigned superuser -> national region ({national.name_en})")
 
 
 async def seed_regional_users() -> list[dict]:
@@ -258,7 +258,7 @@ async def seed_regional_users() -> list[dict]:
                     )
                 )
                 await session.commit()
-                print(f"[seed] assigned {username} → {ro['code']}")
+                print(f"[seed] assigned {username} -> {ro['code']}")
     return created
 
 
@@ -323,7 +323,7 @@ async def seed_province_users() -> list[dict]:
                     )
                 )
                 await session.commit()
-                print(f"[seed] assigned {username} → {region.code}")
+                print(f"[seed] assigned {username} -> {region.code}")
     return created
 
 
@@ -331,7 +331,7 @@ async def run_all() -> None:
     """
     Entry point for the full seed pipeline.
 
-    Runs in order: regions → provinces → superuser → (optional) regional/province accounts.
+    Runs in order: regions -> provinces -> superuser -> (optional) regional/province accounts.
     SEED_REGIONAL_ACCOUNTS can be disabled in production to skip auto-provisioning
     dispatcher accounts when those are managed externally.
     """

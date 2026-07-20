@@ -1,0 +1,41 @@
+PUT google-services.json IN THIS FOLDER (mobile/)
+==================================================
+
+WHAT
+    The Firebase *client* config for the Android app. Required by
+    @react-native-firebase/app for push notifications to work on the device.
+    This is not the same file as the server key in backend/ (that one SENDS
+    pushes; this one lets the app RECEIVE them).
+
+EXACT FILENAME
+    google-services.json
+
+    It must be spelled exactly this, in this folder. app.json references it:
+
+        "android": { "googleServicesFile": "./google-services.json" }
+
+WHERE TO GET IT
+    Firebase console -> Project settings -> Your apps -> Android app
+    -> "google-services.json". The registered Android package must be:
+
+        com.sitarthon.firenetmobile
+
+    (matches "android.package" in mobile/app.json). If you are setting up your
+    own Firebase project for development, register that package name or the
+    native build will reject the file as mismatched.
+
+WHAT HAPPENS WITHOUT IT
+    The native Android build FAILS. This is not optional for
+    `npx expo prebuild` / `npm run android` -- the Google Services Gradle
+    plugin aborts when the file is absent.
+
+    The web console and backend do not need this file at all. Only the mobile
+    app does, so you can ignore it entirely unless you are building the app.
+
+DO NOT COMMIT IT
+    Already covered by mobile/.gitignore (`google-services.json`). It contains
+    project API keys.
+
+LEAVE THIS .TXT IN PLACE
+    It is tracked in git as a marker for the next person setting up. Deleting it
+    locally just shows up as a pending deletion in your working tree.
