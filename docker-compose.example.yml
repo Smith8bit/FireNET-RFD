@@ -1,0 +1,45 @@
+# Local development stack: Postgres/PostGIS + MinIO only.
+#
+# Setup:
+#   cp docker-compose.example.yml docker-compose.yml
+#   docker compose up -d          # db on :5432, MinIO on :9000 (console :9001)
+#
+# The backend API is NOT in this file — run it directly for hot reload
+# (see backend/start.ps1 or `uvicorn app.main:app --reload`). For the
+# production stack (Traefik, TLS, nginx SPA) use infra/compose.yaml instead.
+#
+# Credentials default to the dev values in backend/.env.example. The db password
+# must match DATABASE_URL and the MinIO password must match S3_SECRET_KEY in
+# backend/.env. Override either by exporting the vars or putting them in a root
+# .env (gitignored) before `docker compose up`.
+services:
+  db:
+    image: postgis/postgis:17-3.4-alpine
+    container_name: firenet-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-firenet}
+      # Only applied when the pgdata volume is first initialized.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firenet}
+      POSTGRES_DB: ${POSTGRES_DB:-firenet}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: firenet-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-firenet}
+      # Must match backend/.env S3_SECRET_KEY (MinIO applies these on every start).
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-firenet}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:

@@ -45,6 +45,9 @@ services:
     # mount the FCM key in at a fixed path (FCM_CREDENTIALS_FILE in .env must match)
     volumes:
       - ../backend/tfms-fcm-firebase-adminsdk-fbsvc-8bd030a43a.json:/secrets/fcm.json:ro
+      # published Android APKs + manifest, served read-only by /app/android/*.
+      # Drop new builds here on the host (publish-apk.ps1) — no image rebuild needed.
+      - ../backend/app_releases:/app/app_releases:ro
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=wildfire_default"

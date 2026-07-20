@@ -19,6 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "versionCode": 1,
       "package": "com.sitarthon.firenetmobile"
     },
     "plugins": [
@@ -70,8 +71,16 @@
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       "expo-notifications",
-      "expo-build-properties",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "./plugins/withGradleMemory",
+      "./plugins/withReleaseSigning",
       "expo-font",
       "react-native-compressor",
       "expo-video"
