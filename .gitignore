@@ -36,6 +36,11 @@ desktop.ini
 # Claude Code local config
 .claude/
 
+# Published Android release artifacts (served by the in-app updater) — binaries
+# and the generated manifest, kept out of git; the dir itself is tracked via .gitkeep.
+backend/app_releases/*.apk
+backend/app_releases/android-latest.json
+
 # Project-specific
 /web/dashboard
 backend/app/database/seed_mock_*.py
@@ -45,3 +50,4 @@ backend/app/database/seed_mock_*.py
 PRODUCT.md
 test/test_export.py
 test/test_sniff_video.py
+PIPELINES.md

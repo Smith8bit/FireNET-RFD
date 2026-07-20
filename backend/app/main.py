@@ -16,6 +16,7 @@ from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
 from .db_control.fires import expire_old_fires, sweep_orphan_images
 from .db_control.firefetch import update_fires
+from .router.app_update import router as app_update_router
 from .router.audit import router as audit_router
 from .router.auth import router as auth_router
 from .router.fires import router as fires_router
@@ -273,6 +274,7 @@ app.include_router(fires_router, prefix="/fires", tags=["fires"])
 app.include_router(regions_router, prefix="/regions", tags=["regions"])
 app.include_router(officers_router, prefix="/officers", tags=["officers"])
 app.include_router(audit_router, prefix="/audit", tags=["audit"])
+app.include_router(app_update_router, prefix="/app", tags=["app-update"])
 app.include_router(ws_router, tags=["ws"])
 
 

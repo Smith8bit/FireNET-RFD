@@ -75,7 +75,7 @@ fireNet/
 │       └── lib/             # Zustand stores, fire-data + websocket hooks, helpers
 ├── mobile/                  # Expo (React Native) field-officer app
 ├── infra/                   # Production Docker Compose (Traefik labels) + nginx conf
-├── docker-compose.yml       # Local dev: Postgres/PostGIS + MinIO only
+├── docker-compose.example.yml  # Local dev template: Postgres/PostGIS + MinIO (copy to docker-compose.yml)
 └── all-start.ps1            # Dev launcher: backend + web + mobile (Windows)
 ```
 
@@ -100,6 +100,7 @@ The rest of this section is the manual, per-service equivalent.
 ### 1. Infrastructure (Postgres + MinIO)
 
 ```bash
+cp docker-compose.example.yml docker-compose.yml   # gitignored; edit creds if needed
 docker compose up -d        # db on :5432, MinIO on :9000 (console :9001)
 ```
 

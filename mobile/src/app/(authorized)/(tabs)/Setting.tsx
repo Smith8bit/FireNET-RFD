@@ -1,3 +1,9 @@
+import {
+  checkForUpdate,
+  currentVersionName,
+  downloadAndInstall,
+  type UpdateStatus,
+} from '@/lib/appUpdate'
 import { downloadHomePack, homePackSize } from '@/lib/offlineMap'
 import { colors } from '@/lib/theme'
 import { toast } from '@/lib/toastStore'
@@ -76,6 +82,79 @@ function OfflineMapButton({ home }: { home: Home }) {
         <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={{ marginLeft: 'auto' }} />
       ) : (
         <Ionicons name="chevron-forward" size={18} color={colors.gray400} style={{ marginLeft: 'auto' }} />
+      )}
+    </Pressable>
+  )
+}
+
+/**
+ * Row that checks for a newer sideloaded APK on mount and, when one exists,
+ * shows a notify dot on the icon. Tapping downloads the signed APK (with
+ * progress) and hands it to Android's package installer — the officer then
+ * taps "Update" on the system prompt. Silent about being up to date beyond a
+ * plain version label; never blocks the screen if the check fails.
+ */
+function UpdateButton() {
+  // null = still checking on mount; otherwise the resolved status.
+  const [status, setStatus] = useState<UpdateStatus | null>(null)
+  const [percent, setPercent] = useState<number | null>(null)
+  useEffect(() => { checkForUpdate().then(setStatus).catch(() => setStatus({ kind: 'up-to-date' })) }, [])
+
+  const available = status != null && status.kind !== 'up-to-date'
+  const busy = percent !== null
+
+  const run = async () => {
+    if (!available || busy) return
+    setPercent(0)
+    try {
+      await downloadAndInstall(status.manifest, (f) => setPercent(Math.round(f * 100)))
+    } catch {
+      toast.error('ดาวน์โหลดอัปเดตไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setPercent(null)
+    }
+  }
+
+  const label = busy
+    ? `กำลังดาวน์โหลด... ${percent}%`
+    : available
+      ? `มีอัปเดตใหม่ (เวอร์ชัน ${status.manifest.latestVersionName})`
+      : status == null
+        ? 'กำลังตรวจสอบอัปเดต...'
+        : `เวอร์ชันล่าสุด (${currentVersionName()})`
+
+  return (
+    <Pressable
+      onPress={run}
+      disabled={!available || busy}
+      className="flex-row items-center gap-3 py-5 border-b border-border"
+    >
+      <View>
+        <Ionicons
+          name={available ? 'arrow-up-circle-outline' : 'shield-checkmark-outline'}
+          size={24}
+          color={available ? colors.primary : colors.gray500}
+        />
+        {/* Notify dot — the "there's an update" signal the officer scans for. */}
+        {available && (
+          <View
+            className="absolute h-2.5 w-2.5 rounded-full border-2"
+            style={{ top: -1, right: -1, backgroundColor: colors.primary, borderColor: colors.foreground }}
+          />
+        )}
+      </View>
+      <Text
+        className="text-md font-sans-medium text-card-foreground"
+        style={available ? { color: colors.primary } : undefined}
+      >
+        {label}
+      </Text>
+      {busy ? (
+        <ActivityIndicator style={{ marginLeft: 'auto' }} color={colors.primary} />
+      ) : available ? (
+        <Ionicons name="cloud-download-outline" size={20} color={colors.primary} style={{ marginLeft: 'auto' }} />
+      ) : (
+        <Ionicons name="checkmark-circle" size={18} color={colors.success} style={{ marginLeft: 'auto' }} />
       )}
     </Pressable>
   )
@@ -163,6 +242,7 @@ export default function Setting() {
               <Ionicons name="chevron-forward" size={18} color={colors.gray400} style={{ marginLeft: 'auto' }} />
             </Pressable>
           ))}
+          <UpdateButton />
           {user && <OfflineMapButton home={user.home} />}
           <LogoutButton onConfirm={signOut} />
         </View>

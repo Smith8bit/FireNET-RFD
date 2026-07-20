@@ -2,7 +2,7 @@
   "expo": {
     "name": "FireNET",
     "slug": "FireNET",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "firenetmobile",
@@ -19,6 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.REQUEST_INSTALL_PACKAGES"],
+      "versionCode": 2,
       "package": "com.sitarthon.firenetmobile"
     },
     "plugins": [
@@ -70,8 +72,16 @@
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       "expo-notifications",
-      "expo-build-properties",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "./plugins/withGradleMemory",
+      "./plugins/withReleaseSigning",
       "expo-font",
       "react-native-compressor",
       "expo-video"

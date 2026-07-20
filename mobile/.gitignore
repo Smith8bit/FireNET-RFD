@@ -46,3 +46,9 @@ example
 # generated native folders
 /ios
 /android
+
+# release signing — production keystore & passwords must never be committed
+*.keystore
+*.jks
+/credentials
+keystore.properties

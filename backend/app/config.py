@@ -68,6 +68,17 @@ class Settings(BaseSettings):
     PUSH_ENABLED: bool = True
     FCM_CREDENTIALS_FILE: str = ""
 
+    # In-app Android update pipeline (sideloaded APK). APP_RELEASE_DIR holds the
+    # published `firenet-<versionCode>.apk` files plus the android-latest.json
+    # metadata written by publish-apk.ps1. PUBLIC_BASE_URL is the public API base
+    # used to build the APK download URL; set it to the SAME value the mobile app
+    # uses as EXPO_PUBLIC_API_URL. Left empty, the URL is derived from the incoming
+    # request, which is wrong when a reverse proxy strips a path prefix (the proxy
+    # forwards the stripped path, so the derived base omits it) — so set it
+    # explicitly in production behind such a proxy.
+    APP_RELEASE_DIR: str = str(Path(__file__).resolve().parent.parent / "app_releases")
+    PUBLIC_BASE_URL: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

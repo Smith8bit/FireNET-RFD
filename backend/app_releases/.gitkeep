@@ -1,0 +1,3 @@
+# Published Android release artifacts live here (firenet-<versionCode>.apk +
+# android-latest.json), written by ../../publish-apk.ps1 and served by the
+# /app/android/* endpoints. Contents are gitignored; this file keeps the dir.
