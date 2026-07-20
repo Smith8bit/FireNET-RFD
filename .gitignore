@@ -51,3 +51,4 @@ PRODUCT.md
 test/test_export.py
 test/test_sniff_video.py
 PIPELINES.md
+infra/compose-b.yaml

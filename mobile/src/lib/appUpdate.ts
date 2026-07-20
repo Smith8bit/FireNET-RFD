@@ -1,18 +1,18 @@
-// Self-hosted Android in-app update pipeline (sideloaded APK — no Play Store,
-// no expo-updates / OTA). The app reads its own native versionCode, asks the
-// backend for the latest published build, and — on the officer's tap —
-// downloads the signed APK and hands it to Android's package installer.
+// Self-hosted Android update pipeline (sideloaded APK — no Play Store, no
+// expo-updates / OTA). The app reads its own native versionCode, asks the
+// backend for the latest published build, and — on the officer's tap — hands
+// the APK URL to the system browser.
 //
-// The install itself is NOT silent: Android shows an "Update" confirmation the
-// officer must tap, plus a one-time "allow installs from FireNET" grant on
-// first use. Every published APK MUST be signed with the same key as the
-// installed build, or Android refuses the over-the-top install. See the
-// backend `/app/android/latest` manifest endpoint for the server side.
+// The download and the install both happen OUTSIDE the app: Chrome (or whatever
+// browser handles the link) downloads the APK, and the officer opens it from
+// Downloads / their file manager to install. That app, not FireNET, is the one
+// Android asks for the "allow installs from this source" grant. Every published
+// APK MUST be signed with the same key as the installed build, or Android
+// refuses the over-the-top install. See the backend `/app/android/latest`
+// manifest endpoint for the server side.
 import { api } from '@/lib/api'
 import * as Application from 'expo-application'
-import { File, Paths } from 'expo-file-system'
-import * as IntentLauncher from 'expo-intent-launcher'
-import { Platform } from 'react-native'
+import { Linking, Platform } from 'react-native'
 
 /** Shape of the JSON the backend serves at `/api/app/android/latest`. */
 export type UpdateManifest = {
@@ -70,36 +70,16 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
 }
 
 /**
- * Downloads the APK to the cache dir with progress, then launches Android's
- * package installer via an ACTION_VIEW intent.
+ * Hands the APK URL to the system browser, which downloads it to the device's
+ * Downloads folder. The officer then opens that file themselves — from Chrome's
+ * download notification or their file manager — to run the install.
+ *
+ * Returns as soon as the browser has been launched; the download continues in
+ * the browser and the app has no visibility into its progress or outcome.
  *
  * @param manifest - the target build from `checkForUpdate()`.
- * @param onProgress - download fraction 0..1, for a progress label.
- * @throws if the download fails or the installer can't be launched.
+ * @throws if no app on the device can open the URL.
  */
-export async function downloadAndInstall(
-  manifest: UpdateManifest,
-  onProgress?: (fraction: number) => void,
-): Promise<void> {
-  const dest = new File(Paths.cache, `firenet-${manifest.latestVersionCode}.apk`)
-  // `createDownloadTask` has no idempotent flag and a failed download can leave
-  // a partial file behind, so clear any stale/partial file before starting.
-  if (dest.exists) dest.delete()
-
-  const task = File.createDownloadTask(manifest.apkUrl, dest, {
-    onProgress: ({ bytesWritten, totalBytes }) => {
-      if (totalBytes > 0) onProgress?.(bytesWritten / totalBytes)
-    },
-  })
-  const file = await task.downloadAsync()
-  if (!file) throw new Error('download did not complete')
-
-  // ACTION_VIEW + the package-archive MIME type is the most broadly compatible
-  // install trigger. flags:1 = FLAG_GRANT_READ_URI_PERMISSION so the installer
-  // can read our content:// URI (backed by expo-file-system's FileProvider).
-  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-    data: file.contentUri,
-    type: 'application/vnd.android.package-archive',
-    flags: 1,
-  })
+export async function openApkDownload(manifest: UpdateManifest): Promise<void> {
+  await Linking.openURL(manifest.apkUrl)
 }

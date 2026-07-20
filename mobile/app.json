@@ -2,7 +2,7 @@
   "expo": {
     "name": "FireNET",
     "slug": "FireNET",
-    "version": "1.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "firenetmobile",
@@ -19,8 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.REQUEST_INSTALL_PACKAGES"],
-      "versionCode": 2,
+      "versionCode": 1,
       "package": "com.sitarthon.firenetmobile"
     },
     "plugins": [

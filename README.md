@@ -168,6 +168,143 @@ sensible defaults in `backend/app/config.py` and can be overridden via env.
 > git-ignored. Keep real database passwords, `JWT_SECRET`, and storage
 > credentials only in the deployment host's local copies.
 
+## Command reference
+
+Every command is run from the directory shown in the first column.
+
+### Repo root
+
+| Command | What it does |
+|---------|--------------|
+| `.\all-start.ps1` | Dev launcher: creates the backend venv and installs `node_modules` on first run, brings up Postgres/MinIO, then starts the API, the Vite dev server, and Expo — with the mobile `.env` pointed at this machine's LAN IP. |
+| `.\all-start.ps1 -Fresh` | Same, but drops and recreates the database first. Destroys all local data. |
+| `.\publish-apk.ps1 -VersionCode N -VersionName X.Y.Z` | Builds and publishes an Android release. See [Building and releasing the mobile app](#building-and-releasing-the-mobile-app). |
+
+### `backend/`
+
+| Command | What it does |
+|---------|--------------|
+| `uvicorn app.main:app --reload --port 8000` | Run the API with auto-reload. Swagger at `/docs`. |
+| `.\start.ps1` | Starts the Postgres container (creating it if needed), waits for it to accept connections, then runs the API. |
+| `.\start.ps1 -Fresh` | Same, after dropping and recreating the database. |
+| `.\reset.ps1` | `docker compose down -v && up -d` — wipes the DB volume and brings the containers back. Destroys all local data. |
+| `pip install -r requirements.txt` | Install/refresh Python dependencies (activate the venv first). |
+
+### `web/`
+
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Vite dev server at `http://localhost:5173`. |
+| `npm run build` | Production build into `web/dist` — required before deploying, the nginx container serves that directory. |
+| `npm run preview` | Serve the built `dist/` locally to check a production build. |
+| `npm run lint` | ESLint over the SPA. |
+
+### `mobile/`
+
+| Command | What it does |
+|---------|--------------|
+| `npx expo start` | Expo dev server. Point `mobile/.env` at your machine's LAN IP so the device can reach the API. |
+| `npm run android` | `expo run:android` — build and launch the dev client on a connected device/emulator. |
+| `npm run lint` | ESLint over the app. |
+| `npx expo prebuild --platform android` | Regenerate the native `android/` project from `app.json`. Needed after changing plugins or permissions; `android/` is checked in, so review the diff. |
+| `cd android && .\gradlew.bat assembleRelease` | Build a signed release APK by hand. Prefer `publish-apk.ps1`, which also stamps and verifies the version. |
+
+### Production server
+
+| Command | What it does |
+|---------|--------------|
+| `cd infra && docker compose -f compose.yaml up -d --build api` | Rebuild and recreate just the API container after backend code changes. |
+| `docker compose -f compose.yaml up -d --force-recreate api` | Recreate the API container after editing `backend/.env` — a plain restart does **not** re-read `env_file`. |
+| `docker compose -f compose.yaml logs -f api` | Follow API logs. |
+
+## Building and releasing the mobile app
+
+Field officers install the app as a **sideloaded APK** — there is no Play Store
+listing and no Expo OTA channel. The app asks the backend what the newest build
+is, and hands the APK URL to the system browser; the officer downloads it and
+installs it from their file manager.
+
+Two rules govern every release:
+
+- **Same keystore, always.** Every APK must be signed with
+  `mobile/firenet-release.keystore` (credentials in `~/.gradle/gradle.properties`
+  as `FIRENET_UPLOAD_*`). Android refuses an over-the-top install from a
+  different key.
+- **`versionCode` only ever increases.** Android treats a lower code as a
+  downgrade and refuses it.
+
+### Releasing
+
+From the repo root:
+
+```powershell
+.\publish-apk.ps1 -VersionCode 2 -VersionName 1.0.1
+```
+
+That single command:
+
+1. **Stamps** the version into `mobile/app.json` *and*
+   `mobile/android/app/build.gradle`. Both must agree — `build.gradle` is what
+   reaches the APK, `app.json` is what a future `expo prebuild` regenerates it from.
+2. **Builds** a signed release APK with `gradlew assembleRelease`, deleting the
+   previous output first so a failed build can't leave a stale APK to publish.
+3. **Verifies** the APK's *embedded* `versionCode`/`versionName` with `aapt2` and
+   aborts if they disagree with what you asked for.
+4. **Publishes** to `backend/app_releases/firenet-<VersionName>-<VersionCode>.apk`
+   and rewrites `android-latest.json`, the manifest the API serves.
+
+| Option | Purpose |
+|--------|---------|
+| `-VersionCode` *(required)* | The new build number. Must exceed the previous release. |
+| `-VersionName` *(required)* | Human-readable version shown to the officer, e.g. `1.0.1`. |
+| `-MinVersionCode N` | Builds below `N` are forced to update (the officer can't dismiss the prompt). Defaults to `1`. |
+| `-ReleaseNotes "..."` | Shown in the update dialog. Thai is fine. |
+| `-SkipBuild` | Republish an APK already at the output path instead of rebuilding. The version check still runs. |
+| `-Prebuild` | Run `expo prebuild` before building. Needed after plugin/permission changes in `app.json`. |
+| `-ApkPath` / `-ReleaseDir` | Override the input APK or output directory. |
+
+Step 3 exists because the failure it prevents is silent and confusing: if the
+manifest advertises a `versionCode` higher than the one actually inside the APK,
+officers get an update prompt that reinstalls the same build and never goes
+away, because the client compares the manifest against the version the installed
+APK reports.
+
+> `publish-apk.ps1` must stay **UTF-8 with BOM**. Windows PowerShell 5.1 reads a
+> BOM-less file as cp1252, which turns the em-dashes in its strings into
+> characters it treats as string delimiters — producing parse errors far from the
+> real line.
+
+### Deploying the release
+
+The APK and manifest are gitignored, so `git pull` on the server will not carry
+them — copy them up:
+
+```bash
+scp backend/app_releases/firenet-1.0.1-2.apk backend/app_releases/android-latest.json \
+    yok@wildfire.forest.go.th:~/www/firenet/backend/app_releases/
+```
+
+No restart is needed: `backend/app_releases` is a live read-only bind mount into
+the API container. Commit the version bump in `mobile/app.json` and
+`mobile/android/app/build.gradle` so the repo matches what shipped.
+
+Verify without pulling the whole ~160 MB:
+
+```bash
+curl -s -r 0-0 -D - -o /dev/null \
+  https://wildfire.forest.go.th/firenet/api/app/android/download/2
+```
+
+Expect `206`, `content-type: application/vnd.android.package-archive`, and a
+`content-range` total matching the manifest's `fileSize`. (`curl -I` returns 405
+— the route is GET-only.)
+
+> **`PUBLIC_BASE_URL` must be set** in the server's `backend/.env` to
+> `https://wildfire.forest.go.th/firenet/api`. If it is empty the backend derives
+> the APK URL from `request.base_url`, which after Traefik's TLS termination and
+> prefix-strip yields the wrong scheme and a missing `/firenet/api` — every
+> download 404s.
+
 ## Deployment
 
 Production runs from `infra/` with Docker Compose behind an existing Traefik

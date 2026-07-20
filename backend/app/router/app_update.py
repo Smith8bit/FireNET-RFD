@@ -7,8 +7,9 @@ published build, then downloads the signed APK from
 outside the app's bearer-token axios client, and the APK is the app binary
 itself, whose integrity is guaranteed by its signing key, not by access control).
 
-Builds are published by ``publish-apk.ps1``, which drops ``firenet-<code>.apk``
-and an ``android-latest.json`` metadata file into ``settings.APP_RELEASE_DIR``.
+Builds are published by ``publish-apk.ps1``, which drops
+``firenet-<versionName>-<code>.apk`` and an ``android-latest.json`` metadata file
+into ``settings.APP_RELEASE_DIR``.
 """
 
 import json
@@ -30,6 +31,26 @@ _APK_MEDIA_TYPE = "application/vnd.android.package-archive"
 
 def _release_dir() -> Path:
     return Path(settings.APP_RELEASE_DIR)
+
+
+def _find_apk(version_code: int) -> Path | None:
+    """Locate the published APK for ``version_code``, or None if absent.
+
+    publish-apk.ps1 names releases ``firenet-<versionName>-<code>.apk`` so the
+    file is self-describing on disk and in the officer's Downloads folder. The
+    versionName is unknown here, hence the glob. Older releases published under
+    the flat ``firenet-<code>.apk`` name are still served, so builds already
+    deployed to the server keep working without being renamed.
+    """
+    d = _release_dir()
+    # The trailing "-<code>.apk" anchors the match: code 1 cannot match a file
+    # for code 11, and the flat legacy name cannot match here ("*" would have to
+    # span the separator).
+    matches = sorted(p for p in d.glob(f"firenet-*-{version_code}.apk") if p.is_file())
+    if matches:
+        return matches[0]
+    legacy = d / f"firenet-{version_code}.apk"
+    return legacy if legacy.is_file() else None
 
 
 @router.get("/android/latest")
@@ -72,11 +93,13 @@ async def download_android_apk(version_code: int):
     bearer token) and safe to be — this is the public app binary. ``FileResponse``
     streams from disk and honors HTTP Range, so interrupted downloads resume.
     """
-    apk_path = _release_dir() / f"firenet-{version_code}.apk"
-    if not apk_path.is_file():
+    apk_path = _find_apk(version_code)
+    if apk_path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown build")
+    # Serve under the on-disk basename so the versionName reaches the browser's
+    # Content-Disposition and lands in the officer's Downloads folder.
     return FileResponse(
         apk_path,
         media_type=_APK_MEDIA_TYPE,
-        filename=f"firenet-{version_code}.apk",
+        filename=apk_path.name,
     )
