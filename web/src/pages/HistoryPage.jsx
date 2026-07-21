@@ -26,7 +26,7 @@ export default function HistoryPage() {
   const [items, setItems] = useState(null) // array|null: null = loading, [] = loaded-but-empty
   const [total, setTotal] = useState(0) // number: total matching rows from server, for PaginationBar
   const [page, setPage] = useState(0) // number: zero-based current page index
-  const [kind, setKind] = useState('') // '' | 'true' | 'false': filters on the false_alarm flag
+  const [kind, setKind] = useState('') // '' | 'resolved' | 'falsealarm' | 'expired': outcome filter
   const [province, setProvince] = useState('') // string: exact province name filter, '' = all
   const { provinces: provinceRegions } = useRegions()
   // Province filter options derived from the region tree's province-level nodes.
@@ -75,7 +75,12 @@ export default function HistoryPage() {
    */
   const buildFilterParams = () => {
     const p = new URLSearchParams()
-    if (kind) p.set('false_alarm', kind)
+    // Three mutually exclusive outcomes over two backend booleans:
+    // extinguished = not false-alarm AND not expired; false alarm = false_alarm;
+    // expired = auto-timed-out.
+    if (kind === 'resolved') { p.set('false_alarm', 'false'); p.set('expired', 'false') }
+    else if (kind === 'falsealarm') p.set('false_alarm', 'true')
+    else if (kind === 'expired') p.set('expired', 'true')
     if (province) p.set('province', province)
     if (search) p.set('search', search)
     // Converts local-date inputs into UTC ISO bounds; dateTo is exclusive-end-of-day (+24h).
@@ -149,15 +154,16 @@ export default function HistoryPage() {
       <div className="flex flex-col flex-1 min-h-0 w-full bg-foreground rounded-2xl p-4 shadow-md">
 
         <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-gray-300">
-          {/* Outcome filter: '' = all, 'false' = extinguished, 'true' = false alarm (matches API's false_alarm flag) */}
+          {/* Outcome filter: '' = all, 'resolved' = extinguished, 'falsealarm' = false alarm, 'expired' = auto-timed-out */}
           <select
             value={kind}
             onChange={(e) => { setKind(e.target.value); setPage(0) }}
             className={`${SELECT_CLS} max-w-fit`}
           >
             <option value="">ทั้งหมด</option>
-            <option value="false">ดับแล้ว</option>
-            <option value="true">ไม่ใช่ไฟ</option>
+            <option value="resolved">ดับแล้ว</option>
+            <option value="falsealarm">ไม่ใช่ไฟ</option>
+            <option value="expired">หมดอายุ</option>
           </select>
 
           <select
@@ -259,8 +265,10 @@ export default function HistoryPage() {
                   {items.map((it) => (
                     <tr key={it.fire_id} className="border-b border-background hover:bg-background/50">
                       <td className="px-3 py-2.5 align-top">
-                        <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${it.false_alarm ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
-                          {it.false_alarm ? 'ไม่ใช่ไฟ' : 'ดับแล้ว'}
+                        {/* Three outcomes: expired (auto-timeout) takes precedence over the
+                            false_alarm flag, then genuine extinguish. */}
+                        <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${it.expired ? 'bg-amber-100 text-amber-700' : it.false_alarm ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
+                          {it.expired ? 'หมดอายุ' : it.false_alarm ? 'ไม่ใช่ไฟ' : 'ดับแล้ว'}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm font-medium text-gray-900 wrap-break-word">
@@ -270,7 +278,8 @@ export default function HistoryPage() {
                         {[it.tumboon, it.aumper, it.province].filter(Boolean).join(' · ') || '—'}
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light break-all">
-                        {it.officer_name ?? 'ไม่ทราบ'}
+                        {/* Expired fires auto-close with no acting officer. */}
+                        {it.expired ? '—' : (it.officer_name ?? 'ไม่ทราบ')}
                       </td>
                       <td className="px-3 py-2.5 align-top text-sm text-gray-500 font-light whitespace-pre-line wrap-break-word">
                         {it.note || '—'}
