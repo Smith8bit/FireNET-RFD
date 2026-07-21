@@ -13,6 +13,7 @@ const ACTION_LABELS = {
   'fire.reserve': 'จองจุดไฟ',
   'fire.resolve': 'ดับไฟสำเร็จ',
   'fire.false_report': 'แจ้งว่าไม่ใช่ไฟ',
+  'fire.false_cancel': 'ยกเลิกสถานะไม่ใช่ไฟ',
   'fire.appoint': 'มอบหมายเจ้าหน้าที่',
   'fire.release': 'ยกเลิกการจอง',
   'fire.cancel_booking': 'ยกเลิกการมอบหมาย',
@@ -107,6 +108,7 @@ function summarize(item, names = {}) {
     case 'fire.reserve':
     case 'fire.resolve':
     case 'fire.false_report':
+    case 'fire.false_cancel':
       return d.name ?? ''
     case 'fire.appoint':
       return d.officer_name ? `${d.name ?? ''} → ${d.officer_name}` : (d.name ?? '')

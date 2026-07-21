@@ -26,6 +26,7 @@ const PERMISSION_OPTIONS = [
   { id: 'officer.verify', label: 'อนุมัติเจ้าหน้าที่ที่รอยืนยัน' },
   { id: 'region_requests.view', label: 'ดูคำขอย้ายพื้นที่' },
   { id: 'fire.appoint', label: 'มอบหมายงานดับไฟ' },
+  { id: 'fire.false', label: 'แจ้งว่าไม่ใช่ไฟ' },
   { id: 'region_request.decide', label: 'อนุมัติคำขอย้ายพื้นที่' },
   { id: 'fires.history', label: 'ดูประวัติการดับไฟ' },
   { id: 'dispatchers.view', label: 'มองเห็นผู้ดูแล' },
@@ -33,7 +34,7 @@ const PERMISSION_OPTIONS = [
 // Default permission set pre-selected when creating a new dispatcher.
 const DISPATCHER_DEFAULT = [
   'fires.view', 'officers.view', 'region_requests.view', 'officer.verify',
-  'officer.manage', 'fire.appoint', 'region_request.decide', 'fires.history'
+  'officer.manage', 'fire.appoint', 'fire.false', 'region_request.decide', 'fires.history'
 ]
 
 // Permission dependency graph: selecting a key permission auto-grants (and locks) its listed
@@ -42,6 +43,7 @@ const IMPLIES = {
   'officer.verify': ['officers.view'],
   'officer.manage': ['officers.view'],
   'fire.appoint': ['officers.view', 'fires.view'],
+  'fire.false': ['fires.view'],
   'region_requests.view': ['officers.view'],
   'region_request.decide': ['region_requests.view', 'officers.view'],
   'dispatcher.manage': ['dispatchers.view'],
