@@ -13,8 +13,10 @@ import HistoryPage from './pages/HistoryPage'
 import AuditPage from './pages/AuditPage'
 import UsersPage from './pages/UsersPage'
 import MapViewPage from './pages/MapViewPage'
+import TestModePage from './pages/TestModePage'
 import { useSocketStore, useUIStore } from './lib/stateStore'
 import { useAuthStore } from './lib/useAuthStore'
+import { useTestMode } from './lib/useTestMode'
 import { refreshSession } from './lib/shared'
 
 import './App.css'
@@ -31,6 +33,7 @@ function SidebarLayout() {
   const openDrawer = useUIStore((s) => s.openDrawer)
   const closeDrawer = useUIStore((s) => s.closeDrawer)
   const location = useLocation()
+  const testMode = useTestMode().enabled
 
   // Close the drawer on any navigation (e.g. tapping a link inside it) so it
   // never lingers over the newly-loaded page.
@@ -44,6 +47,15 @@ function SidebarLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen, closeDrawer])
 
+  // Height of the floating Test-mode strip below; top-pinned UI (hamburger, sidebar,
+  // map buttons, toasts, page content) adds var(--test-strip,0px) to sit beneath it.
+  useEffect(() => {
+    if (!testMode) return
+    const root = document.documentElement.style
+    root.setProperty('--test-strip', '1.75rem')
+    return () => root.removeProperty('--test-strip')
+  }, [testMode])
+
   return (
     <div className="flex flex-col lg:flex-row h-screen">
       {/* Floating hamburger (mobile only) — opens the nav drawer. No top bar.
@@ -55,7 +67,7 @@ function SidebarLayout() {
           type="button"
           onClick={openDrawer}
           aria-label="เปิดเมนู"
-          className="lg:hidden fixed top-[calc(env(safe-area-inset-top)+0.75rem)] left-3 z-30 flex items-center justify-center w-11 h-11 rounded-xl border border-background bg-foreground text-gray-700 shadow-md hover:bg-background"
+          className="lg:hidden fixed top-[calc(env(safe-area-inset-top)+0.75rem+var(--test-strip,0px))] left-3 z-30 flex items-center justify-center w-11 h-11 rounded-xl border border-background bg-foreground text-gray-700 shadow-md hover:bg-background"
         >
           <Bars3Icon className="w-6 h-6" />
         </button>
@@ -74,7 +86,18 @@ function SidebarLayout() {
         />
       )}
 
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[var(--test-strip,0px)]">
+        {/* System-wide drill strip, shown to every console user while an admin has
+            Test mode on. Floats full-width along the top above everything (drawer,
+            lightbox) and ignores clicks so it never blocks the UI underneath. */}
+        {testMode && (
+          <div
+            role="status"
+            className="fixed inset-x-0 top-0 z-[60] pointer-events-none bg-amber-400 px-4 pb-1 pt-[max(0.25rem,env(safe-area-inset-top))] text-center text-sm font-semibold text-amber-950 shadow-md"
+          >
+            อยู่ในโหมดทดสอบ
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
@@ -201,6 +224,7 @@ function App() {
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/access" element={<UsersPage />} />
+            <Route path="/test-mode" element={<TestModePage />} />
           </Route>
         </Route>
         {/* Unknown paths fall back to the index route rather than a 404 page. */}

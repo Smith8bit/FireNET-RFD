@@ -16,6 +16,7 @@ from ...database import async_session_maker
 from ...database.models import User
 from ...db_control.officers import OfficerRow, fetch_officers, fetch_pending
 from ...db_control.permission import user_region_paths
+from ...db_control.test_mode import mode_session
 from ..manager import Connection, fanout, group_by_scope
 
 logger = logging.getLogger("firenet.officers")
@@ -70,7 +71,8 @@ async def broadcast_officers_update(active_connections: list[Connection]) -> Non
     one scope is logged and skipped so it doesn't block updates to others.
     """
     admins = [c for c in active_connections if c.can_view_officers]
-    async with async_session_maker() as session:
+    # Mode-routed: during a drill, busy/positions come from the test officer mirror.
+    async with mode_session() as session:
         for scope, members in group_by_scope(admins).items():
             try:
                 # members share identical visibility, so any one of them
@@ -101,7 +103,7 @@ async def broadcast_admin_refresh(
             querying pending officers on every refresh.
     """
     admins = [c for c in active_connections if c.can_view_officers]
-    async with async_session_maker() as session:
+    async with mode_session() as session:
         for scope, members in group_by_scope(admins).items():
             try:
                 officers = await fetch_officers(session, members[0].user)

@@ -15,6 +15,7 @@ from ...database.models import FieldOfficer, User
 from ...db_control.audit import audit
 from ...db_control.officers import fetch_pending
 from ...db_control.permission import can_manage_officers, has_perm_anywhere
+from ...db_control.test_mode import mirror_officer, test_mode_on
 from ..manager import Connection
 from ._helpers import (
     admin_covers_path,
@@ -112,6 +113,9 @@ async def handle_verify_officer(
             logger.info("created FieldOfficer user=%s", user_id)
         else:
             logger.info("FieldOfficer already exists user=%s", user_id)
+        if test_mode_on():
+            # Verified mid-drill: join the drill's officer roster right away.
+            await mirror_officer(session, user_id)
         audit(
             session,
             actor=admin,

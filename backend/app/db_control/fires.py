@@ -20,6 +20,7 @@ from ..database.models.firespot import Firespot
 from ..database.models.region import Region
 from ..database.models.user import User
 from .audit import audit
+from .test_mode import mode_session
 
 
 class FireDetail(TypedDict):
@@ -204,7 +205,8 @@ async def get_fires(
     """
     from .permission import user_region_paths
 
-    async with async_session_maker() as session:
+    # Mode-routed: during a Test-mode drill this reads the test schema's fires.
+    async with mode_session() as session:
         # Two officer aliases are needed: one for the current holder, one for the
         # officer referenced in the resolution record (may differ if reassigned).
         ResolverOfficer = aliased(FieldOfficer)
@@ -345,7 +347,8 @@ async def get_resolution_history(
     """
     from .permission import user_region_paths
 
-    async with async_session_maker() as session:
+    # Mode-routed: during a Test-mode drill this reads the drill's resolutions.
+    async with mode_session() as session:
         stmt = (
             select(
                 Firespot.id,

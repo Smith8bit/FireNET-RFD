@@ -22,7 +22,7 @@ export default function Toaster() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+    <div className="fixed top-[calc(1rem+var(--test-strip,0px))] left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
       {toasts.map((t) => (
         <Toast
           key={t.id}

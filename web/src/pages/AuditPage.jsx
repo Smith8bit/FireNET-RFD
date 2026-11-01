@@ -4,6 +4,7 @@ import { useAuthStore } from '../lib/useAuthStore'
 import { apiFetch, INPUT_CLS, PAGE_SIZE, SELECT_CLS, THEAD_CLS } from '../lib/shared'
 import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
+import { useTestMode } from '../lib/useTestMode'
 import PaginationBar from '../components/PaginationBar'
 import RecordCard from '../components/RecordCard'
 import DateInput from '../components/DateInput'
@@ -37,6 +38,9 @@ const ACTION_LABELS = {
   'auth.register': 'สมัครบัญชี',
   'auth.revoke_user': 'ระงับสิทธิ์ผู้ใช้',
   'auth.restore_user': 'คืนสิทธิ์ผู้ใช้',
+  'test.mode': 'โหมดทดสอบ',
+  'test.replay': 'จำลองจุดไฟทดสอบ',
+  'test.clear': 'ล้างข้อมูลทดสอบ',
 }
 
 // Badge color per action "category" (the prefix before the dot, e.g. 'fire' from 'fire.reserve').
@@ -47,6 +51,7 @@ const ACTION_COLORS = {
   region_change: 'bg-teal-100 text-teal-700',
   settings: 'bg-amber-100 text-amber-700',
   auth: 'bg-gray-100 text-gray-600',
+  test: 'bg-amber-100 text-amber-700',
 }
 
 // Labels for the category filter <select>; keys must match the action-code prefixes above.
@@ -57,6 +62,7 @@ const CATEGORY_LABELS = {
   region_change: 'คำขอย้ายพื้นที่',
   settings: 'การตั้งค่า',
   auth: 'บัญชีผู้ใช้',
+  test: 'โหมดทดสอบ',
 }
 
 /**
@@ -130,6 +136,14 @@ function summarize(item, names = {}) {
     case 'auth.revoke_user':
     case 'auth.restore_user':
       return d.name ?? ''
+    case 'test.mode':
+      return d.enabled
+        ? 'เปิดโหมดทดสอบ'
+        : `ปิดโหมดทดสอบ${d.released_officers ? ` · ยกเลิกการจองทดสอบ ${d.released_officers} คน` : ''}`
+    case 'test.replay':
+      return `จำลอง ${d.replayed ?? 0} จุด`
+    case 'test.clear':
+      return `ลบจุดไฟ ${d.fires ?? 0} · ผลการดับ ${d.resolutions ?? 0}`
     case 'officer.verify':
     case 'officer.delete':
       return entity('เจ้าหน้าที่', d.province_path)
@@ -173,6 +187,8 @@ export default function AuditPage() {
   const [actorInput, setActorInput] = useState('') // string: live text of the actor search box (uncommitted)
   const [actor, setActor] = useState('') // string: committed actor filter, applied on submit/blur
   const [reload, setReload] = useState(0) // number: bumped to force-retrigger the fetch effect (manual "refresh")
+  // The server returns the drill's own log while Test mode is on; refetch when it flips.
+  const testMode = useTestMode().enabled
   const { regions } = useRegions()
   // Precompute a path -> Thai name lookup once per regions change, so summarize() avoids repeated scans.
   const provinceNames = useMemo(
@@ -212,7 +228,7 @@ export default function AuditPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [page, action, actor, onDate, reload])
+  }, [page, action, actor, onDate, reload, testMode])
 
   // Access control: only superusers may view the audit log; everyone else is bounced to home.
   if (!user?.is_superuser) return <Navigate to="/" replace />

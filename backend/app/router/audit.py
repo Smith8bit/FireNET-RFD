@@ -10,11 +10,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import current_superuser
-from ..database import get_async_session
 from ..database.models import AuditLog, User
+from ..db_control.test_mode import mode_session
 
 router = APIRouter()
 
@@ -30,7 +29,6 @@ async def list_audit(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     _: User = Depends(current_superuser),
-    session: AsyncSession = Depends(get_async_session),
 ):
     """
     Return a paginated, filtered view of the audit log.
@@ -39,6 +37,9 @@ async def list_audit(
     (e.g. "auth.login"); otherwise it is treated as a namespace prefix so
     "auth" matches "auth.login", "auth.revoke_user", etc. This allows
     broad scans by category without exposing an arbitrary LIKE interface.
+
+    Follows Test mode: while a drill runs this reads the drill's own audit log
+    (test schema); the real log is shown again once the mode is switched off.
 
     Args:
         actor:       Case-insensitive substring match against the actor's email.
@@ -50,7 +51,6 @@ async def list_audit(
         limit:       Page size (1–200).
         offset:      Records to skip.
         _:           Superuser guard — value unused, dependency enforces auth.
-        session:     Async DB session.
 
     Returns:
         {
@@ -78,18 +78,19 @@ async def list_audit(
         stmt = stmt.where(AuditLog.at >= since)
     if until:
         stmt = stmt.where(AuditLog.at < until)
-    total = (
-        await session.execute(select(func.count()).select_from(stmt.subquery()))
-    ).scalar_one()
-    rows = (
-        (
-            await session.execute(
-                stmt.order_by(AuditLog.at.desc()).limit(limit).offset(offset)
+    async with mode_session() as session:
+        total = (
+            await session.execute(select(func.count()).select_from(stmt.subquery()))
+        ).scalar_one()
+        rows = (
+            (
+                await session.execute(
+                    stmt.order_by(AuditLog.at.desc()).limit(limit).offset(offset)
+                )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
     return {
         "total": total,
         "limit": limit,

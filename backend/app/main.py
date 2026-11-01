@@ -14,6 +14,7 @@ from .middleware import install_rate_limiting
 from .database import Base, engine
 from .database.schemas import UserCreate, UserRead, UserUpdate
 from .database.seed import run_all as run_seed
+from .db_control import test_mode
 from .db_control.fires import expire_old_fires, sweep_orphan_images
 from .db_control.firefetch import update_fires
 from .router.app_update import router as app_update_router
@@ -22,6 +23,7 @@ from .router.auth import router as auth_router
 from .router.fires import router as fires_router
 from .router.regions import router as regions_router
 from .router.officers import router as officers_router
+from .router.test_mode import router as test_mode_router
 from .router.users import router as users_router
 from .router.ws import router as ws_router
 from .ws.manager import manager
@@ -204,6 +206,10 @@ async def lifespan(app: FastAPI):
                 "ON region_change_requests (user_id) WHERE status = 'pending'"
             )
         )
+        # Test mode's mirror tables live in their own schema; production tables are
+        # only read here (as the LIKE template), never altered.
+        if settings.TEST_MODE_ALLOWED:
+            await test_mode.ensure_test_schema(conn)
     await run_seed()
     try:
         await storage.ensure_bucket()
@@ -222,6 +228,9 @@ async def lifespan(app: FastAPI):
         )
         scheduler.add_job(_safe_sweep_orphans, "interval", hours=_ORPHAN_SWEEP_HOURS)
         scheduler.start()
+    # Load the Test-mode flag before the registry warm-up below, which reads fires
+    # through the mode-routed session.
+    await test_mode.reload()
     await pg_listener.start()
     # Pre-populate in-memory websocket/presence state from the DB so the first clients to
     # connect after a restart see correct data immediately instead of an empty registry.
@@ -275,6 +284,7 @@ app.include_router(regions_router, prefix="/regions", tags=["regions"])
 app.include_router(officers_router, prefix="/officers", tags=["officers"])
 app.include_router(audit_router, prefix="/audit", tags=["audit"])
 app.include_router(app_update_router, prefix="/app", tags=["app-update"])
+app.include_router(test_mode_router, prefix="/test-mode", tags=["test-mode"])
 app.include_router(ws_router, tags=["ws"])
 
 

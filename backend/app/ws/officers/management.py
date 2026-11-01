@@ -22,6 +22,7 @@ from ...db_control.permission import (
     has_perm_anywhere,
     update_user_region,
 )
+from ...db_control.test_mode import mode_session
 from ..manager import Connection
 from ._helpers import admin_covers_path, broadcast_admin_refresh, map_subset
 
@@ -31,8 +32,11 @@ _MIN_PASSWORD_LEN = 8
 
 
 async def handle_list_officers(ws: WebSocket, user: User) -> None:
-    """Send the caller their region-scoped list of verified officers (full detail)."""
-    async with async_session_maker() as session:
+    """Send the caller their region-scoped list of verified officers (full detail).
+
+    Mode-routed, so during a drill `fire_id`/busy reflect drill bookings.
+    """
+    async with mode_session() as session:
         if not await has_perm_anywhere(user, "officers.view", session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return
@@ -43,7 +47,7 @@ async def handle_list_officers(ws: WebSocket, user: User) -> None:
 
 async def handle_list_officers_MAP(ws: WebSocket, user: User) -> None:
     """Same as handle_list_officers but trimmed to map-display fields (map_subset)."""
-    async with async_session_maker() as session:
+    async with mode_session() as session:
         if not await has_perm_anywhere(user, "officers.view", session):
             await ws.send_json({"type": "error", "code": "forbidden"})
             return

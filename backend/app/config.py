@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     FIRE_DISPLAY_DAYS: int = 2
     FIRE_EXPIRE_DAYS: int = 3
 
+    # Kill switch for the admin drill mode (db_control/test_mode.py). False skips
+    # creating the `test` schema and makes every /test-mode route 404.
+    TEST_MODE_ALLOWED: bool = True
+
     S3_ENDPOINT: str = "localhost:9000"
     S3_ACCESS_KEY: str = "firenet"
     # Required: no safe default for a credential that grants write access to fire evidence storage.

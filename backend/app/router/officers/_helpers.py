@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database.models import FieldOfficer, User
+from ...db_control.test_mode import is_test_session, mirror_officer
 
 
 async def get_field_officer(user: User, session: AsyncSession) -> FieldOfficer:
@@ -19,6 +20,9 @@ async def get_field_officer(user: User, session: AsyncSession) -> FieldOfficer:
     A User can exist without a FieldOfficer row (e.g. dispatchers, superusers).
     Endpoints that require an officer record call this instead of inline-querying
     to keep error handling consistent.
+
+    On a Test-mode session the row comes from the test schema's officer mirror; an
+    officer verified after the drill started is copied in on first use.
 
     Args:
         user:    The authenticated User whose FieldOfficer record is needed.
@@ -30,11 +34,11 @@ async def get_field_officer(user: User, session: AsyncSession) -> FieldOfficer:
     Raises:
         HTTPException(404): No FieldOfficer row exists for this user.
     """
-    fo = (
-        await session.execute(
-            select(FieldOfficer).where(FieldOfficer.user_id == user.id)
-        )
-    ).scalar_one_or_none()
+    stmt = select(FieldOfficer).where(FieldOfficer.user_id == user.id)
+    fo = (await session.execute(stmt)).scalar_one_or_none()
+    if fo is None and is_test_session(session):
+        await mirror_officer(session, user.id)
+        fo = (await session.execute(stmt)).scalar_one_or_none()
     if fo is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "field officer record not found")
     return fo

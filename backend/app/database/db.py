@@ -1,12 +1,17 @@
 from typing import AsyncGenerator
 from uuid import uuid4
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
 
 from ..config import get_settings
 
 settings = get_settings()
+
+# Postgres schema holding Test-mode mirror copies of the fire-drill tables
+# (see db_control/test_mode.py). Shared tables (user, regions, ...) exist only in public.
+TEST_SCHEMA = "test"
 
 # PgBouncer in transaction-pooling mode cannot handle named prepared statements
 # because the same statement name may land on a different backend connection.
@@ -30,10 +35,30 @@ engine = create_async_engine(
     connect_args=_connect_args,
 )
 
+class ModeAwareSession(Session):
+    """Sync session behind every AsyncSession; routes Test-mode sessions (see below)."""
+
+
+@event.listens_for(ModeAwareSession, "after_begin")
+def _route_test_session(session, transaction, connection) -> None:
+    """Point unqualified table names at the test schema for Test-mode sessions.
+
+    Only sessions opened with ``info={"test": True}`` are affected, so every other
+    session keeps hitting production tables untouched. Tables that have no test copy
+    (user, regions, ...) still resolve to public via the search_path fallback.
+    SET LOCAL lasts only for this transaction, so a pooled connection never carries
+    the test search_path into a later checkout (also safe under PgBouncer).
+    """
+    if session.info.get("test"):
+        connection.exec_driver_sql(f"SET LOCAL search_path TO {TEST_SCHEMA}, public")
+
+
 # expire_on_commit=False keeps ORM objects usable after commit without
 # triggering lazy re-fetches — critical in async context where implicit
 # lazy loads raise MissingGreenlet errors.
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+async_session_maker = async_sessionmaker(
+    engine, expire_on_commit=False, sync_session_class=ModeAwareSession
+)
 
 
 class Base(DeclarativeBase):

@@ -4,6 +4,9 @@
 shown here — see handle_cancel_booking's non-appointed branch) share the same
 FieldOfficer.fire_id column, distinguished by the `appointed` flag, which in
 turn drives who is allowed to cancel it.
+
+Booking writes go through the mode-routed session, so during a Test-mode drill
+they touch only the test schema; push titles are then marked [ทดสอบ].
 """
 
 import logging
@@ -18,10 +21,16 @@ from ...database.schemas import UserRole
 from ...db_control.audit import audit
 from ...db_control.permission import has_perm, is_admin_user
 from ...db_control.push import send_push
+from ...db_control.test_mode import mode_session, test_mode_on
 from ..manager import Connection
 from ._helpers import admin_covers_path
 
 logger = logging.getLogger("firenet.officers")
+
+
+def _drill_title(title: str, drill: bool) -> str:
+    """Mark pushes sent during a Test-mode drill so officers can tell them apart."""
+    return f"[ทดสอบ] {title}" if drill else title
 
 
 async def handle_appoint_officer(
@@ -62,7 +71,8 @@ async def handle_appoint_officer(
         return
     notify_user_id = None
     fire_name = None
-    async with async_session_maker() as session:
+    drill = test_mode_on()
+    async with mode_session(drill) as session:
         from ...db_control.permission import can_manage_officers
 
         if not await can_manage_officers(admin, session):
@@ -163,7 +173,7 @@ async def handle_appoint_officer(
             await send_push(
                 session,
                 notify_user_id,
-                title="ได้รับมอบหมายงานใหม่",
+                title=_drill_title("ได้รับมอบหมายงานใหม่", drill),
                 body=f"คุณได้รับมอบหมายให้ดูแลไฟ: {fire_name}",
                 data={"type": "fire_appointment", "fire_id": str(fire_id)},
             )
@@ -208,7 +218,8 @@ async def handle_cancel_booking(
         return
     notify_user_id = None
     fire_name = None
-    async with async_session_maker() as session:
+    drill = test_mode_on()
+    async with mode_session(drill) as session:
         officer = (
             await session.execute(
                 select(FieldOfficer).where(FieldOfficer.fire_id == fire_id)
@@ -261,7 +272,7 @@ async def handle_cancel_booking(
             await send_push(
                 session,
                 notify_user_id,
-                title="ยกเลิกการมอบหมายงาน",
+                title=_drill_title("ยกเลิกการมอบหมายงาน", drill),
                 body=(
                     f"การมอบหมายไฟ {fire_name} ถูกยกเลิกแล้ว"
                     if fire_name
