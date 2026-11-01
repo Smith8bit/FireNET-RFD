@@ -8,6 +8,10 @@ are written to the audit log because they represent meaningful operational event
 Name is stored in two places (UserRegion.name and FieldOfficer.name) because each
 table is queried independently in different contexts (leaderboard vs live map). Both
 are updated atomically here to keep them in sync.
+
+These endpoints always write the production officer row, so real tracking never
+pauses during a Test-mode drill; while one runs, the row is also mirrored into the
+test schema so the drill map shows the same position and name.
 """
 
 from datetime import datetime, timezone
@@ -23,6 +27,7 @@ from ...database import get_async_session
 from ...database.models import FieldOfficer, User, UserRegion
 from ...database.schemas import OfficerProfileUpdate, OfficerStatusUpdate, UserRole
 from ...db_control.audit import audit
+from ...db_control.test_mode import mirror_officer, test_mode_on
 from ._helpers import get_field_officer
 
 router = APIRouter()
@@ -66,6 +71,8 @@ async def update_my_location(
             )
         fo.active = body.active
     fo.last_updated = datetime.now(timezone.utc)
+    if test_mode_on():
+        await mirror_officer(session, user.id)
     await session.commit()
     return {"active": fo.active, "last_updated": fo.last_updated.isoformat()}
 
@@ -141,5 +148,7 @@ async def update_my_profile(
     )
     if body.division is not None:
         user.division = body.division.strip() or None
+    if test_mode_on():
+        await mirror_officer(session, user.id)
     await session.commit()
     return {"name": name, "division": user.division}

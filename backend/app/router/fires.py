@@ -27,6 +27,7 @@ from ..database.models import (
 from ..db_control.fires import get_fires, get_resolution_history
 from ..db_control.fire_export import build_history_zip, get_resolutions_for_export
 from ..db_control.permission import fire_visible, has_perm_anywhere
+from ..db_control.test_mode import get_mode_session
 
 router = APIRouter()
 
@@ -193,7 +194,7 @@ async def _visible_fire_or_404(
 async def get_fire_resolution(
     fire_id: uuid.UUID,
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ):
     """
     Return the resolution record for a specific fire, including officer name and image metadata.
@@ -204,7 +205,7 @@ async def get_fire_resolution(
     Args:
         fire_id: UUID of the target Firespot.
         user:    Authenticated user; must have visibility over the fire's region.
-        session: Async DB session.
+        session: Mode-routed session (drill data while Test mode is on).
 
     Returns:
         Resolution dict with nested image metadata list, or None if unresolved.
@@ -263,7 +264,7 @@ async def get_fire_image(
     fire_id: uuid.UUID,
     image_id: uuid.UUID,
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ):
     """
     Stream a resolution image binary from object storage.
@@ -279,7 +280,7 @@ async def get_fire_image(
         fire_id:  UUID of the parent Firespot (used to verify region).
         image_id: UUID of the FireResolutionImage to fetch.
         user:     Authenticated user.
-        session:  Async DB session.
+        session:  Mode-routed session (drill data while Test mode is on).
 
     Returns:
         Binary image response with the original content_type.

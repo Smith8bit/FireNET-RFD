@@ -15,7 +15,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...auth.authen import current_active_user
-from ...database import get_async_session
 from ...database.models import (
     FieldOfficer,
     FireResolution,
@@ -28,6 +27,7 @@ from ...database.schemas import FireAssign, UserRole
 from ...db_control.audit import audit
 from ...db_control.fires import FireDetail, build_fire_detail
 from ...db_control.permission import fire_visible, user_region_paths
+from ...db_control.test_mode import get_mode_session
 from ._helpers import get_field_officer
 
 router = APIRouter()
@@ -40,7 +40,7 @@ _LEADERBOARD_LIMIT = 50
 async def reserve_fire(
     body: FireAssign,
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ) -> FireDetail | None:
     """
     Assign or release the calling officer's fire booking.
@@ -56,6 +56,9 @@ async def reserve_fire(
       - Target fire must exist, be in the officer's visible region, and be unresolved.
       - Officer must not already hold a different unresolved fire.
       - Fire must not be reserved by another officer.
+
+    During a Test-mode drill the session is routed to the test schema, so these
+    rules apply to drill fires and drill bookings only.
 
     Race condition: a DB unique constraint on (fire_id) at the DB level is the
     final arbiter; IntegrityError on commit is caught and surfaced as 409.
@@ -148,7 +151,7 @@ async def reserve_fire(
 @router.get("/me/fire")
 async def my_reserved_fire(
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ) -> FireDetail | None:
     """
     Return the fire currently booked by the calling officer.
@@ -170,7 +173,7 @@ async def my_reserved_fire(
 @router.get("/me/leaderboard")
 async def my_leaderboard(
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ) -> dict:
     """
     Return the current month's fire-resolution leaderboard for the officer's region.

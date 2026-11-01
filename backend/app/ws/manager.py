@@ -18,6 +18,7 @@ from fastapi import WebSocket
 from ..database.models import User
 from ..db_control.fires import get_fires
 from ..db_control.permission import filter_fires
+from ..db_control.test_mode import test_mode_state
 
 # How long a cached registry/snapshot is considered fresh before we refetch
 # from the DB. Short enough to stay "live", long enough to collapse bursts of
@@ -158,6 +159,7 @@ class ConnectionManager:
         )
         self.active.append(conn)
         await ws.send_text(await self._snapshot_payload_for(conn))
+        await ws.send_text(self._mode_json())
         return conn
 
     async def send_snapshot(self, conn: Connection) -> None:
@@ -165,6 +167,33 @@ class ConnectionManager:
         await conn.ws.send_text(
             self._snapshot_json(conn, await self._scope_fires(conn))
         )
+
+    @staticmethod
+    def _mode_json() -> str:
+        """`system_mode` frame: tells consoles whether a Test-mode drill is running."""
+        return json.dumps({"type": "system_mode", **test_mode_state()})
+
+    async def broadcast_mode_change(self) -> None:
+        """Push a Test-mode switch to every socket: the new mode, then a full snapshot.
+
+        The whole visible fire set changes (real <-> drill fires), so instead of a
+        giant delta each scope gets a fresh `fires_snapshot` built from a re-warmed
+        registry; the snapshot caches are dropped so reconnects see the new mode too.
+        """
+        try:
+            self.warm_registry_from(await get_fires(user=None))
+        except Exception as exc:
+            print(f"[ws] mode-change refresh failed: {exc}")
+            return
+        self._snap_payload.clear()
+        self._snap_at.clear()
+        mode = self._mode_json()
+        for _scope, members in group_by_scope(self.active).items():
+            snapshot = self._snapshot_json(
+                members[0], await self._scope_fires(members[0])
+            )
+            await fanout(members, mode)
+            await fanout(members, snapshot)
 
     def disconnect(self, ws: WebSocket) -> None:
         """Remove a socket from the active list; safe to call even if already removed."""

@@ -1,5 +1,6 @@
 import re
 import uuid
+from datetime import date
 from enum import StrEnum
 from typing import Annotated
 
@@ -108,6 +109,16 @@ class RegionChangeCreate(BaseModel):
 class LocationPollUpdate(BaseModel):
     # le=1440 caps the interval at 24 hours to prevent accidental permanent silence.
     minutes: float = Field(gt=0, le=1440)
+
+
+class TestModeUpdate(BaseModel):
+    enabled: bool
+
+
+class TestReplayRequest(BaseModel):
+    # Whole days of fires; each day copies every fire detected on it.
+    days: list[date] = Field(min_length=1, max_length=31)
+    province: str | None = Field(default=None, max_length=128)
 
 
 class PushTokenRegister(BaseModel):

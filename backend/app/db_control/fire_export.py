@@ -16,12 +16,12 @@ from sqlalchemy import func, or_, select
 
 from .. import storage
 from ..config import get_settings
-from ..database import async_session_maker
 from ..database.models.fire_resolution import FireResolution, FireResolutionImage
 from ..database.models.field_officer import FieldOfficer
 from ..database.models.firespot import Firespot
 from ..database.models.region import Region
 from ..database.models.user import User
+from .test_mode import mode_session
 
 # Local copy so this module doesn't reach back into fires.py for a constant.
 _INGEST_TZ = ZoneInfo(get_settings().INGEST_TIMEZONE)
@@ -72,13 +72,13 @@ async def get_resolutions_for_export(
 ) -> list[dict[str, Any]]:
     """Unpaginated resolution rows for the ZIP export, with image object keys.
 
-    Same filters and region ACL as `get_resolution_history`, but returns every
-    matching row (no limit/offset) and each image's storage `object_key` +
-    `content_type` so the caller can bundle the binaries.
+    Same filters, region ACL and Test-mode routing as `get_resolution_history`, but
+    returns every matching row (no limit/offset) and each image's storage
+    `object_key` + `content_type` so the caller can bundle the binaries.
     """
     from .permission import user_region_paths
 
-    async with async_session_maker() as session:
+    async with mode_session() as session:
         stmt = (
             select(
                 Firespot.name,

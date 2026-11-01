@@ -202,7 +202,7 @@ export default function MapViewPage() {
       {/* Floating map tools (layers/reset/officers/zoom). On desktop the full stack
           is always shown and shifts left when the side list is expanded. On phone the
           stack collapses behind a single hamburger-like toggle to keep the map clear. */}
-      <div className={`fixed top-[calc(env(safe-area-inset-top)+0.75rem)] lg:top-3 z-10 flex flex-col items-end gap-2 right-3 transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? '' : 'md:right-[calc(25vw+0.75rem)]'}`}>
+      <div className={`fixed top-[calc(env(safe-area-inset-top)+0.75rem+var(--test-strip,0px))] lg:top-[calc(0.75rem+var(--test-strip,0px))] z-10 flex flex-col items-end gap-2 right-3 transition-[right] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${listCollapsed ? '' : 'md:right-[calc(25vw+0.75rem)]'}`}>
 
         {/* Phone-only toggle for the tool cluster below. */}
         <button
@@ -297,7 +297,7 @@ export default function MapViewPage() {
       <div
         className={`fixed z-20 flex flex-col bg-white md:bg-background shadow-xl transition-[transform,width,height] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]
           inset-x-0 bottom-0 h-[60vh] rounded-t-2xl border-t border-background/50
-          md:inset-x-auto md:top-0 md:right-0 md:bottom-auto md:h-full md:rounded-none md:border-t-0 md:border-l
+          md:inset-x-auto md:top-[var(--test-strip,0px)] md:right-0 md:bottom-0 md:h-auto md:rounded-none md:border-t-0 md:border-l
           ${listCollapsed
             ? 'translate-y-[calc(100%-2.75rem)] md:translate-y-0 md:w-0'
             : 'translate-y-0 md:w-1/4'}`}

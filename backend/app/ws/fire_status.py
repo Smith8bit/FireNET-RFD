@@ -14,7 +14,8 @@ row leaves no orphaned storage objects to clean up.
 
 All writes to `firespots` fire the Postgres NOTIFY trigger (see pg_listener.py), so the
 updated fire is broadcast to every connected client automatically; the direct reply here
-is only an ack for the initiating socket.
+is only an ack for the initiating socket. Sessions are mode-routed, so during a Test-mode
+drill both handlers act on drill fires only.
 """
 
 import logging
@@ -26,7 +27,6 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
-from ..database import async_session_maker
 from ..database.models import (
     FieldOfficer,
     FireResolution,
@@ -37,6 +37,7 @@ from ..database.models import (
 )
 from ..db_control.audit import audit
 from ..db_control.permission import has_perm
+from ..db_control.test_mode import mode_session
 
 logger = logging.getLogger("firenet.fire_status")
 settings = get_settings()
@@ -102,7 +103,7 @@ async def handle_false_fire(ws: WebSocket, user: User, data: dict) -> None:
     else:
         note = None
 
-    async with async_session_maker() as session:
+    async with mode_session() as session:
         fire, fire_path = await _fire_with_path(session, fire_id)
         if fire is None:
             await ws.send_json({"type": "error", "code": "fire_not_found"})
@@ -178,7 +179,7 @@ async def handle_cancel_false_fire(ws: WebSocket, user: User, data: dict) -> Non
     except (KeyError, ValueError):
         await ws.send_json({"type": "error", "code": "invalid_request"})
         return
-    async with async_session_maker() as session:
+    async with mode_session() as session:
         fire, fire_path = await _fire_with_path(session, fire_id)
         if fire is None:
             await ws.send_json({"type": "error", "code": "fire_not_found"})

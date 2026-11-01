@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ... import storage
 from ...auth.authen import current_active_user
 from ...config import get_settings
-from ...database import get_async_session
 from ...database.models import (
     FieldOfficer,
     FireResolution,
@@ -32,6 +31,7 @@ from ...database.models import (
 from ...database.schemas import FireFalseReport
 from ...db_control.audit import audit
 from ...db_control.fires import FireDetail, build_fire_detail, get_resolution_history
+from ...db_control.test_mode import evidence_prefix, get_mode_session
 from ._helpers import get_field_officer
 
 settings = get_settings()
@@ -83,7 +83,7 @@ async def resolve_my_fire(
     image_gps: str | None = Form(None),
     images: list[UploadFile] = File(...),
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ) -> FireDetail:
     """
     Mark the officer's booked fire as resolved with photo/video evidence.
@@ -97,7 +97,8 @@ async def resolve_my_fire(
     Image content-type is sniffed from the file bytes rather than trusting the
     multipart header, to prevent type confusion when serving evidence back.
 
-    Object storage keys follow: `resolutions/{YYYYMMDD}/{fire_id}/{uuid}.{ext}`
+    Object storage keys follow: `resolutions/{YYYYMMDD}/{fire_id}/{uuid}.{ext}`,
+    prefixed with `test/` during a Test-mode drill.
 
     Args:
         note:      Optional text note (length bounded by settings.RESOLVE_NOTE_MAX_CHARS).
@@ -166,7 +167,10 @@ async def resolve_my_fire(
             if n_videos > 1:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "only one video allowed")
             ext = storage.VIDEO_EXT[content_type]
-        key = f"resolutions/{day}/{fire.id}/{uuid.uuid4().hex}.{ext}"
+        key = (
+            f"{evidence_prefix(session)}resolutions/{day}/{fire.id}/"
+            f"{uuid.uuid4().hex}.{ext}"
+        )
         prepared.append((key, data, content_type))
     stored: list[str] = []
     try:
@@ -226,7 +230,7 @@ async def resolve_my_fire(
 async def false_report_my_fire(
     body: FireFalseReport,
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ) -> FireDetail:
     """
     Mark the officer's booked fire as a false alarm (no photo evidence required).
@@ -297,7 +301,7 @@ async def my_resolutions(
     limit: int = 20,
     offset: int = 0,
     user: User = Depends(current_active_user),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_mode_session),
 ) -> dict:
     """
     Return a paginated history of fires resolved by the calling officer.

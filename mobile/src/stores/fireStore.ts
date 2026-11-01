@@ -44,6 +44,11 @@ type FireState = {
   loading: boolean
   /** Whether this officer is currently on-duty/visible for dispatch. */
   online: boolean
+  /**
+   * Whether an admin has the system in Test mode: every fire listed is then a drill
+   * copy and nothing done to it touches real records. Refreshed with `loadFires`.
+   */
+  testMode: boolean
   /** Refetches the active fire list; no-op if a load is already in progress. */
   loadFires: () => Promise<void>
   selectFire: (id: string | null) => void
@@ -93,13 +98,19 @@ export const useFireStore = create<FireState>()(
   reservedFire: null,
   loading: false,
   online: false,
+  testMode: false,
 
   loadFires: async () => {
     if (get().loading) return // avoid duplicate concurrent requests (e.g. pull-to-refresh racing a poll)
     set({ loading: true })
     try {
-      const res = await api.get<Fire[]>('/fires')
-      set({ fires: res.data })
+      // The mode is fetched alongside so the banner always matches the list it labels;
+      // a failed mode read (e.g. an older backend) just keeps the previous value.
+      const [res, mode] = await Promise.all([
+        api.get<Fire[]>('/fires'),
+        api.get<{ enabled: boolean }>('/test-mode').catch(() => null),
+      ])
+      set({ fires: res.data, ...(mode ? { testMode: mode.data.enabled } : {}) })
     } catch {
       // Leave the previous (possibly persisted/stale) fire list in place on failure.
     } finally {
@@ -241,11 +252,12 @@ export const useFireStore = create<FireState>()(
     {
       name: 'firenet-fire-store',
       storage: createJSONStorage(() => AsyncStorage),
-      // Only fires/reservedFire survive relaunch — `loading`, `online`, and
-      // `selectedFireId` are transient/session state that should always
-      // start fresh (e.g. an officer shouldn't reopen the app appearing
-      // "online" without having actually re-established that with the server).
-      partialize: (s) => ({ fires: s.fires, reservedFire: s.reservedFire }),
+      // Only fires/reservedFire (and the testMode flag labelling them) survive
+      // relaunch — `loading`, `online`, and `selectedFireId` are transient/session
+      // state that should always start fresh (e.g. an officer shouldn't reopen the
+      // app appearing "online" without having actually re-established that with
+      // the server).
+      partialize: (s) => ({ fires: s.fires, reservedFire: s.reservedFire, testMode: s.testMode }),
     },
   ),
 )

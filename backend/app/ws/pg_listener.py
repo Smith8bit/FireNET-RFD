@@ -61,6 +61,24 @@ CREATE TRIGGER firenet_notify_user
     FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change();
 """
 
+# Same notifications for the Test-mode mirror tables (db_control/test_mode.py), using
+# the production tags so a drill updates clients exactly like real activity. Only
+# installed when the test schema exists (TEST_MODE_ALLOWED).
+_TEST_TRIGGER_SQL = """
+DROP TRIGGER IF EXISTS firenet_notify_firespots ON test.firespots;
+CREATE TRIGGER firenet_notify_firespots
+    AFTER INSERT OR UPDATE OR DELETE ON test.firespots
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change('firespots');
+DROP TRIGGER IF EXISTS firenet_notify_fo_booking ON test.field_officers;
+CREATE TRIGGER firenet_notify_fo_booking
+    AFTER INSERT OR DELETE OR UPDATE OF fire_id ON test.field_officers
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change('field_officers_booking');
+DROP TRIGGER IF EXISTS firenet_notify_fo_status ON test.field_officers;
+CREATE TRIGGER firenet_notify_fo_status
+    AFTER UPDATE ON test.field_officers
+    FOR EACH STATEMENT EXECUTE FUNCTION firenet_notify_change('field_officers');
+"""
+
 
 class PgListener:
     """Owns the long-lived LISTEN connection and the debounce/dispatch logic."""
@@ -106,6 +124,8 @@ class PgListener:
                             "SELECT pg_advisory_xact_lock($1)", _BOOTSTRAP_LOCK_KEY
                         )
                         await conn.execute(_TRIGGER_SQL)
+                    if settings.TEST_MODE_ALLOWED:
+                        await conn.execute(_TEST_TRIGGER_SQL)
                     await conn.add_listener(CHANNEL, self._on_notify)
                     print(f"[pg_listener] listening on '{CHANNEL}'")
                     while not conn.is_closed():
@@ -145,7 +165,14 @@ class PgListener:
             from .manager import manager
 
             try:
-                if tables & {"firespots", "field_officers_booking"}:
+                if "test_mode" in tables:
+                    # Test mode flipped (possibly on another replica): reload the
+                    # cached flag, then re-snapshot every client in the new mode.
+                    from ..db_control import test_mode
+
+                    await test_mode.reload()
+                    await manager.broadcast_mode_change()
+                elif tables & {"firespots", "field_officers_booking"}:
                     await manager.refresh_and_broadcast_deltas()
                 if tables & {"field_officers_booking", "user"}:
                     # A booking or user change always warrants an immediate,

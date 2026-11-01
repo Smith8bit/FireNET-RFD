@@ -4,6 +4,7 @@ import { useAuthStore, can } from '../lib/useAuthStore'
 import { API_URL, apiFetch, INPUT_CLS, PAGE_SIZE, SELECT_CLS, THEAD_CLS } from '../lib/shared'
 import { formatEventTime } from '../lib/datetime'
 import { useRegions } from '../lib/useRegions'
+import { useTestMode } from '../lib/useTestMode'
 import PaginationBar from '../components/PaginationBar'
 import RecordCard from '../components/RecordCard'
 import DateInput from '../components/DateInput'
@@ -42,6 +43,8 @@ export default function HistoryPage() {
   const [downloading, setDownloading] = useState(false) // boolean: disables the export button mid-download
   const [viewer, setViewer] = useState(null) // {path,url,isVideo,filename}|null: currently open evidence lightbox
   const [savingEvidence, setSavingEvidence] = useState(false) // boolean: disables the viewer's download button mid-request
+  // The server returns drill history while Test mode is on; refetch when it flips.
+  const testMode = useTestMode().enabled
 
   /**
    * saveEvidence
@@ -140,7 +143,7 @@ export default function HistoryPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [page, kind, province, dateFrom, dateTo, search, reload])
+  }, [page, kind, province, dateFrom, dateTo, search, reload, testMode])
 
   // Access control: only users with the fires.history permission may view this page.
   if (!can(user, 'fires.history')) return <Navigate to="/" replace />

@@ -8,6 +8,7 @@ import {
   ClockIcon,
   ClipboardDocumentListIcon,
   NoSymbolIcon,
+  BeakerIcon,
   ViewColumnsIcon as SidebarToggleIcon,
   ArrowRightOnRectangleIcon as LogoutIcon,
   XMarkIcon,
@@ -16,6 +17,7 @@ import { apiFetch } from "../lib/shared";
 import appIcon from "../assets/icon.png";
 import { useAuthStore, can } from "../lib/useAuthStore";
 import { useUIStore } from "../lib/stateStore";
+import { useTestMode } from "../lib/useTestMode";
 
 /**
  * Sidebar
@@ -41,6 +43,7 @@ export default function Sidebar() {
   // Ignored at lg+ where the sidebar is a static rail.
   const drawerOpen = useUIStore((s) => s.drawerOpen)
   const closeDrawer = useUIStore((s) => s.closeDrawer)
+  const testMode = useTestMode().enabled
 
   // Collapsed/expanded state persists across sessions via localStorage so the
   // user's layout preference survives a page reload.
@@ -97,6 +100,8 @@ export default function Sidebar() {
     can(user, 'fires.history') && { name: 'ประวัติการดับไฟ', path: '/history', icon: ClockIcon },
     user?.is_superuser && { name: 'บันทึกเหตุการณ์', path: '/audit', icon: ClipboardDocumentListIcon },
     user?.is_superuser && { name: 'จัดการสิทธิ์ผู้ใช้', path: '/access', icon: NoSymbolIcon },
+    // `live` adds an "ON" pill while a drill is running, so admins can't forget it.
+    user?.is_superuser && { name: 'โหมดทดสอบ', path: '/test-mode', icon: BeakerIcon, live: testMode },
   ].filter(Boolean)
 
   const handleLogout = async () => {
@@ -112,7 +117,7 @@ export default function Sidebar() {
   return (
     <nav
       aria-label="Sidebar"
-      className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] pt-safe lg:relative lg:z-20 lg:max-w-none lg:pt-3 lg:translate-x-0 ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} ${collapsed ? 'lg:w-16' : 'lg:w-56'} flex flex-col h-screen shrink-0 overflow-y-auto overflow-x-hidden whitespace-nowrap border-r border-background/50 bg-foreground shadow-xl lg:shadow-none lg:transition-[width] lg:duration-300 lg:ease-[cubic-bezier(0.32,0.72,0,1)]`}
+      className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] pt-[calc(env(safe-area-inset-top)+var(--test-strip,0px))] lg:relative lg:z-20 lg:max-w-none lg:pt-[calc(0.75rem+var(--test-strip,0px))] lg:translate-x-0 ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} ${collapsed ? 'lg:w-16' : 'lg:w-56'} flex flex-col h-screen shrink-0 overflow-y-auto overflow-x-hidden whitespace-nowrap border-r border-background/50 bg-foreground shadow-xl lg:shadow-none lg:transition-[width] lg:duration-300 lg:ease-[cubic-bezier(0.32,0.72,0,1)]`}
     >
       <div className="relative flex h-14 items-center px-3.5 border-b border-background">
         <div
@@ -192,6 +197,11 @@ export default function Sidebar() {
                   <span className={`truncate flex-1 transition-opacity duration-300 ${collapsed ? 'opacity-100 lg:opacity-0' : 'opacity-100'}`}>
                     {link.name}
                   </span>
+                  {link.live && (
+                    <span className={`shrink-0 rounded-full bg-amber-400 px-1.5 text-xs font-bold text-amber-950 ${collapsed ? 'lg:hidden' : ''}`}>
+                      ON
+                    </span>
+                  )}
                 </Link>
               </li>
             )
